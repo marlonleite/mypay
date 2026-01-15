@@ -1,4 +1,4 @@
-# iPay - Controle Financeiro Pessoal
+# myPay - Controle Financeiro Pessoal
 
 Aplicativo de controle financeiro pessoal construído com React, Firebase e Tailwind CSS.
 
