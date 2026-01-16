@@ -14,6 +14,7 @@ export const EXPENSE_CATEGORIES = [
   { id: 'health', name: 'Saúde', icon: 'Heart' },
   { id: 'leisure', name: 'Lazer', icon: 'Gamepad2' },
   { id: 'education', name: 'Educação', icon: 'GraduationCap' },
+  { id: 'card_payment', name: 'Pagamento de Cartão', icon: 'CreditCard' },
   { id: 'other', name: 'Outros', icon: 'MoreHorizontal' }
 ]
 

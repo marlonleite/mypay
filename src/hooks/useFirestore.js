@@ -762,3 +762,92 @@ export function useTags() {
 
   return { tags, loading }
 }
+
+// Hook para pagamentos de fatura de cartão
+export function useBillPayments(month, year) {
+  const { user } = useAuth()
+  const [payments, setPayments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!user) {
+      setPayments([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    // Buscar pagamentos do mês/ano específico
+    const q = query(
+      collection(db, `users/${user.uid}/billPayments`),
+      where('month', '==', month),
+      where('year', '==', year)
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          paidAt: doc.data().paidAt?.toDate()
+        }))
+        setPayments(data)
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error fetching bill payments:', err)
+        setError('Erro ao carregar pagamentos')
+        setLoading(false)
+      }
+    )
+
+    return () => unsubscribe()
+  }, [user, month, year])
+
+  // Verificar se uma fatura específica foi paga
+  const isBillPaid = (cardId) => {
+    return payments.some(p => p.cardId === cardId)
+  }
+
+  // Obter detalhes do pagamento de uma fatura
+  const getBillPayment = (cardId) => {
+    return payments.find(p => p.cardId === cardId)
+  }
+
+  // Registrar pagamento de fatura
+  const addBillPayment = async (data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    return await addDoc(collection(db, `users/${user.uid}/billPayments`), {
+      cardId: data.cardId,
+      month: data.month,
+      year: data.year,
+      amount: data.amount,
+      accountId: data.accountId,
+      transactionId: data.transactionId,
+      paidAt: data.paidAt || new Date(),
+      createdAt: serverTimestamp()
+    })
+  }
+
+  // Excluir pagamento (caso precise estornar)
+  const deleteBillPayment = async (id) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const docRef = doc(db, `users/${user.uid}/billPayments`, id)
+    return await deleteDoc(docRef)
+  }
+
+  return {
+    payments,
+    loading,
+    error,
+    isBillPaid,
+    getBillPayment,
+    addBillPayment,
+    deleteBillPayment
+  }
+}

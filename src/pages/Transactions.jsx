@@ -19,7 +19,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Filter,
-  ChevronDown
+  ChevronDown,
+  ChevronUp,
+  AlertCircle
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
@@ -31,7 +33,7 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
-import { formatCurrency, formatDateForInput, groupByDate } from '../utils/helpers'
+import { formatCurrency, formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
@@ -84,6 +86,8 @@ export default function Transactions({ month, year, onMonthChange }) {
     tag: 'all'
   })
   const [activeFilterDropdown, setActiveFilterDropdown] = useState(null)
+  const [dateRange, setDateRange] = useState(null)
+  const [showOverduePanel, setShowOverduePanel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingCategory, setSavingCategory] = useState(false)
   const [deleting, setDeleting] = useState(null)
@@ -139,6 +143,17 @@ export default function Transactions({ month, year, onMonthChange }) {
   const filteredTransactions = useMemo(() => {
     let result = transactions
 
+    // Filtro por período customizado
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      const startDate = new Date(dateRange.startDate + 'T00:00:00')
+      const endDate = new Date(dateRange.endDate + 'T23:59:59')
+      result = result.filter(t => {
+        // t.date pode ser um Date object (do Firestore) ou string
+        const transactionDate = t.date instanceof Date ? t.date : new Date(t.date + 'T12:00:00')
+        return transactionDate >= startDate && transactionDate <= endDate
+      })
+    }
+
     // Filtro por tipo
     if (filters.type !== 'all') {
       result = result.filter(t => {
@@ -182,10 +197,27 @@ export default function Transactions({ month, year, onMonthChange }) {
     }
 
     return result
-  }, [transactions, searchTerm, filters])
+  }, [transactions, searchTerm, filters, dateRange])
 
   // Verificar se há filtros ativos
   const hasActiveFilters = filters.type !== 'all' || filters.account !== 'all' || filters.category !== 'all' || filters.tag !== 'all'
+
+  // Calcular lançamentos pendentes passados (vencidos)
+  const overdueTransactions = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    return transactions.filter(t => {
+      if (t.paid !== false) return false // Só não pagos
+      const transactionDate = t.date instanceof Date ? t.date : new Date(t.date)
+      transactionDate.setHours(0, 0, 0, 0)
+      return transactionDate < today // Data no passado
+    }).sort((a, b) => {
+      const dateA = a.date instanceof Date ? a.date : new Date(a.date)
+      const dateB = b.date instanceof Date ? b.date : new Date(b.date)
+      return dateA - dateB // Mais antigos primeiro
+    })
+  }, [transactions])
 
   // Labels dos filtros
   const getTypeLabel = () => {
@@ -676,8 +708,89 @@ export default function Transactions({ month, year, onMonthChange }) {
       <MonthSelector
         month={month}
         year={year}
-        onChange={onMonthChange}
+        onChange={(m, y) => {
+          setDateRange(null) // Limpa dateRange ao mudar mês
+          onMonthChange(m, y)
+        }}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
       />
+
+      {/* Banner de Lançamentos Pendentes/Vencidos */}
+      {overdueTransactions.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowOverduePanel(!showOverduePanel)}
+            className="w-full flex items-center justify-between p-3 text-left"
+          >
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              <span className="text-sm text-amber-200">
+                {overdueTransactions.length === 1
+                  ? 'Há 1 lançamento passado que ainda não foi pago'
+                  : `Há ${overdueTransactions.length} lançamentos passados que ainda não foram pagos`}
+              </span>
+            </div>
+            {showOverduePanel ? (
+              <ChevronUp className="w-5 h-5 text-amber-400" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-amber-400" />
+            )}
+          </button>
+
+          {showOverduePanel && (
+            <div className="border-t border-amber-500/20 divide-y divide-amber-500/10">
+              {overdueTransactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  onClick={() => openDetailModal(transaction)}
+                  className="flex items-center justify-between p-3 hover:bg-amber-500/5 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
+                    >
+                      {transaction.type === TRANSACTION_TYPES.INCOME ? (
+                        <ArrowUpRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
+                      ) : (
+                        <ArrowDownRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm text-white font-medium truncate">
+                        {transaction.description}
+                      </p>
+                      <p className="text-xs text-dark-400">
+                        {formatDate(transaction.date)}
+                        {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <p className={`text-sm font-semibold ${
+                      transaction.type === TRANSACTION_TYPES.INCOME
+                        ? 'text-emerald-400'
+                        : 'text-red-400'
+                    }`}>
+                      {transaction.type === TRANSACTION_TYPES.INCOME ? '+' : '-'}
+                      {formatCurrency(transaction.amount)}
+                    </p>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); togglePaidStatus(transaction) }}
+                      className="p-1.5 text-dark-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                      title="Marcar como pago"
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex gap-3">

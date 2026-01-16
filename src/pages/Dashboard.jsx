@@ -1,5 +1,5 @@
 
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   TrendingUp,
   TrendingDown,
@@ -17,48 +17,68 @@ import { formatCurrency, formatDate, isDateInMonth } from '../utils/helpers'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_TYPES } from '../utils/constants'
 
 export default function Dashboard({ month, year, onMonthChange }) {
+  const [dateRange, setDateRange] = useState(null)
+
   const { transactions, loading: loadingTransactions } = useTransactions(month, year)
   const { expenses: allCardExpenses, loading: loadingCardExpenses } = useAllCardExpenses()
   const { cards } = useCards()
 
+  // Helper para filtrar por período
+  const filterByDateRange = (items) => {
+    if (!dateRange || !dateRange.startDate || !dateRange.endDate) {
+      return items
+    }
+    const startDate = new Date(dateRange.startDate + 'T00:00:00')
+    const endDate = new Date(dateRange.endDate + 'T23:59:59')
+    return items.filter(item => {
+      // item.date pode ser um Date object (do Firestore) ou string
+      const itemDate = item.date instanceof Date ? item.date : new Date(item.date + 'T12:00:00')
+      return itemDate >= startDate && itemDate <= endDate
+    })
+  }
+
   // Calcular resumo
   const summary = useMemo(() => {
-    const income = transactions
+    const filteredTransactions = filterByDateRange(transactions)
+    const filteredCardExpenses = dateRange
+      ? filterByDateRange(allCardExpenses)
+      : allCardExpenses.filter(e => isDateInMonth(e.date, month, year))
+
+    const income = filteredTransactions
       .filter(t => t.type === TRANSACTION_TYPES.INCOME)
       .reduce((sum, t) => sum + (t.amount || 0), 0)
 
-    const expenses = transactions
+    const expenses = filteredTransactions
       .filter(t => t.type === TRANSACTION_TYPES.EXPENSE)
       .reduce((sum, t) => sum + (t.amount || 0), 0)
 
-    // Filtrar despesas de cartão do mês atual
-    const cardExpensesThisMonth = allCardExpenses.filter(e =>
-      isDateInMonth(e.date, month, year)
-    )
+    const cardTotal = filteredCardExpenses.reduce((sum, e) => sum + (e.amount || 0), 0)
 
-    const cardTotal = cardExpensesThisMonth.reduce((sum, e) => sum + (e.amount || 0), 0)
-
-    const balance = income - expenses - cardTotal
+    // Saldo = Receitas - Despesas (não subtrai cartões, pois só afetam quando pagos)
+    const balance = income - expenses
 
     return { income, expenses, cardTotal, balance }
-  }, [transactions, allCardExpenses, month, year])
+  }, [transactions, allCardExpenses, month, year, dateRange])
 
   // Últimos lançamentos (transações + cartão)
   const recentItems = useMemo(() => {
-    const cardExpensesThisMonth = allCardExpenses
-      .filter(e => isDateInMonth(e.date, month, year))
-      .map(e => ({
-        ...e,
-        type: 'card',
-        cardName: cards.find(c => c.id === e.cardId)?.name || 'Cartão'
-      }))
+    const filteredTransactions = filterByDateRange(transactions)
+    const filteredCardExpenses = dateRange
+      ? filterByDateRange(allCardExpenses)
+      : allCardExpenses.filter(e => isDateInMonth(e.date, month, year))
 
-    const allItems = [...transactions, ...cardExpensesThisMonth]
+    const cardExpensesWithType = filteredCardExpenses.map(e => ({
+      ...e,
+      type: 'card',
+      cardName: cards.find(c => c.id === e.cardId)?.name || 'Cartão'
+    }))
+
+    const allItems = [...filteredTransactions, ...cardExpensesWithType]
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, 5)
 
     return allItems
-  }, [transactions, allCardExpenses, cards, month, year])
+  }, [transactions, allCardExpenses, cards, month, year, dateRange])
 
   const loading = loadingTransactions || loadingCardExpenses
 
@@ -73,7 +93,12 @@ export default function Dashboard({ month, year, onMonthChange }) {
       <MonthSelector
         month={month}
         year={year}
-        onChange={onMonthChange}
+        onChange={(m, y) => {
+          setDateRange(null)
+          onMonthChange(m, y)
+        }}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
       />
 
       {loading ? (
@@ -108,13 +133,13 @@ export default function Dashboard({ month, year, onMonthChange }) {
               </p>
             </Card>
 
-            {/* Cartões */}
+            {/* Fatura a Pagar */}
             <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-1.5 bg-orange-500/20 rounded-lg">
                   <CreditCard className="w-4 h-4 text-orange-500" />
                 </div>
-                <span className="text-xs text-dark-400">Cartões</span>
+                <span className="text-xs text-dark-400">Fatura a Pagar</span>
               </div>
               <p className="text-lg font-bold text-orange-400">
                 {formatCurrency(summary.cardTotal)}
