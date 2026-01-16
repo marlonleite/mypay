@@ -545,6 +545,11 @@ export default function Cards({ month, year, onMonthChange }) {
   }
 
   const getCategoryName = (categoryId) => {
+    // Se categoryId é um objeto (migração antiga), extrair o nome
+    if (categoryId && typeof categoryId === 'object') {
+      return categoryId.name || 'Sem categoria'
+    }
+
     const cat = allCategories.find(c => c.id === categoryId)
     if (cat) {
       if (cat.parentId) {
@@ -553,7 +558,7 @@ export default function Cards({ month, year, onMonthChange }) {
       }
       return cat.name
     }
-    return categoryId
+    return categoryId || 'Sem categoria'
   }
 
   const formatDate = (date) => {

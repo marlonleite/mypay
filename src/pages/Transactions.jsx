@@ -294,6 +294,11 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
   }, [transactionType, allCategories])
 
   const getCategoryName = (categoryId) => {
+    // Se categoryId é um objeto (migração antiga), extrair o nome
+    if (categoryId && typeof categoryId === 'object') {
+      return categoryId.name || 'Sem categoria'
+    }
+
     const cat = allCategories.find(c => c.id === categoryId)
     if (cat) {
       if (cat.parentId) {
@@ -311,6 +316,11 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
   }
 
   const getCategoryColor = (categoryId) => {
+    // Se categoryId é um objeto (migração antiga), usar cor padrão
+    if (categoryId && typeof categoryId === 'object') {
+      return '#8b5cf6'
+    }
+
     const cat = allCategories.find(c => c.id === categoryId)
     if (cat?.color) {
       const colorObj = CATEGORY_COLORS.find(c => c.id === cat.color)

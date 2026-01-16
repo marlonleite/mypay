@@ -127,8 +127,12 @@ export default function Dashboard({ month, year, onMonthChange }) {
   const loading = loadingTransactions || loadingCardExpenses
 
   const getCategoryName = (categoryId, type) => {
+    // Se categoryId é um objeto (migração antiga), extrair o nome
+    if (categoryId && typeof categoryId === 'object') {
+      return categoryId.name || 'Sem categoria'
+    }
     const categories = type === TRANSACTION_TYPES.INCOME ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
-    return categories.find(c => c.id === categoryId)?.name || categoryId
+    return categories.find(c => c.id === categoryId)?.name || categoryId || 'Sem categoria'
   }
 
   return (
