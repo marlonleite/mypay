@@ -60,8 +60,8 @@ export default function Layout({ children, activeTab, onTabChange }) {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-dark-900/95 backdrop-blur-lg border-t border-dark-800 safe-area-pb">
-        <div className="max-w-lg mx-auto px-4">
-          <div className="flex items-center justify-around h-16">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center h-16 overflow-x-auto scrollbar-hide px-2 gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
@@ -70,14 +70,14 @@ export default function Layout({ children, activeTab, onTabChange }) {
                 <button
                   key={tab.id}
                   onClick={() => onTabChange(tab.id)}
-                  className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+                  className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all flex-shrink-0 min-w-[4rem] ${
                     isActive
                       ? 'text-violet-400'
                       : 'text-dark-400 hover:text-white'
                   }`}
                 >
                   <Icon className={`w-5 h-5 ${isActive ? 'scale-110' : ''} transition-transform`} />
-                  <span className="text-xs font-medium">{tab.label}</span>
+                  <span className="text-xs font-medium whitespace-nowrap">{tab.label}</span>
                 </button>
               )
             })}
@@ -85,10 +85,17 @@ export default function Layout({ children, activeTab, onTabChange }) {
         </div>
       </nav>
 
-      {/* Safe area for iOS */}
+      {/* Safe area for iOS + hide scrollbar */}
       <style>{`
         .safe-area-pb {
           padding-bottom: env(safe-area-inset-bottom);
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
     </div>
