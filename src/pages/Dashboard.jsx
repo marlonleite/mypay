@@ -105,65 +105,59 @@ export default function Dashboard({ month, year, onMonthChange }) {
         <Loading />
       ) : (
         <>
-          {/* Summary Cards */}
+          {/* Summary Cards - Task App Style */}
           <div className="grid grid-cols-2 gap-3">
             {/* Receitas */}
-            <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-emerald-500/20 rounded-lg">
-                  <TrendingUp className="w-4 h-4 text-emerald-500" />
+            <Card className="!p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 icon-green rounded-xl flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
                 </div>
                 <span className="text-xs text-dark-400">Receitas</span>
               </div>
-              <p className="text-lg font-bold text-emerald-400">
+              <p className="text-2xl font-bold text-white">
                 {formatCurrency(summary.income)}
               </p>
             </Card>
 
             {/* Despesas */}
-            <Card className="bg-gradient-to-br from-red-500/10 to-red-600/5 border-red-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-red-500/20 rounded-lg">
-                  <TrendingDown className="w-4 h-4 text-red-500" />
+            <Card className="!p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 icon-red rounded-xl flex items-center justify-center">
+                  <TrendingDown className="w-4 h-4" />
                 </div>
                 <span className="text-xs text-dark-400">Despesas</span>
               </div>
-              <p className="text-lg font-bold text-red-400">
+              <p className="text-2xl font-bold text-white">
                 {formatCurrency(summary.expenses)}
               </p>
             </Card>
 
             {/* Fatura a Pagar */}
-            <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-orange-500/20 rounded-lg">
-                  <CreditCard className="w-4 h-4 text-orange-500" />
+            <Card className="!p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 icon-orange rounded-xl flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
                 </div>
-                <span className="text-xs text-dark-400">Fatura a Pagar</span>
+                <span className="text-xs text-dark-400">Fatura</span>
               </div>
-              <p className="text-lg font-bold text-orange-400">
+              <p className="text-2xl font-bold text-white">
                 {formatCurrency(summary.cardTotal)}
               </p>
             </Card>
 
             {/* Saldo */}
-            <Card className={`bg-gradient-to-br ${
-              summary.balance >= 0
-                ? 'from-violet-500/10 to-violet-600/5 border-violet-500/20'
-                : 'from-red-500/10 to-red-600/5 border-red-500/20'
-            }`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`p-1.5 rounded-lg ${
-                  summary.balance >= 0 ? 'bg-violet-500/20' : 'bg-red-500/20'
+            <Card className="!p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  summary.balance >= 0 ? 'icon-purple' : 'icon-red'
                 }`}>
-                  <Wallet className={`w-4 h-4 ${
-                    summary.balance >= 0 ? 'text-violet-500' : 'text-red-500'
-                  }`} />
+                  <Wallet className="w-4 h-4" />
                 </div>
                 <span className="text-xs text-dark-400">Saldo</span>
               </div>
-              <p className={`text-lg font-bold ${
-                summary.balance >= 0 ? 'text-violet-400' : 'text-red-400'
+              <p className={`text-2xl font-bold ${
+                summary.balance >= 0 ? 'text-white' : 'text-red-400'
               }`}>
                 {formatCurrency(summary.balance)}
               </p>
@@ -187,7 +181,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                 {recentItems.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-3 bg-dark-800/50 rounded-xl"
+                    className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${

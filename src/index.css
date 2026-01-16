@@ -12,52 +12,97 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ========================================
+   DESIGN SYSTEM - Task App Style
+   ======================================== */
+
+/* Tema Claro */
+:root.light {
+  --bg-primary: #f0f0f3;
+  --bg-secondary: #f5f5f8;
+  --bg-card: #ffffff;
+  --bg-hover: #f8f8fb;
+  --bg-input: #f5f5f8;
+  --bg-elevated: #ffffff;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border-color: #e5e7eb;
+  --border-light: #f0f0f3;
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #a78bfa;
+  --accent-bg: #ede9fe;
+  --accent-button: #e0e7ff;
+  --accent-button-text: #1a1a2e;
+  --fab-bg: #1a1a2e;
+  --fab-text: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* Tema Escuro */
+:root.dark {
+  --bg-primary: #0d0d14;
+  --bg-secondary: #13131c;
+  --bg-card: #1a1a2e;
+  --bg-hover: #242438;
+  --bg-input: #1a1a2e;
+  --bg-elevated: #242438;
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #2d2d44;
+  --border-light: #1f1f32;
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #a78bfa;
+  --accent-bg: rgba(139, 92, 246, 0.15);
+  --accent-button: #3d3d5c;
+  --accent-button-text: #ffffff;
+  --fab-bg: #ffffff;
+  --fab-text: #1a1a2e;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background-color: #0f0f23;
-  color: #ececf1;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Custom scrollbar */
+/* ========================================
+   SCROLLBAR
+   ======================================== */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #202123;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #565869;
+  background: var(--text-muted);
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #8e8ea0;
-}
-
-/* Hide scrollbar for mobile */
 @media (max-width: 768px) {
   ::-webkit-scrollbar {
     display: none;
   }
-
   * {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-}
-
-/* Input autofill styles */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 30px #343541 inset !important;
-  -webkit-text-fill-color: #ececf1 !important;
 }
 
 /* Prevent zoom on iOS */
@@ -67,21 +112,437 @@ input:-webkit-autofill:focus {
   }
 }
 
-/* Loading animation */
+/* ========================================
+   ANIMATIONS
+   ======================================== */
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .animate-pulse-slow {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Transition classes */
-.transition-height {
-  transition: height 0.3s ease-in-out;
+/* ========================================
+   LIGHT MODE OVERRIDES
+   ======================================== */
+.light .bg-dark-950 { background-color: var(--bg-primary); }
+.light .bg-dark-900 { background-color: var(--bg-card); }
+.light .bg-dark-800 { background-color: var(--bg-input); }
+.light .bg-dark-700 { background-color: var(--bg-hover); }
+
+.light .text-white { color: var(--text-primary); }
+.light .text-dark-300 { color: var(--text-secondary); }
+.light .text-dark-400 { color: var(--text-muted); }
+.light .text-dark-500 { color: #d1d5db; }
+
+.light .border-dark-700 { border-color: var(--border-color); }
+.light .border-dark-800 { border-color: var(--border-light); }
+
+.light .hover\:bg-dark-700:hover { background-color: var(--bg-hover); }
+.light .hover\:bg-dark-800:hover { background-color: var(--bg-input); }
+
+/* ========================================
+   DARK MODE OVERRIDES
+   ======================================== */
+.dark .bg-dark-950 { background-color: var(--bg-primary); }
+.dark .bg-dark-900 { background-color: var(--bg-card); }
+.dark .bg-dark-800 { background-color: var(--bg-input); }
+.dark .bg-dark-700 { background-color: var(--bg-hover); }
+
+.dark .text-white { color: var(--text-primary); }
+.dark .text-dark-300 { color: var(--text-secondary); }
+.dark .text-dark-400 { color: var(--text-muted); }
+
+.dark .border-dark-700 { border-color: var(--border-color); }
+.dark .border-dark-800 { border-color: var(--border-light); }
+
+/* ========================================
+   CARDS
+   ======================================== */
+.light .bg-dark-900.rounded-2xl,
+.light .bg-dark-900.rounded-xl,
+.light [class*="bg-dark-900"][class*="rounded"] {
+  background-color: var(--bg-card);
+  box-shadow: var(--card-shadow);
+}
+
+.dark .bg-dark-900.rounded-2xl,
+.dark .bg-dark-900.rounded-xl,
+.dark [class*="bg-dark-900"][class*="rounded"] {
+  background-color: var(--bg-card);
+}
+
+/* ========================================
+   ACCENT COLORS
+   ======================================== */
+.light .text-violet-400 { color: var(--accent-primary); }
+.light .text-violet-500 { color: var(--accent-primary); }
+.light .bg-violet-600 {
+  background-color: var(--accent-button);
+  color: var(--accent-button-text);
+}
+.light .bg-violet-500 {
+  background-color: var(--accent-button);
+  color: var(--accent-button-text);
+}
+
+.dark .text-violet-400 { color: var(--accent-secondary); }
+.dark .text-violet-500 { color: var(--accent-primary); }
+.dark .bg-violet-600 {
+  background-color: var(--accent-button);
+  color: var(--accent-button-text);
+}
+
+/* ========================================
+   CATEGORY/TAG COLORS
+   ======================================== */
+
+/* Tag styles - Light */
+.light .tag-work { background-color: #fef3c7; color: #d97706; }
+.light .tag-personal { background-color: #f3f4f6; color: #6b7280; }
+.light .tag-workout { background-color: #fce7f3; color: #ec4899; }
+.light .tag-coding { background-color: #fee2e2; color: #ef4444; }
+.light .tag-reading { background-color: #dbeafe; color: #3b82f6; }
+
+/* Tag styles - Dark */
+.dark .tag-work { background-color: rgba(217, 119, 6, 0.2); color: #fbbf24; }
+.dark .tag-personal { background-color: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.dark .tag-workout { background-color: rgba(236, 72, 153, 0.2); color: #f472b6; }
+.dark .tag-coding { background-color: rgba(239, 68, 68, 0.2); color: #f87171; }
+.dark .tag-reading { background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+
+/* Icon circle colors */
+.icon-purple { background-color: #ede9fe; color: #8b5cf6; }
+.icon-orange { background-color: #ffedd5; color: #f97316; }
+.icon-pink { background-color: #fce7f3; color: #ec4899; }
+.icon-green { background-color: #d1fae5; color: #10b981; }
+.icon-blue { background-color: #dbeafe; color: #3b82f6; }
+.icon-red { background-color: #fee2e2; color: #ef4444; }
+.icon-yellow { background-color: #fef3c7; color: #f59e0b; }
+
+.dark .icon-purple { background-color: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.dark .icon-orange { background-color: rgba(249, 115, 22, 0.2); color: #fb923c; }
+.dark .icon-pink { background-color: rgba(236, 72, 153, 0.2); color: #f472b6; }
+.dark .icon-green { background-color: rgba(16, 185, 129, 0.2); color: #34d399; }
+.dark .icon-blue { background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.dark .icon-red { background-color: rgba(239, 68, 68, 0.2); color: #f87171; }
+.dark .icon-yellow { background-color: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+
+/* ========================================
+   STATUS COLORS
+   ======================================== */
+
+/* Emerald/Success */
+.light .bg-emerald-500\/10 { background-color: rgba(16, 185, 129, 0.1); }
+.light .bg-emerald-500\/15 { background-color: rgba(16, 185, 129, 0.12); }
+.light .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.15); }
+.light .text-emerald-500 { color: #10b981; }
+.light .text-emerald-400 { color: #10b981; }
+
+.dark .bg-emerald-500\/10 { background-color: rgba(16, 185, 129, 0.12); }
+.dark .bg-emerald-500\/15 { background-color: rgba(16, 185, 129, 0.15); }
+.dark .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.2); }
+.dark .text-emerald-500 { color: #34d399; }
+.dark .text-emerald-400 { color: #34d399; }
+
+/* Red/Danger */
+.light .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.1); }
+.light .bg-red-500\/15 { background-color: rgba(239, 68, 68, 0.12); }
+.light .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.15); }
+.light .text-red-500 { color: #ef4444; }
+.light .text-red-400 { color: #ef4444; }
+
+.dark .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .bg-red-500\/15 { background-color: rgba(239, 68, 68, 0.15); }
+.dark .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.2); }
+.dark .text-red-500 { color: #f87171; }
+.dark .text-red-400 { color: #f87171; }
+
+/* Orange/Warning */
+.light .bg-orange-500\/10 { background-color: rgba(249, 115, 22, 0.1); }
+.light .bg-orange-500\/15 { background-color: rgba(249, 115, 22, 0.12); }
+.light .bg-orange-500\/20 { background-color: rgba(249, 115, 22, 0.15); }
+.light .text-orange-500 { color: #f97316; }
+.light .text-orange-400 { color: #f97316; }
+
+.dark .bg-orange-500\/10 { background-color: rgba(249, 115, 22, 0.12); }
+.dark .bg-orange-500\/15 { background-color: rgba(249, 115, 22, 0.15); }
+.dark .bg-orange-500\/20 { background-color: rgba(249, 115, 22, 0.2); }
+.dark .text-orange-500 { color: #fb923c; }
+.dark .text-orange-400 { color: #fb923c; }
+
+/* Violet/Primary */
+.light .bg-violet-500\/10 { background-color: rgba(139, 92, 246, 0.1); }
+.light .bg-violet-500\/15 { background-color: rgba(139, 92, 246, 0.12); }
+.light .bg-violet-500\/20 { background-color: rgba(139, 92, 246, 0.15); }
+
+.dark .bg-violet-500\/10 { background-color: rgba(139, 92, 246, 0.12); }
+.dark .bg-violet-500\/15 { background-color: rgba(139, 92, 246, 0.15); }
+.dark .bg-violet-500\/20 { background-color: rgba(139, 92, 246, 0.2); }
+
+/* Amber/Alert */
+.light .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1); }
+.light .text-amber-400 { color: #d97706; }
+.light .text-amber-200 { color: #92400e; }
+
+.dark .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.12); }
+.dark .text-amber-400 { color: #fbbf24; }
+
+/* ========================================
+   INPUTS
+   ======================================== */
+.light input[type="date"] { color-scheme: light; }
+.dark input[type="date"] { color-scheme: dark; }
+
+/* Select styling - remove default arrow since we use custom icon */
+select {
+  background-image: none !important;
+}
+
+/* Select options styling */
+.light select {
+  background-color: #f5f5f8;
+  color: #1a1a2e;
+}
+
+.light select option {
+  background-color: #ffffff;
+  color: #1a1a2e;
+}
+
+.dark select option {
+  background-color: #1a1a2e;
+  color: #ffffff;
+}
+
+/* Input autofill */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-input) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+}
+
+.light input:-webkit-autofill,
+.light input:-webkit-autofill:hover,
+.light input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-input) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+}
+
+/* ========================================
+   NAVIGATION
+   ======================================== */
+.light nav[class*="bg-dark"] {
+  background-color: var(--bg-primary);
+  border-top: none;
+}
+
+.dark nav[class*="bg-dark"] {
+  background-color: var(--bg-primary);
+  border-top: none;
+}
+
+.light header[class*="bg-dark"] {
+  background-color: var(--bg-primary);
+  border-bottom: none;
+}
+
+.dark header[class*="bg-dark"] {
+  background-color: var(--bg-primary);
+  border-bottom: none;
+}
+
+/* ========================================
+   DROPDOWN/MENU
+   ======================================== */
+.light [class*="absolute"][class*="bg-dark-800"],
+.light [class*="absolute"][class*="bg-dark-900"] {
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+}
+
+.dark [class*="absolute"][class*="bg-dark-800"],
+.dark [class*="absolute"][class*="bg-dark-900"] {
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+}
+
+/* ========================================
+   DIVIDERS
+   ======================================== */
+.light .divide-dark-700 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-color); }
+.light .divide-dark-700\/50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(229, 231, 235, 0.5); }
+
+.dark .divide-dark-700 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border-color); }
+.dark .divide-dark-700\/50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(45, 45, 68, 0.5); }
+
+/* ========================================
+   PLACEHOLDER
+   ======================================== */
+.light .placeholder-dark-500::placeholder { color: var(--text-muted); }
+.dark .placeholder-dark-500::placeholder { color: var(--text-muted); }
+
+/* ========================================
+   FAB BUTTON
+   ======================================== */
+.fab-button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.light .fab-button {
+  background-color: var(--fab-bg);
+  color: var(--fab-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+.dark .fab-button {
+  background-color: var(--fab-bg);
+  color: var(--fab-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.fab-button:hover {
+  transform: scale(1.05);
+}
+
+.fab-button:active {
+  transform: scale(0.95);
+}
+
+/* ========================================
+   PRIMARY BUTTON (Lavender style)
+   ======================================== */
+.btn-primary {
+  background-color: var(--accent-button);
+  color: var(--accent-button-text);
+  font-weight: 600;
+  padding: 14px 24px;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* ========================================
+   SELECTED/ACTIVE STATE
+   ======================================== */
+.item-selected {
+  border: 2px solid var(--accent-primary);
+  background-color: var(--accent-bg);
+}
+
+/* ========================================
+   MISC
+   ======================================== */
+.light .hover\:bg-dark-700\/50:hover { background-color: rgba(248, 248, 251, 0.5); }
+.dark .hover\:bg-dark-700\/50:hover { background-color: rgba(36, 36, 56, 0.5); }
+
+/* List item backgrounds */
+.light .bg-dark-800\/50 { background-color: #f5f5f8; }
+.dark .bg-dark-800\/50 { background-color: rgba(26, 26, 46, 0.5); }
+
+.light .bg-dark-800\/30 { background-color: #f8f8fb; }
+.dark .bg-dark-800\/30 { background-color: rgba(26, 26, 46, 0.3); }
+
+.light .border-dark-700\/30 { border-color: rgba(229, 231, 235, 0.5); }
+.dark .border-dark-700\/30 { border-color: rgba(45, 45, 68, 0.3); }
+
+/* Safe area */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ========================================
+   MODAL LIGHT MODE
+   ======================================== */
+.light [class*="fixed"][class*="z-50"] > [class*="bg-dark-900"] {
+  background-color: #ffffff;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+/* ========================================
+   TEXT COLORS - LIGHT MODE OVERRIDES
+   ======================================== */
+.light .text-dark-500 { color: #9ca3af; }
+
+/* Gray backgrounds for items - light mode */
+.light [class*="bg-dark-800"][class*="rounded"] {
+  background-color: #f5f5f8;
+}
+
+/* Borders in light mode */
+.light .border-dark-600 { border-color: #e5e7eb; }
+
+/* Hover states - light mode */
+.light .hover\:text-white:hover { color: var(--text-primary); }
+
+/* Active filter button */
+.light .bg-violet-600.text-white {
+  background-color: #8b5cf6;
+  color: #ffffff;
+}
+
+/* ========================================
+   CARD COLORS (preserve colors in light mode)
+   ======================================== */
+/* Card color classes should keep their colors in both modes */
+.bg-red-500, .bg-red-600 { color: #ffffff !important; }
+.bg-emerald-500, .bg-emerald-600 { color: #ffffff !important; }
+.bg-blue-500, .bg-blue-600 { color: #ffffff !important; }
+.bg-purple-500, .bg-purple-600 { color: #ffffff !important; }
+.bg-orange-500, .bg-orange-600 { color: #ffffff !important; }
+.bg-slate-600, .bg-slate-700 { color: #ffffff !important; }
+.bg-indigo-500, .bg-indigo-600 { color: #ffffff !important; }
+.bg-rose-500, .bg-rose-600 { color: #ffffff !important; }
+.bg-teal-500, .bg-teal-600 { color: #ffffff !important; }
+.bg-amber-500, .bg-amber-600 { color: #ffffff !important; }
+
+/* Text inside colored cards stays white */
+[class*="bg-red-"] .text-white,
+[class*="bg-emerald-"] .text-white,
+[class*="bg-blue-"] .text-white,
+[class*="bg-purple-"] .text-white,
+[class*="bg-orange-"] .text-white,
+[class*="bg-slate-"] .text-white,
+[class*="bg-indigo-"] .text-white,
+[class*="bg-rose-"] .text-white,
+[class*="bg-teal-"] .text-white,
+[class*="bg-amber-"] .text-white {
+  color: #ffffff !important;
+}
+
+/* White opacity text inside colored cards */
+[class*="bg-red-"] .text-white\/80,
+[class*="bg-emerald-"] .text-white\/80,
+[class*="bg-blue-"] .text-white\/80,
+[class*="bg-purple-"] .text-white\/80,
+[class*="bg-orange-"] .text-white\/80,
+[class*="bg-slate-"] .text-white\/80 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+[class*="bg-red-"] .text-white\/60,
+[class*="bg-emerald-"] .text-white\/60,
+[class*="bg-blue-"] .text-white\/60,
+[class*="bg-purple-"] .text-white\/60,
+[class*="bg-orange-"] .text-white\/60,
+[class*="bg-slate-"] .text-white\/60 {
+  color: rgba(255, 255, 255, 0.6) !important;
 }

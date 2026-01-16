@@ -9,15 +9,23 @@ import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Cards from './pages/Cards'
 import Categories from './pages/Categories'
+import Tags from './pages/Tags'
 import Documents from './pages/Documents'
 import { getCurrentMonthYear } from './utils/helpers'
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthYear())
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const handleMonthChange = (month, year) => {
     setSelectedMonth({ month, year })
+  }
+
+  const handleAddNew = () => {
+    // Navega para transactions e abre o modal
+    setActiveTab('transactions')
+    setShowAddModal(true)
   }
 
   const renderContent = () => {
@@ -36,6 +44,8 @@ function AppContent() {
             month={selectedMonth.month}
             year={selectedMonth.year}
             onMonthChange={handleMonthChange}
+            showAddModal={showAddModal}
+            onCloseAddModal={() => setShowAddModal(false)}
           />
         )
       case 'cards':
@@ -48,6 +58,8 @@ function AppContent() {
         )
       case 'categories':
         return <Categories />
+      case 'tags':
+        return <Tags />
       case 'documents':
         return (
           <Documents
@@ -61,7 +73,7 @@ function AppContent() {
   }
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+    <Layout activeTab={activeTab} onTabChange={setActiveTab} onAddNew={handleAddNew}>
       {renderContent()}
     </Layout>
   )

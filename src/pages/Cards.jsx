@@ -799,7 +799,7 @@ export default function Cards({ month, year, onMonthChange }) {
                 return (
                   <div
                     key={expense.id}
-                    className="flex items-center justify-between p-3 bg-dark-800 rounded-xl"
+                    className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -867,7 +867,7 @@ export default function Cards({ month, year, onMonthChange }) {
       >
         <form onSubmit={handleSaveExpense} className="space-y-4">
           {/* Type Toggle */}
-          <div className="flex gap-2 p-1 bg-dark-800 rounded-xl">
+          <div className="flex gap-2 p-1.5 bg-dark-800 rounded-2xl">
             <button
               type="button"
               onClick={() => {
@@ -878,10 +878,10 @@ export default function Cards({ month, year, onMonthChange }) {
                   category: newCats[0]?.id || ''
                 }))
               }}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                 expenseForm.type === TRANSACTION_TYPES.EXPENSE
-                  ? 'bg-red-600 text-white'
-                  : 'text-dark-400 hover:text-white'
+                  ? 'bg-red-500/20 text-red-400'
+                  : 'text-dark-400 hover:text-white hover:bg-dark-700'
               }`}
             >
               Despesa
@@ -896,10 +896,10 @@ export default function Cards({ month, year, onMonthChange }) {
                   category: newCats[0]?.id || ''
                 }))
               }}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                 expenseForm.type === TRANSACTION_TYPES.INCOME
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-dark-400 hover:text-white'
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'text-dark-400 hover:text-white hover:bg-dark-700'
               }`}
             >
               Receita

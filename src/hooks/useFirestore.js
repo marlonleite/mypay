@@ -10,7 +10,8 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
@@ -719,20 +720,47 @@ export function useAccounts() {
   }
 }
 
-// Hook para buscar todas as tags únicas
+// Hook para buscar todas as tags únicas (combina tags salvas + tags das transações)
 export function useTags() {
   const { user } = useAuth()
-  const [tags, setTags] = useState([])
+  const [savedTags, setSavedTags] = useState([])
+  const [transactionTags, setTransactionTags] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // Buscar tags salvas na coleção tags
   useEffect(() => {
     if (!user) {
-      setTags([])
+      setSavedTags([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
+    const q = query(
+      collection(db, `users/${user.uid}/tags`),
+      orderBy('name', 'asc')
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const tags = snapshot.docs.map(doc => doc.data().name)
+        setSavedTags(tags)
+        setLoading(false)
+      },
+      () => {
+        setLoading(false)
+      }
+    )
+
+    return () => unsubscribe()
+  }, [user])
+
+  // Buscar tags das transações existentes
+  useEffect(() => {
+    if (!user) {
+      setTransactionTags([])
+      return
+    }
 
     const q = query(
       collection(db, `users/${user.uid}/transactions`),
@@ -749,18 +777,86 @@ export function useTags() {
             data.tags.forEach(tag => allTags.add(tag))
           }
         })
-        setTags(Array.from(allTags).sort())
-        setLoading(false)
-      },
-      () => {
-        setLoading(false)
+        setTransactionTags(Array.from(allTags))
       }
     )
 
     return () => unsubscribe()
   }, [user])
 
-  return { tags, loading }
+  // Combinar e ordenar tags únicas
+  const tags = [...new Set([...savedTags, ...transactionTags])].sort()
+
+  // Adicionar nova tag
+  const addTag = async (name) => {
+    if (!user || !name.trim()) return
+
+    // Verificar se já existe
+    const existingQuery = query(
+      collection(db, `users/${user.uid}/tags`),
+      where('name', '==', name.trim())
+    )
+    const existingDocs = await getDocs(existingQuery)
+    if (!existingDocs.empty) {
+      throw new Error('Tag já existe')
+    }
+
+    await addDoc(collection(db, `users/${user.uid}/tags`), {
+      name: name.trim(),
+      createdAt: new Date()
+    })
+  }
+
+  // Atualizar tag (renomear)
+  const updateTag = async (oldName, newName) => {
+    if (!user || !oldName || !newName.trim()) return
+
+    // Encontrar o documento da tag
+    const q = query(
+      collection(db, `users/${user.uid}/tags`),
+      where('name', '==', oldName)
+    )
+    const snapshot = await getDocs(q)
+
+    if (!snapshot.empty) {
+      const docRef = snapshot.docs[0].ref
+      await updateDoc(docRef, { name: newName.trim() })
+    }
+
+    // Atualizar também nas transações que usam essa tag
+    const transactionsQuery = query(
+      collection(db, `users/${user.uid}/transactions`)
+    )
+    const transactionsSnapshot = await getDocs(transactionsQuery)
+
+    const batch = writeBatch(db)
+    transactionsSnapshot.docs.forEach(doc => {
+      const data = doc.data()
+      if (data.tags && data.tags.includes(oldName)) {
+        const newTags = data.tags.map(t => t === oldName ? newName.trim() : t)
+        batch.update(doc.ref, { tags: newTags })
+      }
+    })
+    await batch.commit()
+  }
+
+  // Deletar tag
+  const deleteTag = async (name) => {
+    if (!user || !name) return
+
+    // Encontrar e deletar o documento da tag
+    const q = query(
+      collection(db, `users/${user.uid}/tags`),
+      where('name', '==', name)
+    )
+    const snapshot = await getDocs(q)
+
+    if (!snapshot.empty) {
+      await deleteDoc(snapshot.docs[0].ref)
+    }
+  }
+
+  return { tags, loading, addTag, updateTag, deleteTag }
 }
 
 // Hook para pagamentos de fatura de cartão

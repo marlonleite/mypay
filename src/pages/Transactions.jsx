@@ -37,7 +37,7 @@ import { formatCurrency, formatDate, formatDateForInput, groupByDate } from '../
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
-export default function Transactions({ month, year, onMonthChange }) {
+export default function Transactions({ month, year, onMonthChange, showAddModal, onCloseAddModal }) {
   const {
     transactions,
     loading,
@@ -126,6 +126,14 @@ export default function Transactions({ month, year, onMonthChange }) {
       initializeDefaultAccounts()
     }
   }, [needsAccountInit])
+
+  // Abrir modal quando vem do FAB
+  useEffect(() => {
+    if (showAddModal) {
+      openNewModal(TRANSACTION_TYPES.EXPENSE)
+      onCloseAddModal?.()
+    }
+  }, [showAddModal])
 
   // Contas ativas
   const activeAccounts = useMemo(() => getActiveAccounts(), [accounts])
@@ -792,26 +800,6 @@ export default function Transactions({ month, year, onMonthChange }) {
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex gap-3">
-        <Button
-          onClick={() => openNewModal(TRANSACTION_TYPES.INCOME)}
-          variant="success"
-          icon={ArrowUpRight}
-          className="flex-1"
-        >
-          Receita
-        </Button>
-        <Button
-          onClick={() => openNewModal(TRANSACTION_TYPES.EXPENSE)}
-          variant="danger"
-          icon={ArrowDownRight}
-          className="flex-1"
-        >
-          Despesa
-        </Button>
-      </div>
-
       {/* Search and Filter Toggle */}
       <div className="flex gap-2">
         <div className="flex-1">
@@ -825,10 +813,10 @@ export default function Transactions({ month, year, onMonthChange }) {
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className={`p-3 rounded-xl transition-colors ${
+          className={`p-3.5 rounded-2xl transition-all active:scale-95 ${
             showFilters || hasActiveFilters
               ? 'bg-violet-600 text-white'
-              : 'bg-dark-800 text-dark-400 hover:text-white'
+              : 'bg-dark-900 text-dark-400 hover:text-white'
           }`}
         >
           <Filter className="w-5 h-5" />
@@ -837,7 +825,7 @@ export default function Transactions({ month, year, onMonthChange }) {
 
       {/* Filter Bar */}
       {showFilters && (
-        <div className="flex flex-wrap gap-2 p-3 bg-dark-800 rounded-xl">
+        <div className="flex flex-wrap gap-2 p-3 bg-dark-900 rounded-2xl">
           {/* Limpar filtros */}
           {hasActiveFilters && (
             <button
@@ -1227,14 +1215,14 @@ export default function Transactions({ month, year, onMonthChange }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Type Toggle */}
           {!editingTransaction && (
-            <div className="flex gap-2 p-1 bg-dark-800 rounded-xl">
+            <div className="flex gap-2 p-1.5 bg-dark-800 rounded-2xl">
               <button
                 type="button"
                 onClick={() => setTransactionType(TRANSACTION_TYPES.INCOME)}
-                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                   transactionType === TRANSACTION_TYPES.INCOME
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-dark-400 hover:text-white'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'text-dark-400 hover:text-white hover:bg-dark-700'
                 }`}
               >
                 Receita
@@ -1242,10 +1230,10 @@ export default function Transactions({ month, year, onMonthChange }) {
               <button
                 type="button"
                 onClick={() => setTransactionType(TRANSACTION_TYPES.EXPENSE)}
-                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                   transactionType === TRANSACTION_TYPES.EXPENSE
-                    ? 'bg-red-600 text-white'
-                    : 'text-dark-400 hover:text-white'
+                    ? 'bg-red-500/20 text-red-400'
+                    : 'text-dark-400 hover:text-white hover:bg-dark-700'
                 }`}
               >
                 Despesa
@@ -1691,14 +1679,14 @@ export default function Transactions({ month, year, onMonthChange }) {
         title="Nova Categoria"
       >
         <div className="space-y-4">
-          <div className="flex gap-2 p-1 bg-dark-800 rounded-xl">
+          <div className="flex gap-2 p-1.5 bg-dark-800 rounded-2xl">
             <button
               type="button"
               onClick={() => setNewCategoryType(TRANSACTION_TYPES.INCOME)}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                 newCategoryType === TRANSACTION_TYPES.INCOME
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-dark-400 hover:text-white'
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'text-dark-400 hover:text-white hover:bg-dark-700'
               }`}
             >
               Receita
@@ -1706,10 +1694,10 @@ export default function Transactions({ month, year, onMonthChange }) {
             <button
               type="button"
               onClick={() => setNewCategoryType(TRANSACTION_TYPES.EXPENSE)}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
                 newCategoryType === TRANSACTION_TYPES.EXPENSE
-                  ? 'bg-red-600 text-white'
-                  : 'text-dark-400 hover:text-white'
+                  ? 'bg-red-500/20 text-red-400'
+                  : 'text-dark-400 hover:text-white hover:bg-dark-700'
               }`}
             >
               Despesa
