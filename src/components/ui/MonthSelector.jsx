@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Calendar, X } from 'lucide-react'
 import { MONTHS } from '../../utils/constants'
 
 export default function MonthSelector({ month, year, onChange, dateRange, onDateRangeChange }) {
@@ -135,7 +135,7 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
         <ChevronLeft className="w-5 h-5" />
       </button>
 
-      <div className="relative" ref={dropdownRef}>
+      <div className="relative flex items-center gap-1" ref={dropdownRef}>
         <button
           onClick={() => {
             setShowDropdown(!showDropdown)
@@ -147,6 +147,21 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
           {getDisplayText()}
           <ChevronDown className={`w-4 h-4 text-dark-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
         </button>
+
+        {/* Botão para limpar filtro de período */}
+        {isCustomPeriod && (
+          <button
+            onClick={() => {
+              onDateRangeChange?.(null)
+              setCustomStart('')
+              setCustomEnd('')
+            }}
+            className="p-1 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+            title="Limpar filtro"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Dropdown de opções rápidas */}
         {showDropdown && !showCustomPeriod && (
