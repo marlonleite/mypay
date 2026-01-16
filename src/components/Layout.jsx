@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal, Download, Target, Wallet, Settings } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { ThemeToggleCompact } from './ui/ThemeToggle'
 
@@ -12,9 +12,13 @@ const mainTabs = [
 
 // Itens do menu "Mais"
 const moreMenuItems = [
+  { id: 'budgets', label: 'Orçamentos', icon: Target },
+  { id: 'accounts', label: 'Contas', icon: Wallet },
   { id: 'categories', label: 'Categorias', icon: Tag },
   { id: 'tags', label: 'Tags', icon: Hash },
-  { id: 'documents', label: 'Importar', icon: Scan }
+  { id: 'documents', label: 'Importar IA', icon: Scan },
+  { id: 'migration', label: 'Migrar Organizze', icon: Download },
+  { id: 'settings', label: 'Configurações', icon: Settings }
 ]
 
 export default function Layout({ children, activeTab, onTabChange, onAddNew }) {

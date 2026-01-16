@@ -3,6 +3,7 @@ export const INCOME_CATEGORIES = [
   { id: 'salary', name: 'Salário', icon: 'Briefcase' },
   { id: 'freelance', name: 'Freelance', icon: 'Laptop' },
   { id: 'investments', name: 'Investimentos', icon: 'TrendingUp' },
+  { id: 'transfer_in', name: 'Transferência Recebida', icon: 'ArrowDownLeft' },
   { id: 'other', name: 'Outros', icon: 'MoreHorizontal' }
 ]
 
@@ -15,6 +16,7 @@ export const EXPENSE_CATEGORIES = [
   { id: 'leisure', name: 'Lazer', icon: 'Gamepad2' },
   { id: 'education', name: 'Educação', icon: 'GraduationCap' },
   { id: 'card_payment', name: 'Pagamento de Cartão', icon: 'CreditCard' },
+  { id: 'transfer_out', name: 'Transferência Enviada', icon: 'ArrowUpRight' },
   { id: 'other', name: 'Outros', icon: 'MoreHorizontal' }
 ]
 

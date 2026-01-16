@@ -11,6 +11,10 @@ import Cards from './pages/Cards'
 import Categories from './pages/Categories'
 import Tags from './pages/Tags'
 import Documents from './pages/Documents'
+import OrganizzeMigration from './pages/OrganizzeMigration'
+import Budgets from './pages/Budgets'
+import Accounts from './pages/Accounts'
+import Settings from './pages/Settings'
 import { getCurrentMonthYear } from './utils/helpers'
 
 function AppContent() {
@@ -67,6 +71,20 @@ function AppContent() {
             year={selectedMonth.year}
           />
         )
+      case 'migration':
+        return <OrganizzeMigration />
+      case 'budgets':
+        return (
+          <Budgets
+            month={selectedMonth.month}
+            year={selectedMonth.year}
+            onMonthChange={handleMonthChange}
+          />
+        )
+      case 'accounts':
+        return <Accounts />
+      case 'settings':
+        return <Settings />
       default:
         return <Dashboard month={selectedMonth.month} year={selectedMonth.year} onMonthChange={handleMonthChange} />
     }

@@ -54,7 +54,16 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const { expenses: allExpenses, loading: loadingExpenses } = useAllCardExpenses()
   const { accounts, loading: loadingAccounts } = useAccounts()
-  const { isBillPaid, getBillPayment, addBillPayment, deleteBillPayment } = useBillPayments(month, year)
+  const {
+    isBillPaid,
+    isBillFullyPaid,
+    getTotalPaid,
+    getBillPayment,
+    getBillPayments,
+    getPreviousBalance,
+    addBillPayment,
+    deleteBillPayment
+  } = useBillPayments(month, year)
   const { tags: existingTags } = useTags()
   const {
     categories: allCategories,
@@ -129,7 +138,9 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const [paymentForm, setPaymentForm] = useState({
     accountId: '',
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    amount: '', // Para pagamento parcial
+    isPartial: false
   })
 
   // Tags filtradas para autocomplete
@@ -248,9 +259,15 @@ export default function Cards({ month, year, onMonthChange }) {
   }
 
   const openPayBillModal = () => {
+    const billAmount = cardTotals[selectedCard?.id] || 0
+    const previousBalance = getPreviousBalance(selectedCard?.id)
+    const totalDue = billAmount + previousBalance
+
     setPaymentForm({
       accountId: activeAccounts[0]?.id || '',
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      amount: totalDue.toFixed(2),
+      isPartial: false
     })
     setModalType('pay_bill')
   }
@@ -425,18 +442,24 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const handlePayBill = async (e) => {
     e.preventDefault()
-    if (!selectedCard || !paymentForm.accountId) return
+    if (!selectedCard || !paymentForm.accountId || !paymentForm.amount) return
 
     const billAmount = cardTotals[selectedCard.id] || 0
-    if (billAmount <= 0) return
+    const previousBalance = getPreviousBalance(selectedCard.id)
+    const totalDue = billAmount + previousBalance
+    const paymentAmount = parseFloat(paymentForm.amount)
+
+    if (paymentAmount <= 0) return
 
     try {
       setSaving(true)
 
+      const isPartialPayment = paymentAmount < totalDue
+
       // 1. Criar transação de pagamento
       const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), {
-        description: `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}`,
-        amount: billAmount,
+        description: `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}${isPartialPayment ? ' (parcial)' : ''}`,
+        amount: paymentAmount,
         category: 'card_payment',
         accountId: paymentForm.accountId,
         date: new Date(paymentForm.date + 'T12:00:00'),
@@ -445,6 +468,7 @@ export default function Cards({ month, year, onMonthChange }) {
         billMonth: month,
         billYear: year,
         paid: true,
+        isPartialPayment: isPartialPayment,
         createdAt: serverTimestamp()
       })
 
@@ -453,7 +477,8 @@ export default function Cards({ month, year, onMonthChange }) {
         cardId: selectedCard.id,
         month: month,
         year: year,
-        amount: billAmount,
+        amount: paymentAmount,
+        totalBill: totalDue,
         accountId: paymentForm.accountId,
         transactionId: transactionRef.id,
         paidAt: new Date(paymentForm.date + 'T12:00:00')
@@ -1245,15 +1270,32 @@ export default function Cards({ month, year, onMonthChange }) {
       >
         <form onSubmit={handlePayBill} className="space-y-4">
           {/* Bill Summary */}
-          <div className="p-4 bg-dark-800 rounded-xl">
+          <div className="p-4 bg-dark-800 rounded-xl space-y-2">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-dark-400">Fatura {selectedCard?.name}</p>
-                <p className="text-xs text-dark-500">{MONTHS[month]} de {year}</p>
+              <p className="text-sm text-dark-400">Fatura {selectedCard?.name}</p>
+              <p className="text-xs text-dark-500">{MONTHS[month]} de {year}</p>
+            </div>
+
+            {/* Detalhamento */}
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-dark-400">Gastos do mês</span>
+                <span className="text-white">{formatCurrency(cardTotals[selectedCard?.id] || 0)}</span>
               </div>
-              <p className="text-xl font-bold text-orange-400">
-                {formatCurrency(cardTotals[selectedCard?.id] || 0)}
-              </p>
+
+              {selectedCard && getPreviousBalance(selectedCard.id) > 0 && (
+                <div className="flex justify-between text-amber-400">
+                  <span>Saldo anterior</span>
+                  <span>{formatCurrency(getPreviousBalance(selectedCard.id))}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between pt-2 border-t border-dark-700 font-bold">
+                <span className="text-white">Total a pagar</span>
+                <span className="text-orange-400">
+                  {formatCurrency((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0))}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1271,6 +1313,29 @@ export default function Cards({ month, year, onMonthChange }) {
                 onChange={(e) => setPaymentForm({ ...paymentForm, accountId: e.target.value })}
                 options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
               />
+
+              <Input
+                label="Valor do Pagamento"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0,00"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                required
+              />
+
+              {paymentForm.amount && parseFloat(paymentForm.amount) < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                  <p className="text-xs text-amber-400">
+                    Pagamento parcial. O saldo restante de{' '}
+                    <span className="font-bold">
+                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - parseFloat(paymentForm.amount || 0))}
+                    </span>
+                    {' '}será transferido para a próxima fatura.
+                  </p>
+                </div>
+              )}
 
               <Input
                 label="Data do Pagamento"

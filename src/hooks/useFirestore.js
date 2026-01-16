@@ -859,16 +859,289 @@ export function useTags() {
   return { tags, loading, addTag, updateTag, deleteTag }
 }
 
+// Hook para transferências entre contas
+export function useTransfers(month, year) {
+  const { user } = useAuth()
+  const [transfers, setTransfers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user) {
+      setTransfers([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+
+    const startDate = new Date(year, month, 1)
+    const endDate = new Date(year, month + 1, 0, 23, 59, 59)
+
+    const q = query(
+      collection(db, `users/${user.uid}/transfers`),
+      where('date', '>=', startDate),
+      where('date', '<=', endDate),
+      orderBy('date', 'desc')
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate()
+        }))
+        setTransfers(data)
+        setLoading(false)
+      },
+      () => {
+        setLoading(false)
+      }
+    )
+
+    return () => unsubscribe()
+  }, [user, month, year])
+
+  // Criar transferência (cria 2 transações vinculadas + registro de transferência)
+  const addTransfer = async (data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    const parseLocalDate = (dateStr) => {
+      if (dateStr instanceof Date) return dateStr
+      const [year, month, day] = dateStr.split('-').map(Number)
+      return new Date(year, month - 1, day, 12, 0, 0)
+    }
+
+    const transferDate = parseLocalDate(data.date)
+
+    // 1. Criar transação de saída (despesa na conta origem)
+    const outTransaction = await addDoc(collection(db, `users/${user.uid}/transactions`), {
+      description: `Transferência para ${data.toAccountName}`,
+      amount: data.amount,
+      type: 'expense',
+      category: 'transfer_out',
+      accountId: data.fromAccountId,
+      date: transferDate,
+      isTransfer: true,
+      createdAt: serverTimestamp()
+    })
+
+    // 2. Criar transação de entrada (receita na conta destino)
+    const inTransaction = await addDoc(collection(db, `users/${user.uid}/transactions`), {
+      description: `Transferência de ${data.fromAccountName}`,
+      amount: data.amount,
+      type: 'income',
+      category: 'transfer_in',
+      accountId: data.toAccountId,
+      date: transferDate,
+      isTransfer: true,
+      createdAt: serverTimestamp()
+    })
+
+    // 3. Vincular as transações
+    await updateDoc(doc(db, `users/${user.uid}/transactions`, outTransaction.id), {
+      oppositeTransactionId: inTransaction.id
+    })
+    await updateDoc(doc(db, `users/${user.uid}/transactions`, inTransaction.id), {
+      oppositeTransactionId: outTransaction.id
+    })
+
+    // 4. Criar registro de transferência
+    const transfer = await addDoc(collection(db, `users/${user.uid}/transfers`), {
+      fromAccountId: data.fromAccountId,
+      fromAccountName: data.fromAccountName,
+      toAccountId: data.toAccountId,
+      toAccountName: data.toAccountName,
+      amount: data.amount,
+      date: transferDate,
+      description: data.description || null,
+      outTransactionId: outTransaction.id,
+      inTransactionId: inTransaction.id,
+      createdAt: serverTimestamp()
+    })
+
+    return transfer
+  }
+
+  // Excluir transferência (exclui as 2 transações vinculadas)
+  const deleteTransfer = async (transfer) => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    // Excluir transações vinculadas
+    if (transfer.outTransactionId) {
+      await deleteDoc(doc(db, `users/${user.uid}/transactions`, transfer.outTransactionId))
+    }
+    if (transfer.inTransactionId) {
+      await deleteDoc(doc(db, `users/${user.uid}/transactions`, transfer.inTransactionId))
+    }
+
+    // Excluir registro de transferência
+    await deleteDoc(doc(db, `users/${user.uid}/transfers`, transfer.id))
+  }
+
+  return {
+    transfers,
+    loading,
+    addTransfer,
+    deleteTransfer
+  }
+}
+
+// Hook para orçamentos/metas por categoria
+export function useBudgets(month, year) {
+  const { user } = useAuth()
+  const [budgets, setBudgets] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!user) {
+      setBudgets([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+
+    // Buscar orçamentos do mês/ano específico
+    const q = query(
+      collection(db, `users/${user.uid}/budgets`),
+      where('month', '==', month),
+      where('year', '==', year)
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setBudgets(data)
+        setLoading(false)
+      },
+      (err) => {
+        console.error('Error fetching budgets:', err)
+        setError('Erro ao carregar orçamentos')
+        setLoading(false)
+      }
+    )
+
+    return () => unsubscribe()
+  }, [user, month, year])
+
+  // Adicionar orçamento
+  const addBudget = async (data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    // Verificar se já existe orçamento para essa categoria no mês
+    const existing = budgets.find(b => b.categoryId === data.categoryId)
+    if (existing) {
+      throw new Error('Já existe um orçamento para esta categoria neste mês')
+    }
+
+    return await addDoc(collection(db, `users/${user.uid}/budgets`), {
+      categoryId: data.categoryId,
+      amount: data.amount,
+      month: month,
+      year: year,
+      createdAt: serverTimestamp()
+    })
+  }
+
+  // Atualizar orçamento
+  const updateBudget = async (id, data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    const docRef = doc(db, `users/${user.uid}/budgets`, id)
+    return await updateDoc(docRef, {
+      amount: data.amount,
+      updatedAt: serverTimestamp()
+    })
+  }
+
+  // Excluir orçamento
+  const deleteBudget = async (id) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const docRef = doc(db, `users/${user.uid}/budgets`, id)
+    return await deleteDoc(docRef)
+  }
+
+  // Copiar orçamentos do mês anterior
+  const copyFromPreviousMonth = async () => {
+    if (!user) throw new Error('Usuário não autenticado')
+
+    // Calcular mês anterior
+    let prevMonth = month - 1
+    let prevYear = year
+    if (prevMonth < 0) {
+      prevMonth = 11
+      prevYear = year - 1
+    }
+
+    // Buscar orçamentos do mês anterior
+    const q = query(
+      collection(db, `users/${user.uid}/budgets`),
+      where('month', '==', prevMonth),
+      where('year', '==', prevYear)
+    )
+    const snapshot = await getDocs(q)
+
+    if (snapshot.empty) {
+      throw new Error('Nenhum orçamento encontrado no mês anterior')
+    }
+
+    // Criar cópias para o mês atual
+    const promises = snapshot.docs.map(docSnap => {
+      const data = docSnap.data()
+      // Verificar se já existe
+      const exists = budgets.find(b => b.categoryId === data.categoryId)
+      if (exists) return Promise.resolve()
+
+      return addDoc(collection(db, `users/${user.uid}/budgets`), {
+        categoryId: data.categoryId,
+        amount: data.amount,
+        month: month,
+        year: year,
+        createdAt: serverTimestamp()
+      })
+    })
+
+    await Promise.all(promises)
+    return snapshot.docs.length
+  }
+
+  // Obter orçamento de uma categoria específica
+  const getBudget = (categoryId) => {
+    return budgets.find(b => b.categoryId === categoryId)
+  }
+
+  return {
+    budgets,
+    loading,
+    error,
+    addBudget,
+    updateBudget,
+    deleteBudget,
+    copyFromPreviousMonth,
+    getBudget
+  }
+}
+
 // Hook para pagamentos de fatura de cartão
 export function useBillPayments(month, year) {
   const { user } = useAuth()
   const [payments, setPayments] = useState([])
+  const [allPayments, setAllPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     if (!user) {
       setPayments([])
+      setAllPayments([])
       setLoading(false)
       return
     }
@@ -901,12 +1174,46 @@ export function useBillPayments(month, year) {
       }
     )
 
-    return () => unsubscribe()
+    // Buscar todos os pagamentos para calcular saldo anterior
+    const allQ = query(
+      collection(db, `users/${user.uid}/billPayments`),
+      orderBy('paidAt', 'desc')
+    )
+
+    const unsubscribeAll = onSnapshot(
+      allQ,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          paidAt: doc.data().paidAt?.toDate()
+        }))
+        setAllPayments(data)
+      }
+    )
+
+    return () => {
+      unsubscribe()
+      unsubscribeAll()
+    }
   }, [user, month, year])
 
-  // Verificar se uma fatura específica foi paga
+  // Verificar se uma fatura específica foi paga (total ou parcialmente)
   const isBillPaid = (cardId) => {
     return payments.some(p => p.cardId === cardId)
+  }
+
+  // Verificar se foi pago integralmente
+  const isBillFullyPaid = (cardId, totalAmount) => {
+    const cardPayments = payments.filter(p => p.cardId === cardId)
+    const totalPaid = cardPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
+    return totalPaid >= totalAmount
+  }
+
+  // Obter total pago de uma fatura
+  const getTotalPaid = (cardId) => {
+    const cardPayments = payments.filter(p => p.cardId === cardId)
+    return cardPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
   }
 
   // Obter detalhes do pagamento de uma fatura
@@ -914,17 +1221,59 @@ export function useBillPayments(month, year) {
     return payments.find(p => p.cardId === cardId)
   }
 
-  // Registrar pagamento de fatura
+  // Obter todos os pagamentos de uma fatura
+  const getBillPayments = (cardId) => {
+    return payments.filter(p => p.cardId === cardId)
+  }
+
+  // Calcular saldo anterior (faturas não pagas de meses anteriores)
+  const getPreviousBalance = (cardId) => {
+    let balance = 0
+
+    // Calcular mês anterior
+    let checkMonth = month - 1
+    let checkYear = year
+    if (checkMonth < 0) {
+      checkMonth = 11
+      checkYear = year - 1
+    }
+
+    // Buscar pagamentos do mês anterior
+    const prevPayments = allPayments.filter(p =>
+      p.cardId === cardId &&
+      p.month === checkMonth &&
+      p.year === checkYear
+    )
+
+    // Se houver pagamento parcial, calcular saldo não pago
+    // (isso precisaria de acesso aos gastos do mês anterior - simplificado por ora)
+    if (prevPayments.length > 0) {
+      const hasCarryOver = prevPayments.some(p => p.carryOverBalance && p.carryOverBalance > 0)
+      if (hasCarryOver) {
+        balance = prevPayments[0].carryOverBalance
+      }
+    }
+
+    return balance
+  }
+
+  // Registrar pagamento de fatura (suporta pagamentos parciais)
   const addBillPayment = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
+
+    // Calcular saldo não pago (carry over)
+    const carryOverBalance = data.totalBill ? Math.max(0, data.totalBill - data.amount) : 0
 
     return await addDoc(collection(db, `users/${user.uid}/billPayments`), {
       cardId: data.cardId,
       month: data.month,
       year: data.year,
       amount: data.amount,
+      totalBill: data.totalBill || data.amount,
+      carryOverBalance: carryOverBalance,
       accountId: data.accountId,
       transactionId: data.transactionId,
+      isPartial: data.amount < (data.totalBill || data.amount),
       paidAt: data.paidAt || new Date(),
       createdAt: serverTimestamp()
     })
@@ -942,7 +1291,11 @@ export function useBillPayments(month, year) {
     loading,
     error,
     isBillPaid,
+    isBillFullyPaid,
+    getTotalPaid,
     getBillPayment,
+    getBillPayments,
+    getPreviousBalance,
     addBillPayment,
     deleteBillPayment
   }
