@@ -43,3 +43,6 @@ Thumbs.db
 # Testing
 coverage
 .nyc_output
+
+# python virtual environment
+.venv

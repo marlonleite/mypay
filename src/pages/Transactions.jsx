@@ -329,6 +329,18 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
     return '#8b5cf6'
   }
 
+  // Helper para normalizar tags (pode ser string ou objeto)
+  const normalizeTag = (tag) => {
+    if (!tag) return ''
+    if (typeof tag === 'object') return tag.name || ''
+    return String(tag)
+  }
+
+  const normalizeTags = (tags) => {
+    if (!Array.isArray(tags)) return []
+    return tags.map(normalizeTag).filter(Boolean)
+  }
+
   // Helper para ícone do arquivo
   const getFileIcon = (attachment) => {
     if (!attachment) return File
@@ -1124,15 +1136,15 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                             </>
                           )}
                         </div>
-                        {transaction.tags?.length > 0 && (
+                        {normalizeTags(transaction.tags).length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
-                            {transaction.tags.slice(0, 3).map(tag => (
+                            {normalizeTags(transaction.tags).slice(0, 3).map(tag => (
                               <span key={tag} className="text-xs bg-dark-700 text-dark-300 px-1.5 py-0.5 rounded">
                                 {tag}
                               </span>
                             ))}
-                            {transaction.tags.length > 3 && (
-                              <span className="text-xs text-dark-500">+{transaction.tags.length - 3}</span>
+                            {normalizeTags(transaction.tags).length > 3 && (
+                              <span className="text-xs text-dark-500">+{normalizeTags(transaction.tags).length - 3}</span>
                             )}
                           </div>
                         )}

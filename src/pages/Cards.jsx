@@ -569,6 +569,18 @@ export default function Cards({ month, year, onMonthChange }) {
     return accounts.find(a => a.id === accountId)?.name || 'Conta'
   }
 
+  // Helper para normalizar tags (pode ser string ou objeto)
+  const normalizeTag = (tag) => {
+    if (!tag) return ''
+    if (typeof tag === 'object') return tag.name || ''
+    return String(tag)
+  }
+
+  const normalizeTags = (tags) => {
+    if (!Array.isArray(tags)) return []
+    return tags.map(normalizeTag).filter(Boolean)
+  }
+
   return (
     <div className="space-y-6">
       {/* Month Selector */}
@@ -851,15 +863,15 @@ export default function Cards({ month, year, onMonthChange }) {
                           </span>
                         )}
                       </p>
-                      {expense.tags?.length > 0 && (
+                      {normalizeTags(expense.tags).length > 0 && (
                         <div className="flex gap-1 mt-1">
-                          {expense.tags.slice(0, 2).map(tag => (
+                          {normalizeTags(expense.tags).slice(0, 2).map(tag => (
                             <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 rounded">
                               {tag}
                             </span>
                           ))}
-                          {expense.tags.length > 2 && (
-                            <span className="text-[10px] text-dark-500">+{expense.tags.length - 2}</span>
+                          {normalizeTags(expense.tags).length > 2 && (
+                            <span className="text-[10px] text-dark-500">+{normalizeTags(expense.tags).length - 2}</span>
                           )}
                         </div>
                       )}

@@ -151,7 +151,9 @@ export default function TransactionDetail({
           <div>
             <p className="text-xs text-dark-500 mb-1">Tags</p>
             <p className="text-sm text-white">
-              {transaction.tags?.length > 0 ? transaction.tags.join(', ') : '--'}
+              {transaction.tags?.length > 0
+                ? transaction.tags.map(t => typeof t === 'object' ? t.name : t).filter(Boolean).join(', ')
+                : '--'}
             </p>
           </div>
 

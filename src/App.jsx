@@ -11,7 +11,6 @@ import Cards from './pages/Cards'
 import Categories from './pages/Categories'
 import Tags from './pages/Tags'
 import Documents from './pages/Documents'
-import OrganizzeMigration from './pages/OrganizzeMigration'
 import Budgets from './pages/Budgets'
 import Accounts from './pages/Accounts'
 import Settings from './pages/Settings'
@@ -71,8 +70,6 @@ function AppContent() {
             year={selectedMonth.year}
           />
         )
-      case 'migration':
-        return <OrganizzeMigration />
       case 'budgets':
         return (
           <Budgets

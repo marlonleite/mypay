@@ -29,7 +29,8 @@ const COLLECTIONS = [
   { id: 'tags', name: 'Tags' },
   { id: 'budgets', name: 'Orçamentos' },
   { id: 'billPayments', name: 'Pagamentos de Fatura' },
-  { id: 'transfers', name: 'Transferências' }
+  { id: 'transfers', name: 'Transferências' },
+  { id: 'imports', name: 'Importações IA' }
 ]
 
 export default function Settings() {
