@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Cards from './pages/Cards'
+import Categories from './pages/Categories'
 import Documents from './pages/Documents'
 import { getCurrentMonthYear } from './utils/helpers'
 
@@ -45,6 +46,8 @@ function AppContent() {
             onMonthChange={handleMonthChange}
           />
         )
+      case 'categories':
+        return <Categories />
       case 'documents':
         return (
           <Documents

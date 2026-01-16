@@ -13,9 +13,10 @@ import FileUpload from '../components/documents/FileUpload'
 import FilePreview from '../components/documents/FilePreview'
 import ProcessingResult from '../components/documents/ProcessingResult'
 import ImportHistory from '../components/documents/ImportHistory'
-import { useCards, useTransactions } from '../hooks/useFirestore'
+import { useCards, useTransactions, useCategories } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
 import { processDocument } from '../services/ai/gemini'
+import { uploadComprovante } from '../services/storage'
 import { fileToBase64 } from '../utils/fileProcessing'
 import { DOCUMENT_TYPES } from '../utils/constants'
 
@@ -32,6 +33,7 @@ export default function Documents({ month, year }) {
   const { cards } = useCards()
   const { addTransaction } = useTransactions(month, year)
   const { imports, addImport, addCardExpense } = useImportHistory()
+  const { categories: allCategories, getMainCategories } = useCategories()
 
   // Handlers
   const handleFileSelect = (selectedFile) => {
@@ -72,7 +74,22 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      await addTransaction(transactionData)
+      // Upload do comprovante
+      let comprovanteData = null
+      try {
+        comprovanteData = await uploadComprovante(file)
+      } catch (uploadErr) {
+        console.warn('Upload do comprovante falhou:', uploadErr)
+        // Continua mesmo sem o comprovante
+      }
+
+      // Adiciona URL do comprovante à transação
+      const transactionWithComprovante = {
+        ...transactionData,
+        ...(comprovanteData && { comprovante: comprovanteData })
+      }
+
+      await addTransaction(transactionWithComprovante)
 
       // Salvar no histórico de importações
       await addImport({
@@ -82,7 +99,8 @@ export default function Documents({ month, year }) {
         extractedData: extractedData.dados_completos,
         status: 'completed',
         confidence: extractedData.confianca,
-        action: 'transaction'
+        action: 'transaction',
+        ...(comprovanteData && { comprovante: comprovanteData })
       })
 
       setStatus('success')
@@ -104,7 +122,22 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      await addCardExpense(expenseData)
+      // Upload do comprovante
+      let comprovanteData = null
+      try {
+        comprovanteData = await uploadComprovante(file)
+      } catch (uploadErr) {
+        console.warn('Upload do comprovante falhou:', uploadErr)
+        // Continua mesmo sem o comprovante
+      }
+
+      // Adiciona URL do comprovante à despesa
+      const expenseWithComprovante = {
+        ...expenseData,
+        ...(comprovanteData && { comprovante: comprovanteData })
+      }
+
+      await addCardExpense(expenseWithComprovante)
 
       // Salvar no histórico de importações
       await addImport({
@@ -114,7 +147,8 @@ export default function Documents({ month, year }) {
         extractedData: extractedData.dados_completos,
         status: 'completed',
         confidence: extractedData.confianca,
-        action: 'cardExpense'
+        action: 'cardExpense',
+        ...(comprovanteData && { comprovante: comprovanteData })
       })
 
       setStatus('success')
@@ -217,6 +251,8 @@ export default function Documents({ month, year }) {
           onDiscard={handleDiscard}
           cards={cards}
           saving={saving}
+          categories={allCategories}
+          getMainCategories={getMainCategories}
         />
       )}
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   CheckCircle2,
   AlertTriangle,
@@ -12,12 +12,58 @@ import Button from '../ui/Button'
 import Input from '../ui/Input'
 import Select from '../ui/Select'
 import { formatCurrency } from '../../utils/helpers'
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../utils/constants'
+
+// Mapeamento de categorias AI (inglês) para palavras-chave em português
+const AI_CATEGORY_MAPPING = {
+  // Despesas
+  food: ['alimentação', 'comida', 'refeição', 'restaurante', 'mercado'],
+  transport: ['transporte', 'uber', 'combustível', 'gasolina', 'ônibus'],
+  housing: ['moradia', 'aluguel', 'condomínio', 'casa', 'tributos', 'iptu', 'água', 'luz', 'energia'],
+  health: ['saúde', 'médico', 'remédio', 'farmácia', 'hospital', 'plano'],
+  leisure: ['lazer', 'entretenimento', 'cinema', 'streaming', 'jogos'],
+  education: ['educação', 'curso', 'escola', 'faculdade', 'livro'],
+  other: ['outros', 'geral'],
+  // Receitas
+  salary: ['salário', 'remuneração', 'pagamento'],
+  freelance: ['freelance', 'serviço', 'trabalho', 'autônomo'],
+  investments: ['investimento', 'rendimento', 'dividendo', 'juros'],
+}
 
 const confidenceConfig = {
   alta: { color: 'text-emerald-400', bg: 'bg-emerald-500/20', icon: CheckCircle2 },
   media: { color: 'text-yellow-400', bg: 'bg-yellow-500/20', icon: AlertTriangle },
   baixa: { color: 'text-red-400', bg: 'bg-red-500/20', icon: AlertCircle }
+}
+
+// Função para encontrar a melhor categoria Firestore com base na categoria AI
+function findBestCategory(aiCategory, firestoreCategories, type) {
+  if (!aiCategory || !firestoreCategories?.length) return null
+
+  const aiCatLower = aiCategory.toLowerCase()
+  const keywords = AI_CATEGORY_MAPPING[aiCatLower] || []
+
+  // Filtra categorias pelo tipo
+  const categoriesOfType = firestoreCategories.filter(c => c.type === type && !c.parentId)
+
+  // Procura por correspondência exata ou palavras-chave
+  for (const cat of categoriesOfType) {
+    const catNameLower = cat.name.toLowerCase()
+
+    // Verifica se alguma palavra-chave está no nome da categoria
+    for (const keyword of keywords) {
+      if (catNameLower.includes(keyword)) {
+        return cat.id
+      }
+    }
+
+    // Verifica se o nome da categoria contém a categoria AI
+    if (catNameLower.includes(aiCatLower)) {
+      return cat.id
+    }
+  }
+
+  // Se não encontrar, retorna a primeira categoria do tipo ou null
+  return categoriesOfType[0]?.id || null
 }
 
 export default function ProcessingResult({
@@ -26,13 +72,39 @@ export default function ProcessingResult({
   onCreateCardExpense,
   onDiscard,
   cards = [],
-  saving = false
+  saving = false,
+  categories: firestoreCategories = [],
+  getMainCategories
 }) {
+  // Categorias disponíveis para cada tipo
+  const incomeCategories = useMemo(() => {
+    if (getMainCategories) return getMainCategories('income')
+    return firestoreCategories.filter(c => c.type === 'income' && !c.parentId)
+  }, [firestoreCategories, getMainCategories])
+
+  const expenseCategories = useMemo(() => {
+    if (getMainCategories) return getMainCategories('expense')
+    return firestoreCategories.filter(c => c.type === 'expense' && !c.parentId)
+  }, [firestoreCategories, getMainCategories])
+
+  // Encontra a melhor categoria inicial
+  const initialCategory = useMemo(() => {
+    const type = data.tipo_transacao || 'expense'
+    const aiSuggested = data.categoria_sugerida
+
+    const bestMatch = findBestCategory(aiSuggested, firestoreCategories, type)
+    if (bestMatch) return bestMatch
+
+    // Fallback para primeira categoria do tipo
+    const cats = type === 'income' ? incomeCategories : expenseCategories
+    return cats[0]?.id || ''
+  }, [data, firestoreCategories, incomeCategories, expenseCategories])
+
   const [editedData, setEditedData] = useState({
     descricao: data.descricao || '',
     valor: data.valor || 0,
     data: data.data || new Date().toISOString().split('T')[0],
-    categoria: data.categoria_sugerida || 'other',
+    categoria: initialCategory,
     tipo: data.tipo_transacao || 'expense'
   })
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')
@@ -41,7 +113,7 @@ export default function ProcessingResult({
   const confidence = confidenceConfig[data.confianca] || confidenceConfig.media
   const ConfidenceIcon = confidence.icon
 
-  const categories = editedData.tipo === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+  const categories = editedData.tipo === 'income' ? incomeCategories : expenseCategories
 
   const handleCreateTransaction = () => {
     onCreateTransaction({
@@ -83,7 +155,7 @@ export default function ProcessingResult({
         <div className="flex gap-2 p-1 bg-dark-800 rounded-xl">
           <button
             type="button"
-            onClick={() => setEditedData({ ...editedData, tipo: 'income', categoria: 'salary' })}
+            onClick={() => setEditedData({ ...editedData, tipo: 'income', categoria: incomeCategories[0]?.id || '' })}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
               editedData.tipo === 'income'
                 ? 'bg-emerald-600 text-white'
@@ -94,7 +166,7 @@ export default function ProcessingResult({
           </button>
           <button
             type="button"
-            onClick={() => setEditedData({ ...editedData, tipo: 'expense', categoria: 'other' })}
+            onClick={() => setEditedData({ ...editedData, tipo: 'expense', categoria: expenseCategories[0]?.id || '' })}
             className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
               editedData.tipo === 'expense'
                 ? 'bg-red-600 text-white'

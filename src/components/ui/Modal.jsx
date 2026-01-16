@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
-export default function Modal({ isOpen, onClose, title, children }) {
+export default function Modal({ isOpen, onClose, title, children, hideHeader = false }) {
   // Prevent body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -36,18 +36,30 @@ export default function Modal({ isOpen, onClose, title, children }) {
       {/* Modal */}
       <div className="relative w-full sm:max-w-lg bg-dark-900 border border-dark-700 rounded-t-3xl sm:rounded-2xl max-h-[90vh] overflow-hidden animate-slide-up sm:animate-scale-in">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-700">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {!hideHeader && (
+          <div className="flex items-center justify-between p-4 border-b border-dark-700">
+            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <button
+              onClick={onClose}
+              className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Close button when header is hidden */}
+        {hideHeader && (
           <button
             onClick={onClose}
-            className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+            className="absolute top-3 right-3 p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors z-10"
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
+        )}
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto max-h-[calc(90vh-4rem)]">
+        <div className={`p-4 overflow-y-auto ${hideHeader ? 'pt-12 max-h-[90vh]' : 'max-h-[calc(90vh-4rem)]'}`}>
           {children}
         </div>
       </div>

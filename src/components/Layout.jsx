@@ -1,10 +1,11 @@
-import { LayoutDashboard, Receipt, CreditCard, Scan, LogOut, User } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, LogOut, User } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const tabs = [
   { id: 'dashboard', label: 'Resumo', icon: LayoutDashboard },
   { id: 'transactions', label: 'Lançamentos', icon: Receipt },
   { id: 'cards', label: 'Cartões', icon: CreditCard },
+  { id: 'categories', label: 'Categorias', icon: Tag },
   { id: 'documents', label: 'Importar', icon: Scan }
 ]
 
