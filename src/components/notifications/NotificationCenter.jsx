@@ -49,11 +49,33 @@ export default function NotificationCenter({ isOpen, onClose }) {
   const getSeverityBg = (severity) => {
     switch (severity) {
       case 'high':
-        return 'bg-red-500/10 border-red-500/20'
+        return 'bg-red-500/15 border-red-500/40'
       case 'medium':
-        return 'bg-yellow-500/10 border-yellow-500/20'
+        return 'bg-yellow-500/15 border-yellow-500/40'
       default:
-        return 'bg-blue-500/10 border-blue-500/20'
+        return 'bg-blue-500/15 border-blue-500/40'
+    }
+  }
+
+  const getSeverityTextColor = (severity) => {
+    switch (severity) {
+      case 'high':
+        return 'text-red-800 dark:text-red-100'
+      case 'medium':
+        return 'text-yellow-800 dark:text-yellow-100'
+      default:
+        return 'text-blue-800 dark:text-blue-100'
+    }
+  }
+
+  const getSeveritySubtextColor = (severity) => {
+    switch (severity) {
+      case 'high':
+        return 'text-red-700 dark:text-red-200/80'
+      case 'medium':
+        return 'text-yellow-700 dark:text-yellow-200/80'
+      default:
+        return 'text-blue-700 dark:text-blue-200/80'
     }
   }
 
@@ -62,19 +84,19 @@ export default function NotificationCenter({ isOpen, onClose }) {
       <Backdrop />
       <div
         ref={dropdownRef}
-        className="fixed sm:absolute inset-x-4 sm:inset-x-auto top-16 sm:top-full sm:right-0 sm:mt-2 sm:w-96 bg-dark-900 rounded-[20px] shadow-2xl border border-dark-700 z-[100] max-h-[70vh] sm:max-h-[80vh] flex flex-col"
+        className="fixed sm:absolute inset-x-4 sm:inset-x-auto top-16 sm:top-full sm:right-0 sm:mt-2 sm:w-96 bg-white dark:bg-dark-900 rounded-[20px] shadow-2xl border border-gray-200 dark:border-dark-700 z-[100] max-h-[70vh] sm:max-h-[80vh] flex flex-col"
       >
         {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-dark-700">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-dark-700">
         <div>
-          <h3 className="text-lg font-semibold text-white">Notificações</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Notificacoes</h3>
           {unreadCount > 0 && (
-            <p className="text-xs text-dark-400">{unreadCount} não lida{unreadCount !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-gray-500 dark:text-dark-400">{unreadCount} nao lida{unreadCount !== 1 ? 's' : ''}</p>
           )}
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-800 rounded-lg transition-colors"
+          className="p-1.5 text-gray-500 dark:text-dark-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -86,18 +108,18 @@ export default function NotificationCenter({ isOpen, onClose }) {
           onClick={() => setShowAll(false)}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
             !showAll
-              ? 'bg-violet-500/20 text-violet-400'
-              : 'text-dark-400 hover:text-white hover:bg-dark-800'
+              ? 'bg-violet-500/20 text-violet-600 dark:text-violet-400'
+              : 'text-gray-500 dark:text-dark-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-800'
           }`}
         >
-          Não lidas ({unreadCount})
+          Nao lidas ({unreadCount})
         </button>
         <button
           onClick={() => setShowAll(true)}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
             showAll
-              ? 'bg-violet-500/20 text-violet-400'
-              : 'text-dark-400 hover:text-white hover:bg-dark-800'
+              ? 'bg-violet-500/20 text-violet-600 dark:text-violet-400'
+              : 'text-gray-500 dark:text-dark-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-800'
           }`}
         >
           Todas ({notifications.length})
@@ -106,7 +128,7 @@ export default function NotificationCenter({ isOpen, onClose }) {
         {unreadCount > 0 && (
           <button
             onClick={markAllAsRead}
-            className="ml-auto text-xs text-violet-400 hover:text-violet-300 font-medium"
+            className="ml-auto text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium"
           >
             Marcar todas como lidas
           </button>
@@ -120,9 +142,9 @@ export default function NotificationCenter({ isOpen, onClose }) {
             <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
               <Check className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-white font-medium mb-1">Tudo em dia!</p>
-            <p className="text-sm text-dark-400">
-              {showAll ? 'Nenhuma notificação' : 'Nenhuma notificação não lida'}
+            <p className="text-gray-900 dark:text-white font-medium mb-1">Tudo em dia!</p>
+            <p className="text-sm text-gray-500 dark:text-dark-400">
+              {showAll ? 'Nenhuma notificacao' : 'Nenhuma notificacao nao lida'}
             </p>
           </div>
         ) : (
@@ -135,7 +157,7 @@ export default function NotificationCenter({ isOpen, onClose }) {
                 className={`p-3 border rounded-xl transition-all ${
                   isUnread
                     ? `${getSeverityBg(notif.severity)} border-opacity-100`
-                    : 'bg-dark-800/30 border-dark-700/30 opacity-70'
+                    : 'bg-gray-100 dark:bg-dark-800/30 border-gray-200 dark:border-dark-700/30 opacity-70'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -145,12 +167,12 @@ export default function NotificationCenter({ isOpen, onClose }) {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-sm font-medium text-white">{notif.title}</h4>
+                      <h4 className={`text-sm font-medium ${isUnread ? getSeverityTextColor(notif.severity) : 'text-gray-700 dark:text-gray-300'}`}>{notif.title}</h4>
                       {isUnread && (
                         <span className="w-2 h-2 rounded-full bg-violet-500 flex-shrink-0" />
                       )}
                     </div>
-                    <p className="text-xs text-dark-300 mb-2">{notif.message}</p>
+                    <p className={`text-xs mb-2 ${isUnread ? getSeveritySubtextColor(notif.severity) : 'text-gray-500 dark:text-gray-400'}`}>{notif.message}</p>
 
                     <div className="flex items-center gap-2">
                       {notif.actionText && (
@@ -160,7 +182,7 @@ export default function NotificationCenter({ isOpen, onClose }) {
                             // Handle action based on type
                             // In a real app, you'd navigate or open modals here
                           }}
-                          className="text-xs text-violet-400 hover:text-violet-300 font-medium"
+                          className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 font-medium"
                         >
                           {notif.actionText}
                         </button>
@@ -168,7 +190,7 @@ export default function NotificationCenter({ isOpen, onClose }) {
                       {isUnread && (
                         <button
                           onClick={() => markAsRead(notif.id)}
-                          className="text-xs text-dark-400 hover:text-white font-medium"
+                          className={`text-xs font-medium ${getSeveritySubtextColor(notif.severity)} hover:opacity-80`}
                         >
                           Marcar como lida
                         </button>
