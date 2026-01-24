@@ -779,47 +779,48 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                 <div
                   key={transaction.id}
                   onClick={() => openDetailModal(transaction)}
-                  className="flex items-center justify-between p-3 hover:bg-red-500/10 cursor-pointer transition-colors"
+                  className="flex items-center gap-2 py-2.5 px-3 hover:bg-red-500/10 cursor-pointer transition-colors"
                 >
-                  <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
-                    >
-                      {transaction.type === TRANSACTION_TYPES.INCOME ? (
-                        <ArrowUpRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
-                      ) : (
-                        <ArrowDownRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1 overflow-hidden">
-                      <p className="text-sm font-medium truncate text-red-900 dark:text-red-50">
-                        {transaction.description}
-                      </p>
-                      <p className="text-xs truncate text-red-700 dark:text-red-200/80">
-                        {formatDate(transaction.date)}
-                        {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
-                      </p>
-                    </div>
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
+                  >
+                    {transaction.type === TRANSACTION_TYPES.INCOME ? (
+                      <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                    ) : (
+                      <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                    )}
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <p className={`text-sm font-semibold ${
-                      transaction.type === TRANSACTION_TYPES.INCOME
-                        ? 'text-emerald-400'
-                        : 'text-red-400'
-                    }`}>
-                      {transaction.type === TRANSACTION_TYPES.INCOME ? '+' : '-'}
-                      {formatCurrency(transaction.amount)}
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p
+                      className="text-sm font-medium text-red-900 dark:text-red-50"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {transaction.description}
                     </p>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); togglePaidStatus(transaction) }}
-                      className="p-1.5 text-dark-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                      title="Marcar como pago"
+                    <p
+                      className="text-xs text-red-700 dark:text-red-200/80"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >
-                      <ThumbsDown className="w-4 h-4" />
-                    </button>
+                      {formatDate(transaction.date)}
+                      {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
+                    </p>
                   </div>
+                  <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${
+                    transaction.type === TRANSACTION_TYPES.INCOME
+                      ? 'text-emerald-400'
+                      : 'text-red-400'
+                  }`}>
+                    {transaction.type === TRANSACTION_TYPES.INCOME ? '+' : '-'}
+                    {formatCurrency(transaction.amount)}
+                  </p>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); togglePaidStatus(transaction) }}
+                    className="p-1 text-dark-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors flex-shrink-0"
+                    title="Marcar como pago"
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -1076,95 +1077,87 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
               <p className="text-xs text-dark-500 font-semibold uppercase tracking-wider mb-3 px-1">
                 {date}
               </p>
-              <Card className="divide-y divide-dark-700/50 overflow-hidden shadow-lg">
+              <Card className="divide-y divide-dark-700/50 overflow-hidden shadow-lg !p-0">
                 {items.map((transaction) => (
                   <div
                     key={transaction.id}
                     onClick={() => openDetailModal(transaction)}
-                    className={`flex items-center justify-between py-3.5 px-3 cursor-pointer transition-all relative ${
+                    className={`flex items-center gap-2 py-3 px-3 cursor-pointer transition-all relative ${
                       transaction.paid === false
                         ? 'bg-amber-500/5 hover:bg-amber-500/10 border-l-[3px] border-amber-500/40'
                         : 'hover:bg-dark-700/50 border-l-[3px] border-transparent'
                     }`}
                   >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {/* Indicador de pendente */}
-                      {transaction.paid === false && (
-                        <div className="w-2 h-2 rounded-full bg-amber-400/80 flex-shrink-0 animate-pulse" />
-                      )}
+                    {/* Indicador de pendente */}
+                    {transaction.paid === false && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400/80 flex-shrink-0 animate-pulse" />
+                    )}
 
-                      {/* Ícone da categoria com cor */}
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
-                      >
-                        {transaction.type === TRANSACTION_TYPES.INCOME ? (
-                          <ArrowUpRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
-                        ) : (
-                          <ArrowDownRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <p className={`text-sm font-semibold truncate min-w-0 flex-1 ${
+                    {/* Ícone da categoria com cor */}
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
+                    >
+                      {transaction.type === TRANSACTION_TYPES.INCOME ? (
+                        <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                      ) : (
+                        <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                      )}
+                    </div>
+
+                    {/* Conteúdo principal - título e categoria */}
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="flex items-center gap-1 overflow-hidden">
+                        <span
+                          className={`flex-1 min-w-0 text-sm font-semibold ${
                             transaction.paid === false
                               ? 'text-amber-900 dark:text-amber-50'
                               : 'text-white'
-                          }`}>
-                            {transaction.description}
-                          </p>
-                          {(transaction.attachments?.length > 0 || transaction.attachment) && (
-                            <a
-                              href={(transaction.attachments?.[0] || transaction.attachment)?.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download={(transaction.attachments?.[0] || transaction.attachment)?.fileName}
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-0.5 text-dark-400 hover:text-violet-400 transition-colors flex-shrink-0"
-                              title="Ver anexos"
-                            >
-                              <Paperclip className="w-3.5 h-3.5 flex-shrink-0" />
-                              {(transaction.attachments?.length || 1) > 1 && (
-                                <span className="text-xs">{transaction.attachments.length}</span>
-                              )}
-                            </a>
-                          )}
-                          {transaction.recurrenceTotal > 1 && (
-                            <span className="text-xs text-dark-500 bg-dark-800 px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap">
-                              {transaction.recurrenceIndex}/{transaction.recurrenceTotal}
-                            </span>
-                          )}
-                          {transaction.isFixed && (
-                            <Repeat className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-                          )}
-                        </div>
-                        <p className={`text-xs truncate ${
+                          }`}
+                          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        >
+                          {transaction.description}
+                        </span>
+                        {transaction.recurrenceTotal > 1 && (
+                          <span className="text-[9px] text-dark-500 bg-dark-800 px-1 rounded flex-shrink-0">
+                            {transaction.recurrenceIndex}/{transaction.recurrenceTotal}
+                          </span>
+                        )}
+                        {transaction.isFixed && (
+                          <Repeat className="w-2.5 h-2.5 text-violet-400 flex-shrink-0" />
+                        )}
+                        {(transaction.attachments?.length > 0 || transaction.attachment) && (
+                          <Paperclip className="w-2.5 h-2.5 text-dark-400 flex-shrink-0" />
+                        )}
+                      </div>
+                      <p
+                        className={`text-xs ${
                           transaction.paid === false
                             ? 'text-gray-600 dark:text-dark-400'
                             : 'text-dark-400'
-                        }`}>
-                          <span className="font-medium">{getCategoryName(transaction.category)}</span>
-                          {transaction.accountId && (
-                            <span> • {getAccountName(transaction.accountId)}</span>
+                        }`}
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {getCategoryName(transaction.category)}
+                        {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
+                      </p>
+                      {normalizeTags(transaction.tags).length > 0 && (
+                        <div className="flex gap-1 mt-0.5 flex-wrap">
+                          {normalizeTags(transaction.tags).slice(0, 2).map(tag => (
+                            <span key={tag} className="text-[9px] bg-dark-700 text-dark-300 px-1 py-0.5 rounded">
+                              {tag}
+                            </span>
+                          ))}
+                          {normalizeTags(transaction.tags).length > 2 && (
+                            <span className="text-[9px] text-dark-500">+{normalizeTags(transaction.tags).length - 2}</span>
                           )}
-                        </p>
-                        {normalizeTags(transaction.tags).length > 0 && (
-                          <div className="flex gap-1 mt-1 flex-wrap">
-                            {normalizeTags(transaction.tags).slice(0, 3).map(tag => (
-                              <span key={tag} className="text-xs bg-dark-700 text-dark-300 px-1.5 py-0.5 rounded">
-                                {tag}
-                              </span>
-                            ))}
-                            {normalizeTags(transaction.tags).length > 3 && (
-                              <span className="text-xs text-dark-500">+{normalizeTags(transaction.tags).length - 3}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2.5 flex-shrink-0">
-                      <p className={`text-base font-bold tabular-nums whitespace-nowrap ${
+                    {/* Valor e botão */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <p className={`text-sm font-bold tabular-nums whitespace-nowrap ${
                         transaction.type === TRANSACTION_TYPES.INCOME
                           ? 'text-emerald-400'
                           : 'text-red-400'
@@ -1176,7 +1169,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                       {/* Botão pago/pendente */}
                       <button
                         onClick={(e) => { e.stopPropagation(); togglePaidStatus(transaction) }}
-                        className={`p-2 rounded-lg transition-all ${
+                        className={`p-1.5 rounded-lg transition-all ${
                           transaction.paid === false
                             ? 'bg-dark-800/50 text-amber-400/70 hover:bg-emerald-500/10 hover:text-emerald-400 border border-dark-700'
                             : 'bg-emerald-500/10 text-emerald-400/80 hover:bg-dark-800 hover:text-dark-400 border border-emerald-500/20'
@@ -1184,9 +1177,9 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                         title={transaction.paid === false ? 'Marcar como pago' : 'Marcar como não pago'}
                       >
                         {transaction.paid === false ? (
-                          <Clock className="w-4 h-4" />
+                          <Clock className="w-3.5 h-3.5" />
                         ) : (
-                          <Check className="w-4 h-4" />
+                          <Check className="w-3.5 h-3.5" />
                         )}
                       </button>
                     </div>

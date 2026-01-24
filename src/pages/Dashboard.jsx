@@ -295,41 +295,45 @@ export default function Dashboard({ month, year, onMonthChange }) {
                 {recentItems.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
+                    className="flex items-center gap-2 p-2.5 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
-                    <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
-                      <div className={`p-2 rounded-lg flex-shrink-0 ${
-                        item.type === TRANSACTION_TYPES.INCOME
-                          ? 'bg-emerald-500/20'
-                          : item.type === 'card'
-                          ? 'bg-orange-500/20'
-                          : 'bg-red-500/20'
-                      }`}>
-                        {item.type === TRANSACTION_TYPES.INCOME ? (
-                          <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                        ) : item.type === 'card' ? (
-                          <CreditCard className="w-4 h-4 text-orange-500" />
-                        ) : (
-                          <ArrowDownRight className="w-4 h-4 text-red-500" />
+                    <div className={`p-1.5 rounded-lg flex-shrink-0 ${
+                      item.type === TRANSACTION_TYPES.INCOME
+                        ? 'bg-emerald-500/20'
+                        : item.type === 'card'
+                        ? 'bg-orange-500/20'
+                        : 'bg-red-500/20'
+                    }`}>
+                      {item.type === TRANSACTION_TYPES.INCOME ? (
+                        <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : item.type === 'card' ? (
+                        <CreditCard className="w-3.5 h-3.5 text-orange-500" />
+                      ) : (
+                        <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <p
+                        className="text-sm text-white font-medium"
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {item.description}
+                      </p>
+                      <p
+                        className="text-xs text-dark-400"
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {item.type === 'card'
+                          ? item.cardName
+                          : getCategoryName(item.category, item.type)}
+                        {' • '}
+                        {formatDate(item.date)}
+                        {item.totalInstallments > 1 && (
+                          <span className="text-orange-400">
+                            {' '}({item.installment}/{item.totalInstallments})
+                          </span>
                         )}
-                      </div>
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <p className="text-sm text-white font-medium truncate">
-                          {item.description}
-                        </p>
-                        <p className="text-xs text-dark-400 truncate">
-                          {item.type === 'card'
-                            ? item.cardName
-                            : getCategoryName(item.category, item.type)}
-                          {' • '}
-                          {formatDate(item.date)}
-                          {item.totalInstallments > 1 && (
-                            <span className="text-orange-400">
-                              {' '}({item.installment}/{item.totalInstallments})
-                            </span>
-                          )}
-                        </p>
-                      </div>
+                      </p>
                     </div>
                     <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${
                       item.type === TRANSACTION_TYPES.INCOME

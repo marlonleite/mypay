@@ -910,13 +910,16 @@ export default function Cards({ month, year, onMonthChange }) {
                 return (
                   <div
                     key={expense.id}
-                    className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
+                    className="flex items-center gap-3 p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
                     <div className="flex-1 min-w-0 overflow-hidden">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-white font-medium truncate min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <span
+                          className="flex-1 min-w-0 text-sm text-white font-medium"
+                          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        >
                           {expense.description}
-                        </p>
+                        </span>
                         {expense.isFixed && (
                           <Repeat className="w-3 h-3 text-violet-400 flex-shrink-0" />
                         )}
@@ -924,7 +927,10 @@ export default function Cards({ month, year, onMonthChange }) {
                           <Paperclip className="w-3 h-3 text-dark-400 flex-shrink-0" />
                         )}
                       </div>
-                      <p className="text-xs text-dark-400 truncate">
+                      <p
+                        className="text-xs text-dark-400"
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
                         {getCategoryName(expense.category)} • {formatDate(expense.date)}
                         {expense.totalInstallments > 1 && (
                           <span className={`ml-1 ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
@@ -945,23 +951,21 @@ export default function Cards({ month, year, onMonthChange }) {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-semibold ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
-                        {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
-                      </p>
-                      <button
-                        onClick={() => openEditExpenseModal(expense)}
-                        className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteExpense(expense.id)}
-                        className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
+                      {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
+                    </p>
+                    <button
+                      onClick={() => openEditExpenseModal(expense)}
+                      className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteExpense(expense.id)}
+                      className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 )
               })}

@@ -112,6 +112,46 @@ body {
   }
 }
 
+/* Fix truncation in flex containers - CRITICAL for mobile */
+.truncate {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  max-width: 100% !important;
+}
+
+/* Ensure flex items can shrink and truncate text properly */
+.min-w-0 {
+  min-width: 0 !important;
+}
+
+/* Force flex-1 items to have zero base width for proper truncation */
+.flex-1.min-w-0,
+.flex > .flex-1.min-w-0,
+.flex > div.flex-1.min-w-0 {
+  flex: 1 1 0% !important;
+  width: 0 !important;
+  min-width: 0 !important;
+}
+
+/* Transaction/Card item text truncation fix */
+.flex-1.min-w-0 .truncate,
+.flex-1.min-w-0 span.truncate,
+.flex-1.min-w-0 p.truncate {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Additional fix for nested flex containers */
+.flex-1.min-w-0 > .flex {
+  max-width: 100%;
+  overflow: hidden;
+}
+
 /* ========================================
    ANIMATIONS
    ======================================== */
