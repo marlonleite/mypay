@@ -1,7 +1,10 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
 import { useTransactions, useAllCardExpenses, useCards, useBudgets } from '../hooks/useFirestore'
 import { getCurrentMonthYear } from '../utils/helpers'
+import { showLocalNotification, isPushSupported, getNotificationPermission } from '../services/pushNotifications'
 
 const NotificationContext = createContext()
 
@@ -25,6 +28,30 @@ export function NotificationProvider({ children }) {
     const saved = localStorage.getItem('readNotifications')
     return saved ? JSON.parse(saved) : []
   })
+
+  // Push notification state
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const sentPushNotifications = useRef(new Set())
+  const lastPushCheck = useRef(null)
+
+  // Listen to push settings from Firestore
+  useEffect(() => {
+    if (!user) {
+      setPushEnabled(false)
+      return
+    }
+
+    const pushSettingsRef = doc(db, `users/${user.uid}/settings/push`)
+    const unsubscribe = onSnapshot(pushSettingsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setPushEnabled(docSnap.data().enabled || false)
+      } else {
+        setPushEnabled(false)
+      }
+    })
+
+    return () => unsubscribe()
+  }, [user])
 
   // Calculate notifications
   const notifications = useMemo(() => {
@@ -176,13 +203,55 @@ export function NotificationProvider({ children }) {
     localStorage.setItem('readNotifications', JSON.stringify(allIds))
   }
 
+  // Send push notification for a specific alert
+  const sendPushNotification = useCallback((notification) => {
+    if (!pushEnabled) return
+    if (!isPushSupported()) return
+    if (getNotificationPermission() !== 'granted') return
+
+    // Don't send if already sent today
+    const today = new Date().toDateString()
+    const notifKey = `${notification.id}-${today}`
+    if (sentPushNotifications.current.has(notifKey)) return
+
+    // Show local notification
+    showLocalNotification(notification.title, {
+      body: notification.message,
+      tag: notification.id,
+      data: notification.actionData
+    })
+
+    sentPushNotifications.current.add(notifKey)
+  }, [pushEnabled])
+
+  // Trigger push notifications for high-severity unread notifications
+  useEffect(() => {
+    if (!pushEnabled || !user) return
+
+    // Only check once per session or every 5 minutes
+    const now = Date.now()
+    if (lastPushCheck.current && (now - lastPushCheck.current) < 5 * 60 * 1000) {
+      return
+    }
+    lastPushCheck.current = now
+
+    // Send push for high-severity unread notifications
+    unreadNotifications
+      .filter(n => n.severity === 'high')
+      .forEach(notification => {
+        sendPushNotification(notification)
+      })
+  }, [pushEnabled, user, unreadNotifications, sendPushNotification])
+
   return (
     <NotificationContext.Provider value={{
       notifications,
       unreadNotifications,
       unreadCount,
       markAsRead,
-      markAllAsRead
+      markAllAsRead,
+      pushEnabled,
+      sendPushNotification
     }}>
       {children}
     </NotificationContext.Provider>
