@@ -46,3 +46,8 @@ coverage
 
 # python virtual environment
 .venv
+
+# Claude Code local settings
+.claude/settings.local.json
+.claude/hooks.json
+.claude/*.log

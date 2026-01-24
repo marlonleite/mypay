@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "pre-edit": {
+      "description": "Run before Claude edits files",
+      "command": "npm run lint -- --fix ${file}",
+      "enabled": false
+    },
+    "post-edit": {
+      "description": "Run after Claude edits files",
+      "command": "npm run lint -- ${file}",
+      "enabled": false
+    },
+    "pre-commit": {
+      "description": "Run before creating commits",
+      "command": "npm run lint",
+      "enabled": true
+    },
+    "user-prompt-submit": {
+      "description": "Run when user submits a message",
+      "command": "",
+      "enabled": false
+    }
+  },
+  "fileWatchers": {
+    "*.jsx": {
+      "onChange": "npm run lint -- ${file}",
+      "enabled": false
+    },
+    "src/hooks/useFirestore.js": {
+      "onChange": "echo 'Firestore hooks modified - verify all exports'",
+      "enabled": true
+    }
+  },
+  "notes": [
+    "Copy this file to hooks.json to enable hooks",
+    "Hooks can be shell commands that run on specific events",
+    "${file} is replaced with the file path being edited",
+    "Set enabled: true to activate a hook"
+  ]
+}

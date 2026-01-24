@@ -1,0 +1,6 @@
+# Local Claude settings (not shared with team)
+settings.local.json
+
+# Hook outputs and logs
+*.log
+hooks/output/

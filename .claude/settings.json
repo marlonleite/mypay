@@ -1,0 +1,83 @@
+{
+  "project": {
+    "name": "myPay",
+    "description": "Personal finance management app with React, Firebase, and AI-powered document processing",
+    "language": "pt-BR"
+  },
+  "conventions": {
+    "codeStyle": {
+      "quotes": "single",
+      "semicolons": false,
+      "componentType": "functional",
+      "stateManagement": "hooks",
+      "naming": {
+        "components": "PascalCase",
+        "files": "PascalCase for components, camelCase for utils",
+        "hooks": "use[Name]",
+        "constants": "UPPER_SNAKE_CASE"
+      }
+    },
+    "fileOrganization": {
+      "components": "src/components/",
+      "uiComponents": "src/components/ui/",
+      "pages": "src/pages/",
+      "hooks": "src/hooks/",
+      "services": "src/services/",
+      "contexts": "src/contexts/",
+      "utils": "src/utils/"
+    },
+    "imports": {
+      "order": [
+        "react",
+        "external libraries",
+        "internal components",
+        "hooks",
+        "services",
+        "utils"
+      ],
+      "barrelFiles": true
+    }
+  },
+  "bestPractices": {
+    "react": [
+      "Always use functional components",
+      "Use custom hooks for Firestore operations",
+      "Implement loading and error states",
+      "Use EmptyState for empty data",
+      "Extract reusable UI to components/ui/",
+      "Keep components under 200 lines"
+    ],
+    "firebase": [
+      "All data under users/{userId}/",
+      "Use real-time listeners (onSnapshot)",
+      "Always cleanup subscriptions",
+      "Check user auth before queries",
+      "Store dates with noon time (12:00) to avoid TZ issues"
+    ],
+    "styling": [
+      "Use Tailwind CSS only",
+      "Use dark-* colors from theme",
+      "Mobile-first responsive design",
+      "Consistent spacing (gap-4, p-4, etc)",
+      "Use lucide-react for all icons"
+    ],
+    "i18n": [
+      "All user-facing text in Portuguese (pt-BR)",
+      "Code (vars, functions) in English",
+      "Comments in English"
+    ]
+  },
+  "aiAssistance": {
+    "preferredActions": [
+      "Ask before making breaking changes",
+      "Show preview of refactorings",
+      "Suggest tests after code changes",
+      "Keep changes minimal and focused"
+    ],
+    "codeGeneration": {
+      "includeComments": false,
+      "includeExamples": true,
+      "followProjectPatterns": true
+    }
+  }
+}
