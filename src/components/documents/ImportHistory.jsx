@@ -1,8 +1,11 @@
 import { FileImage, FileText, CheckCircle, Clock } from 'lucide-react'
 import Card from '../ui/Card'
-import { formatDate, formatCurrency } from '../../utils/helpers'
+import { formatDate } from '../../utils/helpers'
+import { usePrivacy } from '../../contexts/PrivacyContext'
 
 export default function ImportHistory({ imports = [] }) {
+  const { formatCurrency } = usePrivacy()
+
   if (imports.length === 0) return null
 
   const getFileIcon = (fileType) => {

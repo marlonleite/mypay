@@ -33,11 +33,14 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
-import { formatCurrency, formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
+import { usePrivacy } from '../contexts/PrivacyContext'
+import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
 export default function Transactions({ month, year, onMonthChange, showAddModal, onCloseAddModal }) {
+  const { formatCurrency } = usePrivacy()
+
   const {
     transactions,
     loading,
@@ -748,33 +751,35 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
 
       {/* Banner de Lançamentos Pendentes/Vencidos */}
       {overdueTransactions.length > 0 && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl overflow-hidden">
+        <div className="bg-red-500/15 border border-red-500/40 rounded-xl overflow-hidden shadow-lg shadow-red-500/10">
           <button
             onClick={() => setShowOverduePanel(!showOverduePanel)}
-            className="w-full flex items-center justify-between p-3 text-left"
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-red-500/10 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-500" />
-              <span className="text-sm text-amber-200">
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-6 h-6 text-red-400" />
+              </div>
+              <span className="text-sm font-semibold text-red-800 dark:text-red-100">
                 {overdueTransactions.length === 1
                   ? 'Há 1 lançamento passado que ainda não foi pago'
                   : `Há ${overdueTransactions.length} lançamentos passados que ainda não foram pagos`}
               </span>
             </div>
             {showOverduePanel ? (
-              <ChevronUp className="w-5 h-5 text-amber-400" />
+              <ChevronUp className="w-5 h-5 text-red-400 flex-shrink-0" />
             ) : (
-              <ChevronDown className="w-5 h-5 text-amber-400" />
+              <ChevronDown className="w-5 h-5 text-red-400 flex-shrink-0" />
             )}
           </button>
 
           {showOverduePanel && (
-            <div className="border-t border-amber-500/20 divide-y divide-amber-500/10">
+            <div className="border-t border-red-500/30 divide-y divide-red-500/20">
               {overdueTransactions.map((transaction) => (
                 <div
                   key={transaction.id}
                   onClick={() => openDetailModal(transaction)}
-                  className="flex items-center justify-between p-3 hover:bg-amber-500/5 cursor-pointer transition-colors"
+                  className="flex items-center justify-between p-3 hover:bg-red-500/10 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div
@@ -788,10 +793,10 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm text-white font-medium truncate">
+                      <p className="text-sm font-medium truncate text-red-900 dark:text-red-50">
                         {transaction.description}
                       </p>
-                      <p className="text-xs text-dark-400">
+                      <p className="text-xs text-red-700 dark:text-red-200/80">
                         {formatDate(transaction.date)}
                         {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
                       </p>
@@ -1068,22 +1073,24 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
         <div className="space-y-4">
           {Object.entries(groupedTransactions).map(([date, items]) => (
             <div key={date}>
-              <p className="text-xs text-dark-400 font-medium mb-2 px-1">
+              <p className="text-xs text-dark-500 font-semibold uppercase tracking-wider mb-3 px-1">
                 {date}
               </p>
-              <Card className="divide-y divide-dark-700/50 overflow-hidden">
+              <Card className="divide-y divide-dark-700/50 overflow-hidden shadow-lg">
                 {items.map((transaction) => (
                   <div
                     key={transaction.id}
                     onClick={() => openDetailModal(transaction)}
-                    className={`flex items-center justify-between py-3 px-1 -mx-1 cursor-pointer hover:bg-dark-700/50 transition-colors ${
-                      transaction.paid === false ? 'bg-amber-500/10' : ''
+                    className={`flex items-center justify-between py-3.5 px-3 cursor-pointer transition-all relative ${
+                      transaction.paid === false
+                        ? 'bg-amber-500/5 hover:bg-amber-500/10 border-l-[3px] border-amber-500/40'
+                        : 'hover:bg-dark-700/50 border-l-[3px] border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       {/* Indicador de pendente */}
                       {transaction.paid === false && (
-                        <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                        <div className="w-2 h-2 rounded-full bg-amber-400/80 flex-shrink-0 animate-pulse" />
                       )}
 
                       {/* Ícone da categoria com cor */}
@@ -1098,8 +1105,12 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm text-white font-medium truncate">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className={`text-sm font-semibold truncate ${
+                            transaction.paid === false
+                              ? 'text-amber-900 dark:text-amber-50'
+                              : 'text-white'
+                          }`}>
                             {transaction.description}
                           </p>
                           {(transaction.attachments?.length > 0 || transaction.attachment) && (
@@ -1109,26 +1120,30 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                               rel="noopener noreferrer"
                               download={(transaction.attachments?.[0] || transaction.attachment)?.fileName}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-0.5 text-dark-400 hover:text-violet-400 transition-colors"
+                              className="flex items-center gap-0.5 text-dark-400 hover:text-violet-400 transition-colors flex-shrink-0"
                               title="Ver anexos"
                             >
-                              <Paperclip className="w-3 h-3 flex-shrink-0" />
+                              <Paperclip className="w-3.5 h-3.5 flex-shrink-0" />
                               {(transaction.attachments?.length || 1) > 1 && (
                                 <span className="text-xs">{transaction.attachments.length}</span>
                               )}
                             </a>
                           )}
                           {transaction.recurrenceTotal > 1 && (
-                            <span className="text-xs text-dark-500 flex-shrink-0">
+                            <span className="text-xs text-dark-500 bg-dark-800 px-1.5 py-0.5 rounded flex-shrink-0">
                               {transaction.recurrenceIndex}/{transaction.recurrenceTotal}
                             </span>
                           )}
                           {transaction.isFixed && (
-                            <Repeat className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                            <Repeat className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-dark-400">
-                          <span>{getCategoryName(transaction.category)}</span>
+                        <div className={`flex items-center gap-2 text-xs ${
+                          transaction.paid === false
+                            ? 'text-gray-600 dark:text-dark-400'
+                            : 'text-dark-400'
+                        }`}>
+                          <span className="font-medium">{getCategoryName(transaction.category)}</span>
                           {transaction.accountId && (
                             <>
                               <span>•</span>
@@ -1151,12 +1166,12 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-semibold ${
+                    <div className="flex items-center gap-2.5">
+                      <p className={`text-base font-bold tabular-nums ${
                         transaction.type === TRANSACTION_TYPES.INCOME
                           ? 'text-emerald-400'
                           : 'text-red-400'
-                      }`}>
+                      } ${transaction.paid === false ? 'opacity-70' : ''}`}>
                         {transaction.type === TRANSACTION_TYPES.INCOME ? '+' : '-'}
                         {formatCurrency(transaction.amount)}
                       </p>
@@ -1164,17 +1179,17 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                       {/* Botão pago/pendente */}
                       <button
                         onClick={(e) => { e.stopPropagation(); togglePaidStatus(transaction) }}
-                        className={`p-1.5 rounded-lg transition-colors ${
+                        className={`p-2 rounded-lg transition-all ${
                           transaction.paid === false
-                            ? 'text-dark-500 hover:text-emerald-400 hover:bg-emerald-500/10'
-                            : 'text-emerald-400 hover:text-dark-400 hover:bg-dark-700'
+                            ? 'bg-dark-800/50 text-amber-400/70 hover:bg-emerald-500/10 hover:text-emerald-400 border border-dark-700'
+                            : 'bg-emerald-500/10 text-emerald-400/80 hover:bg-dark-800 hover:text-dark-400 border border-emerald-500/20'
                         }`}
                         title={transaction.paid === false ? 'Marcar como pago' : 'Marcar como não pago'}
                       >
                         {transaction.paid === false ? (
-                          <ThumbsDown className="w-4 h-4" />
+                          <Clock className="w-4 h-4" />
                         ) : (
-                          <ThumbsUp className="w-4 h-4" />
+                          <Check className="w-4 h-4" />
                         )}
                       </button>
                     </div>
@@ -1233,6 +1248,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
           ? `Editar ${transactionType === TRANSACTION_TYPES.INCOME ? 'Receita' : 'Despesa'}`
           : `Nova ${transactionType === TRANSACTION_TYPES.INCOME ? 'Receita' : 'Despesa'}`
         }
+        headerVariant={transactionType === TRANSACTION_TYPES.INCOME ? 'income' : 'expense'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Type Toggle */}

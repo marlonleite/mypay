@@ -10,7 +10,7 @@ import {
   X
 } from 'lucide-react'
 import Modal from '../ui/Modal'
-import { formatCurrency } from '../../utils/helpers'
+import { usePrivacy } from '../../contexts/PrivacyContext'
 import { CATEGORY_COLORS, TRANSACTION_TYPES, MONTHS } from '../../utils/constants'
 
 export default function TransactionDetail({
@@ -26,6 +26,8 @@ export default function TransactionDetail({
   getCategoryColor,
   deleting = false
 }) {
+  const { formatCurrency } = usePrivacy()
+
   if (!transaction) return null
 
   const isIncome = transaction.type === TRANSACTION_TYPES.INCOME

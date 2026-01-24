@@ -84,26 +84,6 @@ This directory contains specialized AI agents following the Voltagent protocol f
 
 ---
 
-### 5. Mobile Developer (`mobile-developer.md`)
-**Expertise:** iOS, Android, React Native, mobile-first design
-
-**Use for:**
-- Mobile app development
-- Platform-specific features
-- Mobile performance optimization
-- App store deployment
-- Push notifications
-- Offline-first architecture
-
-**Deliverables:**
-- Native mobile code
-- Platform integrations
-- Mobile-optimized UI
-- App store assets
-- Mobile test suites
-
----
-
 ## Agent Protocol
 
 All agents follow the Voltagent protocol with three phases:
@@ -139,7 +119,6 @@ All agents follow the Voltagent protocol with three phases:
 /agent frontend-developer Implement dashboard with charts
 /agent fullstack-developer Build budget tracking feature
 /agent backend-developer Create CSV export API
-/agent mobile-developer Add push notifications
 ```
 
 ### Direct Use

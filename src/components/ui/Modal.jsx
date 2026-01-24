@@ -1,7 +1,14 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
-export default function Modal({ isOpen, onClose, title, children, hideHeader = false }) {
+const headerVariants = {
+  default: 'bg-dark-900 border-b border-dark-700/50',
+  income: 'bg-gradient-to-r from-emerald-600 to-emerald-500 border-none',
+  expense: 'bg-gradient-to-r from-red-600 to-red-500 border-none',
+  transfer: 'bg-gradient-to-r from-blue-600 to-blue-500 border-none'
+}
+
+export default function Modal({ isOpen, onClose, title, children, hideHeader = false, headerVariant = 'default' }) {
   // Prevent body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -37,11 +44,15 @@ export default function Modal({ isOpen, onClose, title, children, hideHeader = f
       <div className="relative w-full sm:max-w-lg bg-dark-900 rounded-t-[24px] sm:rounded-[24px] max-h-[90vh] overflow-hidden animate-slide-up sm:animate-scale-in">
         {/* Header */}
         {!hideHeader && (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-dark-700/50">
+          <div className={`flex items-center justify-between px-5 py-4 transition-all duration-300 ${headerVariants[headerVariant] || headerVariants.default}`}>
             <h2 className="text-lg font-semibold text-white">{title}</h2>
             <button
               onClick={onClose}
-              className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-xl transition-colors"
+              className={`p-2 rounded-xl transition-colors ${
+                headerVariant === 'default'
+                  ? 'text-dark-400 hover:text-white hover:bg-dark-700'
+                  : 'text-white/70 hover:text-white hover:bg-white/20'
+              }`}
             >
               <X className="w-5 h-5" />
             </button>

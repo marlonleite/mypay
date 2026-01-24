@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Transactions from './pages/Transactions'
 import Cards from './pages/Cards'
+import Reports from './pages/Reports'
 import Categories from './pages/Categories'
 import Tags from './pages/Tags'
 import Documents from './pages/Documents'
@@ -54,6 +55,14 @@ function AppContent() {
       case 'cards':
         return (
           <Cards
+            month={selectedMonth.month}
+            year={selectedMonth.year}
+            onMonthChange={handleMonthChange}
+          />
+        )
+      case 'reports':
+        return (
+          <Reports
             month={selectedMonth.month}
             year={selectedMonth.year}
             onMonthChange={handleMonthChange}

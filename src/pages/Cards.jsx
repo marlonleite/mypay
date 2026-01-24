@@ -37,13 +37,18 @@ import Select from '../components/ui/Select'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
+import LimitProgressBar from '../components/ui/LimitProgressBar'
+import BankIcon from '../components/ui/BankIcon'
+import BankSelector from '../components/ui/BankSelector'
 import { useCards, useAllCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
-import { formatCurrency, isDateInMonth } from '../utils/helpers'
+import { usePrivacy } from '../contexts/PrivacyContext'
+import { isDateInMonth } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, FIXED_FREQUENCIES, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
 export default function Cards({ month, year, onMonthChange }) {
   const { user } = useAuth()
+  const { formatCurrency } = usePrivacy()
   const {
     cards,
     loading: loadingCards,
@@ -85,6 +90,7 @@ export default function Cards({ month, year, onMonthChange }) {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
+  const [bankSelectorOpen, setBankSelectorOpen] = useState(false)
 
   // Toggles para seções do formulário
   const [showNotes, setShowNotes] = useState(false)
@@ -104,7 +110,9 @@ export default function Cards({ month, year, onMonthChange }) {
     name: '',
     closingDay: '10',
     dueDay: '20',
-    color: CARD_COLORS[0].id
+    color: CARD_COLORS[0].id,
+    limit: '',
+    bankId: 'generic'
   })
 
   const [expenseForm, setExpenseForm] = useState({
@@ -184,7 +192,9 @@ export default function Cards({ month, year, onMonthChange }) {
       name: '',
       closingDay: '10',
       dueDay: '20',
-      color: CARD_COLORS[0].id
+      color: CARD_COLORS[0].id,
+      limit: '',
+      bankId: 'generic'
     })
     setModalType('card')
   }
@@ -196,7 +206,9 @@ export default function Cards({ month, year, onMonthChange }) {
       name: card.name,
       closingDay: card.closingDay.toString(),
       dueDay: card.dueDay.toString(),
-      color: card.color
+      color: card.color,
+      limit: card.limit?.toString() || '',
+      bankId: card.bankId || 'generic'
     })
     setModalType('card')
   }
@@ -282,7 +294,9 @@ export default function Cards({ month, year, onMonthChange }) {
         name: cardForm.name,
         closingDay: parseInt(cardForm.closingDay),
         dueDay: parseInt(cardForm.dueDay),
-        color: cardForm.color
+        color: cardForm.color,
+        limit: cardForm.limit ? parseFloat(cardForm.limit) : null,
+        bankId: cardForm.bankId || 'generic'
       }
 
       if (editingItem) {
@@ -622,10 +636,16 @@ export default function Cards({ month, year, onMonthChange }) {
                 className="overflow-hidden"
               >
                 <div className="flex items-center gap-4">
-                  {/* Card Color Indicator */}
-                  <div className={`w-12 h-12 rounded-xl ${getColorClass(card.color)} flex items-center justify-center flex-shrink-0`}>
-                    <CreditCard className="w-6 h-6 text-white" />
-                  </div>
+                  {/* Bank Icon or Card Color Indicator */}
+                  {card.bankId && card.bankId !== 'generic' ? (
+                    <div className="flex-shrink-0">
+                      <BankIcon bankId={card.bankId} size="md" />
+                    </div>
+                  ) : (
+                    <div className={`w-12 h-12 rounded-xl ${getColorClass(card.color)} flex items-center justify-center flex-shrink-0`}>
+                      <CreditCard className="w-6 h-6 text-white" />
+                    </div>
+                  )}
 
                   {/* Card Info */}
                   <div className="flex-1 min-w-0">
@@ -640,6 +660,18 @@ export default function Cards({ month, year, onMonthChange }) {
                     <p className="text-xs text-dark-400">
                       Fecha dia {card.closingDay} • Vence dia {card.dueDay}
                     </p>
+
+                    {/* Limit Progress Bar */}
+                    {card.limit && (
+                      <div className="mt-2">
+                        <LimitProgressBar
+                          used={billTotal}
+                          limit={card.limit}
+                          size="sm"
+                          showLabel={false}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Total & Actions */}
@@ -711,6 +743,31 @@ export default function Cards({ month, year, onMonthChange }) {
                 label: `Dia ${i + 1}`
               }))}
             />
+          </div>
+
+          <Input
+            label="Limite do Cartão (opcional)"
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="0,00"
+            value={cardForm.limit}
+            onChange={(e) => setCardForm({ ...cardForm, limit: e.target.value })}
+          />
+
+          {/* Bank Selector */}
+          <div>
+            <label className="block text-sm font-medium text-dark-300 mb-2">
+              Banco
+            </label>
+            <button
+              type="button"
+              onClick={() => setBankSelectorOpen(true)}
+              className="w-full flex items-center justify-between p-3 bg-dark-800 border border-dark-700 rounded-xl hover:border-dark-600 transition-colors"
+            >
+              <BankIcon bankId={cardForm.bankId} size="sm" showName />
+              <span className="text-dark-400 text-sm">Alterar</span>
+            </button>
           </div>
 
           <div>
@@ -787,6 +844,18 @@ export default function Cards({ month, year, onMonthChange }) {
               </span>
               <span>Vence dia {selectedCard?.dueDay}</span>
             </div>
+
+            {/* Limit Progress Bar */}
+            {selectedCard?.limit && (
+              <div className="mt-3 pt-3 border-t border-white/20">
+                <LimitProgressBar
+                  used={cardTotals[selectedCard?.id] || 0}
+                  limit={selectedCard.limit}
+                  size="md"
+                  showLabel={true}
+                />
+              </div>
+            )}
 
             {/* Payment Info */}
             {selectedCard && isBillPaid(selectedCard.id) && (
@@ -906,6 +975,7 @@ export default function Cards({ month, year, onMonthChange }) {
         isOpen={modalType === 'expense'}
         onClose={() => setModalType('details')}
         title={editingItem ? "Editar Lançamento" : "Novo Lançamento no Cartão"}
+        headerVariant={expenseForm.type === TRANSACTION_TYPES.INCOME ? 'income' : 'expense'}
       >
         <form onSubmit={handleSaveExpense} className="space-y-4">
           {/* Type Toggle */}
@@ -1435,6 +1505,14 @@ export default function Cards({ month, year, onMonthChange }) {
           </div>
         </div>
       </Modal>
+
+      {/* Bank Selector Modal */}
+      <BankSelector
+        isOpen={bankSelectorOpen}
+        onClose={() => setBankSelectorOpen(false)}
+        onSelect={(bankId) => setCardForm({ ...cardForm, bankId })}
+        selectedBankId={cardForm.bankId}
+      />
     </div>
   )
 }

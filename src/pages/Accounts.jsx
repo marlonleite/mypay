@@ -9,8 +9,13 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowLeftRight,
-  ArrowRight
+  ArrowRight,
+  Settings,
+  AlertTriangle
 } from 'lucide-react'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { db } from '../firebase/config'
+import { useAuth } from '../contexts/AuthContext'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
@@ -18,8 +23,11 @@ import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
+import BankIcon from '../components/ui/BankIcon'
+import BankSelector from '../components/ui/BankSelector'
 import { useAccounts, useTransactions, useTransfers } from '../hooks/useFirestore'
-import { formatCurrency, getCurrentMonthYear } from '../utils/helpers'
+import { usePrivacy } from '../contexts/PrivacyContext'
+import { getCurrentMonthYear } from '../utils/helpers'
 
 const ACCOUNT_TYPES = [
   { value: 'wallet', label: 'Carteira', icon: Wallet },
@@ -37,6 +45,9 @@ const ACCOUNT_COLORS = [
 ]
 
 export default function Accounts() {
+  const { formatCurrency } = usePrivacy()
+  const { user } = useAuth()
+
   const {
     accounts,
     loading,
@@ -56,14 +67,18 @@ export default function Accounts() {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false)
+  const [bankSelectorOpen, setBankSelectorOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState(null)
+  const [adjustingAccount, setAdjustingAccount] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
     type: 'checking',
     color: 'blue',
-    initialBalance: ''
+    initialBalance: '',
+    bankId: 'generic'
   })
 
   const [transferForm, setTransferForm] = useState({
@@ -72,6 +87,12 @@ export default function Accounts() {
     amount: '',
     date: new Date().toISOString().split('T')[0],
     description: ''
+  })
+
+  const [adjustForm, setAdjustForm] = useState({
+    newBalance: '',
+    date: new Date().toISOString().split('T')[0],
+    notes: ''
   })
 
   const activeAccounts = getActiveAccounts()
@@ -132,7 +153,8 @@ export default function Accounts() {
       name: '',
       type: 'checking',
       color: 'blue',
-      initialBalance: ''
+      initialBalance: '',
+      bankId: 'generic'
     })
     setModalOpen(true)
   }
@@ -143,7 +165,8 @@ export default function Accounts() {
       name: account.name,
       type: account.type,
       color: account.color || 'blue',
-      initialBalance: (account.balance || 0).toString()
+      initialBalance: (account.balance || 0).toString(),
+      bankId: account.bankId || 'generic'
     })
     setModalOpen(true)
   }
@@ -159,7 +182,8 @@ export default function Accounts() {
         name: form.name,
         type: form.type,
         color: form.color,
-        balance: parseFloat(form.initialBalance) || 0
+        balance: parseFloat(form.initialBalance) || 0,
+        bankId: form.bankId || 'generic'
       }
 
       if (editingAccount) {
@@ -242,6 +266,59 @@ export default function Accounts() {
     }
   }
 
+  const openAdjustModal = (account) => {
+    setAdjustingAccount(account)
+    setAdjustForm({
+      newBalance: account.currentBalance.toFixed(2),
+      date: new Date().toISOString().split('T')[0],
+      notes: ''
+    })
+    setAdjustModalOpen(true)
+  }
+
+  const handleAdjustBalance = async (e) => {
+    e.preventDefault()
+    if (!adjustingAccount || !adjustForm.newBalance) return
+
+    const newBalance = parseFloat(adjustForm.newBalance)
+    const currentBalance = adjustingAccount.currentBalance
+    const difference = newBalance - currentBalance
+
+    if (difference === 0) {
+      alert('O novo saldo é igual ao saldo atual. Nenhum ajuste necessário.')
+      return
+    }
+
+    try {
+      setSaving(true)
+
+      // Create adjustment transaction
+      const type = difference > 0 ? 'income' : 'expense'
+      const amount = Math.abs(difference)
+
+      await addDoc(collection(db, `users/${user.uid}/transactions`), {
+        description: `Ajuste de saldo - ${adjustingAccount.name}`,
+        amount: amount,
+        category: 'balance_adjustment',
+        accountId: adjustingAccount.id,
+        date: new Date(adjustForm.date + 'T12:00:00'),
+        type: type,
+        paid: true,
+        notes: adjustForm.notes || `Saldo anterior: ${formatCurrency(currentBalance)}, Novo saldo: ${formatCurrency(newBalance)}`,
+        isAdjustment: true,
+        createdAt: serverTimestamp()
+      })
+
+      setAdjustModalOpen(false)
+      setAdjustingAccount(null)
+    } catch (error) {
+      console.error('Error adjusting balance:', error)
+      alert('Erro ao ajustar saldo. Tente novamente.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -318,10 +395,16 @@ export default function Accounts() {
             return (
               <Card key={account.id} className="!p-4">
                 <div className="flex items-center gap-4">
-                  {/* Icon */}
-                  <div className={`w-12 h-12 rounded-xl ${getColorClass(account.color)} flex items-center justify-center flex-shrink-0`}>
-                    <Icon className="w-6 h-6 text-white" />
-                  </div>
+                  {/* Bank Icon or Account Type Icon */}
+                  {account.bankId && account.bankId !== 'generic' ? (
+                    <div className="flex-shrink-0">
+                      <BankIcon bankId={account.bankId} size="md" />
+                    </div>
+                  ) : (
+                    <div className={`w-12 h-12 rounded-xl ${getColorClass(account.color)} flex items-center justify-center flex-shrink-0`}>
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+                  )}
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
@@ -345,6 +428,13 @@ export default function Accounts() {
 
                   {/* Actions */}
                   <div className="flex gap-1">
+                    <button
+                      onClick={() => openAdjustModal(account)}
+                      className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors"
+                      title="Ajustar saldo"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={() => openEditModal(account)}
                       className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
@@ -442,6 +532,21 @@ export default function Accounts() {
             onChange={(e) => setForm({ ...form, initialBalance: e.target.value })}
           />
 
+          {/* Bank Selector */}
+          <div>
+            <label className="block text-sm font-medium text-dark-300 mb-2">
+              Banco
+            </label>
+            <button
+              type="button"
+              onClick={() => setBankSelectorOpen(true)}
+              className="w-full flex items-center justify-between p-3 bg-dark-800 border border-dark-700 rounded-xl hover:border-dark-600 transition-colors"
+            >
+              <BankIcon bankId={form.bankId} size="sm" showName />
+              <span className="text-dark-400 text-sm">Alterar</span>
+            </button>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-dark-300 mb-2">
               Cor
@@ -490,30 +595,80 @@ export default function Accounts() {
         title="Nova Transferência"
       >
         <form onSubmit={handleTransfer} className="space-y-4">
-          <Select
-            label="De"
-            value={transferForm.fromAccountId}
-            onChange={(e) => setTransferForm({ ...transferForm, fromAccountId: e.target.value })}
-            options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
-          />
+          {/* Visual Transfer Flow */}
+          <div className="flex items-center gap-3 p-4 bg-dark-800 rounded-xl">
+            {/* From Account */}
+            <div className="flex-1">
+              <Select
+                label="Origem"
+                value={transferForm.fromAccountId}
+                onChange={(e) => setTransferForm({ ...transferForm, fromAccountId: e.target.value })}
+                options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
+              />
+              {transferForm.fromAccountId && (() => {
+                const fromAccount = accountsWithBalance.find(a => a.id === transferForm.fromAccountId)
+                return fromAccount && (
+                  <div className="mt-2 text-xs">
+                    <span className="text-dark-400">Disponível: </span>
+                    <span className={`font-medium ${fromAccount.currentBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {formatCurrency(fromAccount.currentBalance)}
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
 
-          <Select
-            label="Para"
-            value={transferForm.toAccountId}
-            onChange={(e) => setTransferForm({ ...transferForm, toAccountId: e.target.value })}
-            options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
-          />
+            {/* Arrow */}
+            <div className="flex items-center justify-center pt-6">
+              <ArrowRight className="w-6 h-6 text-violet-400" />
+            </div>
 
-          <Input
-            label="Valor"
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="0,00"
-            value={transferForm.amount}
-            onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
-            required
-          />
+            {/* To Account */}
+            <div className="flex-1">
+              <Select
+                label="Destino"
+                value={transferForm.toAccountId}
+                onChange={(e) => setTransferForm({ ...transferForm, toAccountId: e.target.value })}
+                options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
+              />
+              {transferForm.toAccountId && (() => {
+                const toAccount = accountsWithBalance.find(a => a.id === transferForm.toAccountId)
+                return toAccount && (
+                  <div className="mt-2 text-xs">
+                    <span className="text-dark-400">Saldo atual: </span>
+                    <span className={`font-medium ${toAccount.currentBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                      {formatCurrency(toAccount.currentBalance)}
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+
+          <div>
+            <Input
+              label="Valor da Transferência"
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="0,00"
+              value={transferForm.amount}
+              onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
+              required
+            />
+            {transferForm.amount && transferForm.fromAccountId && (() => {
+              const fromAccount = accountsWithBalance.find(a => a.id === transferForm.fromAccountId)
+              const amount = parseFloat(transferForm.amount)
+              if (fromAccount && amount > fromAccount.currentBalance) {
+                return (
+                  <p className="mt-2 text-xs text-yellow-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Valor superior ao saldo disponível
+                  </p>
+                )
+              }
+            })()}
+          </div>
 
           <Input
             label="Data"
@@ -550,6 +705,126 @@ export default function Accounts() {
           </div>
         </form>
       </Modal>
+
+      {/* Modal Ajustar Saldo */}
+      <Modal
+        isOpen={adjustModalOpen}
+        onClose={() => setAdjustModalOpen(false)}
+        title="Ajustar Saldo"
+      >
+        <form onSubmit={handleAdjustBalance} className="space-y-4">
+          {adjustingAccount && (
+            <>
+              {/* Info da conta */}
+              <div className="p-4 bg-dark-800 rounded-xl">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-10 h-10 rounded-xl ${getColorClass(adjustingAccount.color)} flex items-center justify-center`}>
+                    {(() => {
+                      const Icon = getAccountIcon(adjustingAccount.type)
+                      return <Icon className="w-5 h-5 text-white" />
+                    })()}
+                  </div>
+                  <div>
+                    <h3 className="text-white font-medium">{adjustingAccount.name}</h3>
+                    <p className="text-xs text-dark-400">{getAccountTypeName(adjustingAccount.type)}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Saldo calculado</span>
+                    <span className="text-white font-medium">
+                      {formatCurrency(adjustingAccount.currentBalance)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-dark-700">
+                    <span className="text-dark-400">Novo saldo</span>
+                    <span className="text-violet-400 font-bold">
+                      {adjustForm.newBalance ? formatCurrency(parseFloat(adjustForm.newBalance)) : '-'}
+                    </span>
+                  </div>
+                  {adjustForm.newBalance && parseFloat(adjustForm.newBalance) !== adjustingAccount.currentBalance && (
+                    <div className="flex justify-between items-center pt-2 border-t border-dark-700">
+                      <span className="text-dark-400">Diferença</span>
+                      <span className={`font-bold ${
+                        parseFloat(adjustForm.newBalance) > adjustingAccount.currentBalance
+                          ? 'text-emerald-400'
+                          : 'text-red-400'
+                      }`}>
+                        {parseFloat(adjustForm.newBalance) > adjustingAccount.currentBalance ? '+' : ''}
+                        {formatCurrency(parseFloat(adjustForm.newBalance) - adjustingAccount.currentBalance)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <Input
+                label="Saldo Real da Conta"
+                type="number"
+                step="0.01"
+                placeholder="0,00"
+                value={adjustForm.newBalance}
+                onChange={(e) => setAdjustForm({ ...adjustForm, newBalance: e.target.value })}
+                required
+              />
+
+              <Input
+                label="Data do Ajuste"
+                type="date"
+                value={adjustForm.date}
+                onChange={(e) => setAdjustForm({ ...adjustForm, date: e.target.value })}
+                required
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-1.5">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={adjustForm.notes}
+                  onChange={(e) => setAdjustForm({ ...adjustForm, notes: e.target.value })}
+                  placeholder="Motivo do ajuste..."
+                  className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-500 focus:outline-none focus:border-violet-500 resize-none"
+                  rows={3}
+                />
+              </div>
+
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+                <p className="text-xs text-yellow-400">
+                  Um lançamento de ajuste será criado automaticamente para reconciliar o saldo.
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setAdjustModalOpen(false)}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              loading={saving}
+              className="flex-1"
+            >
+              Ajustar Saldo
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Bank Selector Modal */}
+      <BankSelector
+        isOpen={bankSelectorOpen}
+        onClose={() => setBankSelectorOpen(false)}
+        onSelect={(bankId) => setForm({ ...form, bankId })}
+        selectedBankId={form.bankId}
+      />
     </div>
   )
 }

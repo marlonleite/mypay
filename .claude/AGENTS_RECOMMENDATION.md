@@ -84,31 +84,15 @@
 
 ---
 
-### 5. Mobile Developer ❌
-**Uso:** NÃO APLICÁVEL
-
-**Status:** Remover do projeto
-
-**Motivo:**
-- Projeto é web-only (React + Vite)
-- Não há código mobile
-- Não há planos de mobile nativo
-
-**Se adicionar mobile no futuro:**
-- PWA simples → Use Frontend Developer
-- React Native → Re-adicione Mobile Developer
-
----
 
 ## 📊 Matriz de Uso Recomendado
 
-| Agente | Frequência | Complexidade | Casos de Uso no myPay |
-|--------|------------|--------------|----------------------|
-| UI Designer | 🔥🔥🔥 Alta | Média | Design, componentes visuais, UX |
-| Frontend Developer | 🔥🔥🔥 Alta | Média-Alta | React, estado, performance, testes |
-| Backend Developer | 🔥🔥 Média | Média | Firebase, queries, rules, Cloud Functions |
-| Fullstack Developer | 🔥 Baixa | Muito Alta | Features complexas cross-stack |
-| ~~Mobile Developer~~ | ❌ Nenhuma | N/A | Não aplicável |
+| Agente              | Frequência | Complexidade | Casos de Uso no myPay                     |
+| ------------------- | ---------- | ------------ | ----------------------------------------- |
+| UI Designer         | 🔥🔥🔥 Alta   | Média        | Design, componentes visuais, UX           |
+| Frontend Developer  | 🔥🔥🔥 Alta   | Média-Alta   | React, estado, performance, testes        |
+| Backend Developer   | 🔥🔥 Média   | Média        | Firebase, queries, rules, Cloud Functions |
+| Fullstack Developer | 🔥 Baixa    | Muito Alta   | Features complexas cross-stack            |
 
 ## 🎯 Workflow Recomendado
 
@@ -143,20 +127,12 @@
 /page [PageName]
 ```
 
-## 🔧 Ações Recomendadas
-
-### 1. Remover Mobile Developer
-```bash
-# Delete o arquivo
-rm .claude/agents/mobile-developer.md
-```
-
-### 2. Atualizar documentação
+### 1. Atualizar documentação
 - Remover referências ao Mobile Developer
 - Atualizar matriz de expertise
 - Atualizar exemplos
 
-### 3. Manter Fullstack por enquanto
+### 2. Manter Fullstack por enquanto
 - Útil para features raras muito complexas
 - Documenta que deve ser usado raramente
 - Pode remover depois se nunca usar
@@ -186,7 +162,6 @@ rm .claude/agents/mobile-developer.md
 2. ✅ Frontend Developer (uso frequente)
 3. ✅ Backend Developer (uso médio)
 4. ⚠️ Fullstack Developer (uso raro, mas útil)
-5. ❌ Mobile Developer (remover)
 
 **Skills a usar mais:**
 - `/component` - Para componentes simples

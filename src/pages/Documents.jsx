@@ -13,7 +13,7 @@ import FileUpload from '../components/documents/FileUpload'
 import FilePreview from '../components/documents/FilePreview'
 import ProcessingResult from '../components/documents/ProcessingResult'
 import ImportHistory from '../components/documents/ImportHistory'
-import { useCards, useTransactions, useCategories } from '../hooks/useFirestore'
+import { useCards, useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
 import { processDocument } from '../services/ai/gemini'
 import { uploadComprovante } from '../services/storage'
@@ -31,6 +31,8 @@ export default function Documents({ month, year }) {
 
   // Hooks
   const { cards } = useCards()
+  const { accounts } = useAccounts()
+  const { tags } = useTags()
   const { addTransaction } = useTransactions(month, year)
   const { imports, addImport, addCardExpense } = useImportHistory()
   const { categories: allCategories, getMainCategories } = useCategories()
@@ -83,11 +85,19 @@ export default function Documents({ month, year }) {
         // Continua mesmo sem o comprovante
       }
 
-      // Adiciona URL do comprovante à transação
+      // Adiciona URL do comprovante à transação como attachment
       const transactionWithComprovante = {
         ...transactionData,
-        ...(comprovanteData && { comprovante: comprovanteData })
+        ...(comprovanteData && {
+          attachments: [{
+            url: comprovanteData.url,
+            fileName: comprovanteData.fileName || file.name,
+            fileType: comprovanteData.type || file.type
+          }]
+        })
       }
+
+      console.log('Criando transação normal:', transactionWithComprovante)
 
       await addTransaction(transactionWithComprovante)
 
@@ -131,11 +141,19 @@ export default function Documents({ month, year }) {
         // Continua mesmo sem o comprovante
       }
 
-      // Adiciona URL do comprovante à despesa
+      // Adiciona URL do comprovante à despesa como attachment
       const expenseWithComprovante = {
         ...expenseData,
-        ...(comprovanteData && { comprovante: comprovanteData })
+        ...(comprovanteData && {
+          attachments: [{
+            url: comprovanteData.url,
+            fileName: comprovanteData.fileName || file.name,
+            fileType: comprovanteData.type || file.type
+          }]
+        })
       }
+
+      console.log('Criando despesa de cartão:', expenseWithComprovante)
 
       await addCardExpense(expenseWithComprovante)
 
@@ -250,6 +268,9 @@ export default function Documents({ month, year }) {
           onCreateCardExpense={handleCreateCardExpense}
           onDiscard={handleDiscard}
           cards={cards}
+          accounts={accounts}
+          tags={tags}
+          file={file}
           saving={saving}
           categories={allCategories}
           getMainCategories={getMainCategories}

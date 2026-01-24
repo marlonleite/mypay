@@ -44,11 +44,38 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
 
   const handleQuickSelect = (option) => {
     const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
 
     switch (option) {
       case 'today': {
-        const todayStr = today.toISOString().split('T')[0]
         onDateRangeChange?.({ startDate: todayStr, endDate: todayStr })
+        break
+      }
+      case 'last7': {
+        const startDate = new Date(today)
+        startDate.setDate(today.getDate() - 6) // 6 days ago + today = 7 days
+        onDateRangeChange?.({
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: todayStr
+        })
+        break
+      }
+      case 'last15': {
+        const startDate = new Date(today)
+        startDate.setDate(today.getDate() - 14) // 14 days ago + today = 15 days
+        onDateRangeChange?.({
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: todayStr
+        })
+        break
+      }
+      case 'last30': {
+        const startDate = new Date(today)
+        startDate.setDate(today.getDate() - 29) // 29 days ago + today = 30 days
+        onDateRangeChange?.({
+          startDate: startDate.toISOString().split('T')[0],
+          endDate: todayStr
+        })
         break
       }
       case 'week': {
@@ -67,6 +94,15 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
         onDateRangeChange?.(null) // Limpa o período custom
         onChange(today.getMonth(), today.getFullYear())
         break
+      case 'year': {
+        const startOfYear = new Date(today.getFullYear(), 0, 1)
+        const endOfYear = new Date(today.getFullYear(), 11, 31)
+        onDateRangeChange?.({
+          startDate: startOfYear.toISOString().split('T')[0],
+          endDate: endOfYear.toISOString().split('T')[0]
+        })
+        break
+      }
       case 'custom':
         // Inicializar com o mês atual se não tiver valores
         if (!customStart) {
@@ -165,13 +201,32 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
 
         {/* Dropdown de opções rápidas */}
         {showDropdown && !showCustomPeriod && (
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-dark-900 rounded-[20px] shadow-lg py-2 min-w-[160px] z-[100]">
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-dark-900 rounded-[20px] shadow-lg py-2 min-w-[180px] z-[100]">
             <button
               onClick={() => handleQuickSelect('today')}
               className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
             >
               Hoje
             </button>
+            <button
+              onClick={() => handleQuickSelect('last7')}
+              className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
+            >
+              Últimos 7 dias
+            </button>
+            <button
+              onClick={() => handleQuickSelect('last15')}
+              className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
+            >
+              Últimos 15 dias
+            </button>
+            <button
+              onClick={() => handleQuickSelect('last30')}
+              className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
+            >
+              Últimos 30 dias
+            </button>
+            <div className="border-t border-dark-700 my-1" />
             <button
               onClick={() => handleQuickSelect('week')}
               className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
@@ -184,12 +239,18 @@ export default function MonthSelector({ month, year, onChange, dateRange, onDate
             >
               Este mês
             </button>
+            <button
+              onClick={() => handleQuickSelect('year')}
+              className="w-full px-4 py-2.5 text-sm text-dark-300 hover:bg-dark-800 hover:text-white text-left transition-colors"
+            >
+              Este ano
+            </button>
             <div className="border-t border-dark-700 my-1" />
             <button
               onClick={() => handleQuickSelect('custom')}
               className="w-full px-4 py-2.5 text-sm text-violet-400 hover:bg-dark-800 text-left transition-colors font-medium"
             >
-              Escolher período
+              Período customizado
             </button>
           </div>
         )}

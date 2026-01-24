@@ -14,11 +14,13 @@ import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import { useTransactions, useAllCardExpenses, useCards, useAccounts } from '../hooks/useFirestore'
-import { formatCurrency, formatDate, isDateInMonth } from '../utils/helpers'
+import { usePrivacy } from '../contexts/PrivacyContext'
+import { formatDate, isDateInMonth } from '../utils/helpers'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_TYPES } from '../utils/constants'
 
 export default function Dashboard({ month, year, onMonthChange }) {
   const [dateRange, setDateRange] = useState(null)
+  const { formatCurrencyPrivate } = usePrivacy()
 
   const { transactions, loading: loadingTransactions } = useTransactions(month, year)
   const { expenses: allCardExpenses, loading: loadingCardExpenses } = useAllCardExpenses()
@@ -164,12 +166,12 @@ export default function Dashboard({ month, year, onMonthChange }) {
                 <span className="text-xs text-dark-400">Receitas</span>
               </div>
               <p className="text-2xl font-bold text-white">
-                {formatCurrency(summary.income)}
+                {formatCurrencyPrivate(summary.income)}
               </p>
               {summary.pendingIncome > 0 && (
                 <p className="text-xs text-amber-400 flex items-center gap-1 mt-1">
                   <Clock className="w-3 h-3" />
-                  {formatCurrency(summary.pendingIncome)} a receber
+                  {formatCurrencyPrivate(summary.pendingIncome)} a receber
                 </p>
               )}
             </Card>
@@ -183,12 +185,12 @@ export default function Dashboard({ month, year, onMonthChange }) {
                 <span className="text-xs text-dark-400">Despesas</span>
               </div>
               <p className="text-2xl font-bold text-white">
-                {formatCurrency(summary.expenses)}
+                {formatCurrencyPrivate(summary.expenses)}
               </p>
               {summary.pendingExpenses > 0 && (
                 <p className="text-xs text-amber-400 flex items-center gap-1 mt-1">
                   <Clock className="w-3 h-3" />
-                  {formatCurrency(summary.pendingExpenses)} a pagar
+                  {formatCurrencyPrivate(summary.pendingExpenses)} a pagar
                 </p>
               )}
             </Card>
@@ -202,7 +204,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                 <span className="text-xs text-dark-400">Fatura</span>
               </div>
               <p className="text-2xl font-bold text-white">
-                {formatCurrency(summary.cardTotal)}
+                {formatCurrencyPrivate(summary.cardTotal)}
               </p>
             </Card>
 
@@ -219,11 +221,11 @@ export default function Dashboard({ month, year, onMonthChange }) {
               <p className={`text-2xl font-bold ${
                 summary.balance >= 0 ? 'text-white' : 'text-red-400'
               }`}>
-                {formatCurrency(summary.balance)}
+                {formatCurrencyPrivate(summary.balance)}
               </p>
               {summary.hasPending && (
                 <p className="text-xs text-dark-400 mt-1">
-                  Realizado: {formatCurrency(summary.confirmedBalance)}
+                  Realizado: {formatCurrencyPrivate(summary.confirmedBalance)}
                 </p>
               )}
             </Card>
@@ -257,7 +259,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                     <p className={`text-sm font-semibold ${
                       account.currentBalance >= 0 ? 'text-white' : 'text-red-400'
                     }`}>
-                      {formatCurrency(account.currentBalance)}
+                      {formatCurrencyPrivate(account.currentBalance)}
                     </p>
                   </div>
                 ))}
@@ -269,7 +271,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                       ? 'text-emerald-400'
                       : 'text-red-400'
                   }`}>
-                    {formatCurrency(accountBalances.reduce((sum, a) => sum + a.currentBalance, 0))}
+                    {formatCurrencyPrivate(accountBalances.reduce((sum, a) => sum + a.currentBalance, 0))}
                   </span>
                 </div>
               </div>
@@ -337,7 +339,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                         : 'text-red-400'
                     }`}>
                       {item.type === TRANSACTION_TYPES.INCOME ? '+' : '-'}
-                      {formatCurrency(item.amount)}
+                      {formatCurrencyPrivate(item.amount)}
                     </p>
                   </div>
                 ))}
