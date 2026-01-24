@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
@@ -31,8 +31,6 @@ export function NotificationProvider({ children }) {
 
   // Push notification state
   const [pushEnabled, setPushEnabled] = useState(false)
-  const sentPushNotifications = useRef(new Set())
-  const lastPushCheck = useRef(null)
 
   // Listen to push settings from Firestore
   useEffect(() => {
@@ -203,45 +201,62 @@ export function NotificationProvider({ children }) {
     localStorage.setItem('readNotifications', JSON.stringify(allIds))
   }
 
-  // Send push notification for a specific alert
-  const sendPushNotification = useCallback((notification) => {
-    if (!pushEnabled) return
+  // Show local notification on app open (once per day per alert type)
+  useEffect(() => {
+    if (!pushEnabled || !user) return
     if (!isPushSupported()) return
     if (getNotificationPermission() !== 'granted') return
 
-    // Don't send if already sent today
+    // Check if we already showed notification today
     const today = new Date().toDateString()
-    const notifKey = `${notification.id}-${today}`
-    if (sentPushNotifications.current.has(notifKey)) return
+    const lastShown = localStorage.getItem('lastPushNotificationDate')
 
-    // Show local notification
-    showLocalNotification(notification.title, {
-      body: notification.message,
-      tag: notification.id,
-      data: notification.actionData
-    })
-
-    sentPushNotifications.current.add(notifKey)
-  }, [pushEnabled])
-
-  // Trigger push notifications for high-severity unread notifications
-  useEffect(() => {
-    if (!pushEnabled || !user) return
-
-    // Only check once per session or every 5 minutes
-    const now = Date.now()
-    if (lastPushCheck.current && (now - lastPushCheck.current) < 5 * 60 * 1000) {
-      return
+    if (lastShown === today) {
+      return // Already showed today
     }
-    lastPushCheck.current = now
 
-    // Send push for high-severity unread notifications
-    unreadNotifications
-      .filter(n => n.severity === 'high')
-      .forEach(notification => {
-        sendPushNotification(notification)
+    // Wait a bit for data to load
+    const timer = setTimeout(() => {
+      const highPriority = unreadNotifications.filter(n => n.severity === 'high')
+      const mediumPriority = unreadNotifications.filter(n => n.severity === 'medium')
+
+      if (highPriority.length === 0 && mediumPriority.length === 0) {
+        return // No alerts to show
+      }
+
+      // Build notification message
+      let title = 'myPay - Alertas'
+      let body = ''
+
+      if (highPriority.length > 0) {
+        title = `myPay - ${highPriority.length} alerta(s) urgente(s)`
+        if (highPriority.length === 1) {
+          body = highPriority[0].message
+        } else {
+          body = highPriority.map(n => `• ${n.title}`).join('\n')
+        }
+      } else if (mediumPriority.length > 0) {
+        title = `myPay - ${mediumPriority.length} aviso(s)`
+        if (mediumPriority.length === 1) {
+          body = mediumPriority[0].message
+        } else {
+          body = mediumPriority.map(n => `• ${n.title}`).join('\n')
+        }
+      }
+
+      // Show the notification
+      showLocalNotification(title, {
+        body,
+        tag: 'mypay-daily-alert',
+        requireInteraction: true // Keep notification visible until user interacts
       })
-  }, [pushEnabled, user, unreadNotifications, sendPushNotification])
+
+      // Mark as shown today
+      localStorage.setItem('lastPushNotificationDate', today)
+    }, 2000) // Wait 2 seconds for data to load
+
+    return () => clearTimeout(timer)
+  }, [pushEnabled, user, unreadNotifications])
 
   return (
     <NotificationContext.Provider value={{
@@ -250,8 +265,7 @@ export function NotificationProvider({ children }) {
       unreadCount,
       markAsRead,
       markAllAsRead,
-      pushEnabled,
-      sendPushNotification
+      pushEnabled
     }}>
       {children}
     </NotificationContext.Provider>
