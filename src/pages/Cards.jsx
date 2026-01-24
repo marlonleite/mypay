@@ -912,9 +912,9 @@ export default function Cards({ month, year, onMonthChange }) {
                     key={expense.id}
                     className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm text-white font-medium truncate">
+                        <p className="text-sm text-white font-medium truncate min-w-0 flex-1">
                           {expense.description}
                         </p>
                         {expense.isFixed && (
@@ -924,7 +924,7 @@ export default function Cards({ month, year, onMonthChange }) {
                           <Paperclip className="w-3 h-3 text-dark-400 flex-shrink-0" />
                         )}
                       </div>
-                      <p className="text-xs text-dark-400">
+                      <p className="text-xs text-dark-400 truncate">
                         {getCategoryName(expense.category)} • {formatDate(expense.date)}
                         {expense.totalInstallments > 1 && (
                           <span className={`ml-1 ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>

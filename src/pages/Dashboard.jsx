@@ -297,8 +297,8 @@ export default function Dashboard({ month, year, onMonthChange }) {
                     key={item.id}
                     className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
+                    <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${
                         item.type === TRANSACTION_TYPES.INCOME
                           ? 'bg-emerald-500/20'
                           : item.type === 'card'
@@ -313,11 +313,11 @@ export default function Dashboard({ month, year, onMonthChange }) {
                           <ArrowDownRight className="w-4 h-4 text-red-500" />
                         )}
                       </div>
-                      <div>
-                        <p className="text-sm text-white font-medium">
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <p className="text-sm text-white font-medium truncate">
                           {item.description}
                         </p>
-                        <p className="text-xs text-dark-400">
+                        <p className="text-xs text-dark-400 truncate">
                           {item.type === 'card'
                             ? item.cardName
                             : getCategoryName(item.category, item.type)}
@@ -331,7 +331,7 @@ export default function Dashboard({ month, year, onMonthChange }) {
                         </p>
                       </div>
                     </div>
-                    <p className={`text-sm font-semibold ${
+                    <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${
                       item.type === TRANSACTION_TYPES.INCOME
                         ? 'text-emerald-400'
                         : item.type === 'card'

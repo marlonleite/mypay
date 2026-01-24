@@ -781,7 +781,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                   onClick={() => openDetailModal(transaction)}
                   className="flex items-center justify-between p-3 hover:bg-red-500/10 cursor-pointer transition-colors"
                 >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
@@ -792,11 +792,11 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                         <ArrowDownRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
                       )}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="text-sm font-medium truncate text-red-900 dark:text-red-50">
                         {transaction.description}
                       </p>
-                      <p className="text-xs text-red-700 dark:text-red-200/80">
+                      <p className="text-xs truncate text-red-700 dark:text-red-200/80">
                         {formatDate(transaction.date)}
                         {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
                       </p>
@@ -1104,9 +1104,9 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                           <ArrowDownRight className="w-4 h-4" style={{ color: getCategoryColor(transaction.category) }} />
                         )}
                       </div>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 overflow-hidden">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <p className={`text-sm font-semibold truncate ${
+                          <p className={`text-sm font-semibold truncate min-w-0 flex-1 ${
                             transaction.paid === false
                               ? 'text-amber-900 dark:text-amber-50'
                               : 'text-white'
@@ -1130,7 +1130,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                             </a>
                           )}
                           {transaction.recurrenceTotal > 1 && (
-                            <span className="text-xs text-dark-500 bg-dark-800 px-1.5 py-0.5 rounded flex-shrink-0">
+                            <span className="text-xs text-dark-500 bg-dark-800 px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap">
                               {transaction.recurrenceIndex}/{transaction.recurrenceTotal}
                             </span>
                           )}
@@ -1138,19 +1138,16 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                             <Repeat className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
                           )}
                         </div>
-                        <div className={`flex items-center gap-2 text-xs ${
+                        <p className={`text-xs truncate ${
                           transaction.paid === false
                             ? 'text-gray-600 dark:text-dark-400'
                             : 'text-dark-400'
                         }`}>
                           <span className="font-medium">{getCategoryName(transaction.category)}</span>
                           {transaction.accountId && (
-                            <>
-                              <span>•</span>
-                              <span>{getAccountName(transaction.accountId)}</span>
-                            </>
+                            <span> • {getAccountName(transaction.accountId)}</span>
                           )}
-                        </div>
+                        </p>
                         {normalizeTags(transaction.tags).length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
                             {normalizeTags(transaction.tags).slice(0, 3).map(tag => (
@@ -1166,8 +1163,8 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2.5">
-                      <p className={`text-base font-bold tabular-nums ${
+                    <div className="flex items-center gap-2.5 flex-shrink-0">
+                      <p className={`text-base font-bold tabular-nums whitespace-nowrap ${
                         transaction.type === TRANSACTION_TYPES.INCOME
                           ? 'text-emerald-400'
                           : 'text-red-400'

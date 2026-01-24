@@ -5,6 +5,7 @@ import { usePrivacy } from '../contexts/PrivacyContext'
 import { ThemeToggleCompact } from './ui/ThemeToggle'
 import NotificationBadge from './notifications/NotificationBadge'
 import NotificationCenter from './notifications/NotificationCenter'
+import UpdateNotification from './ui/UpdateNotification'
 
 // Tabs principais da navegação
 const mainTabs = [
@@ -220,6 +221,9 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
           </div>
         </div>
       </nav>
+
+      {/* Notificação de nova versão */}
+      <UpdateNotification />
     </div>
   )
 }
