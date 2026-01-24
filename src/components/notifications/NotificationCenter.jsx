@@ -27,6 +27,14 @@ export default function NotificationCenter({ isOpen, onClose }) {
 
   const displayNotifications = showAll ? notifications : unreadNotifications
 
+  // Backdrop for mobile
+  const Backdrop = () => (
+    <div
+      className="fixed inset-0 bg-black/50 z-[99] sm:hidden"
+      onClick={onClose}
+    />
+  )
+
   const getSeverityIcon = (severity) => {
     switch (severity) {
       case 'high':
@@ -50,11 +58,13 @@ export default function NotificationCenter({ isOpen, onClose }) {
   }
 
   return (
-    <div
-      ref={dropdownRef}
-      className="absolute top-full right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-dark-900 rounded-[20px] shadow-2xl border border-dark-700 z-[100] max-h-[80vh] flex flex-col"
-    >
-      {/* Header */}
+    <>
+      <Backdrop />
+      <div
+        ref={dropdownRef}
+        className="fixed sm:absolute inset-x-4 sm:inset-x-auto top-16 sm:top-full sm:right-0 sm:mt-2 sm:w-96 bg-dark-900 rounded-[20px] shadow-2xl border border-dark-700 z-[100] max-h-[70vh] sm:max-h-[80vh] flex flex-col"
+      >
+        {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-dark-700">
         <div>
           <h3 className="text-lg font-semibold text-white">Notificações</h3>
@@ -172,5 +182,6 @@ export default function NotificationCenter({ isOpen, onClose }) {
         )}
       </div>
     </div>
+    </>
   )
 }
