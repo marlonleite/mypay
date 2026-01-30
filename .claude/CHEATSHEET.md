@@ -59,11 +59,10 @@
 
 | Command | Expert In | Example |
 |---------|-----------|---------|
-| `/agent ui-designer` | Visual design, design systems | `/agent ui-designer Create card system` |
-| `/agent frontend-developer` | React, TypeScript, UI | `/agent frontend-developer Build dashboard` |
-| `/agent backend-developer` | APIs, Firebase, logic | `/agent backend-developer Create export API` |
+| `/agent ui-designer` | Tailwind, dark mode | `/agent ui-designer Create card system` |
+| `/agent frontend-developer` | React, JavaScript | `/agent frontend-developer Build dashboard` |
+| `/agent backend-developer` | Firebase, Firestore | `/agent backend-developer Create export service` |
 | `/agent fullstack-developer` | End-to-end features | `/agent fullstack-developer Add budgets` |
-| `/agent mobile-developer` | React Native, mobile | `/agent mobile-developer Add biometric auth` |
 
 ## Features to Test
 

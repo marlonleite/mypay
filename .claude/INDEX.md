@@ -41,17 +41,16 @@ Quick access to skill documentation:
 | `/deploy` | Deploy to production | [skills/deploy.md](skills/deploy.md) |
 | `/agent` | Invoke specialized agents | [skills/agent.md](skills/agent.md) |
 
-## 🤖 Agents (5 Available)
+## 🤖 Agents (4 Available)
 
 Quick access to agent specifications:
 
 | Agent | Expertise | Documentation |
 |-------|-----------|---------------|
-| `ui-designer` | Visual design, design systems | [agents/ui-designer.md](agents/ui-designer.md) |
-| `frontend-developer` | React, TypeScript, UI | [agents/frontend-developer.md](agents/frontend-developer.md) |
-| `backend-developer` | APIs, Firebase, backend | [agents/backend-developer.md](agents/backend-developer.md) |
+| `ui-designer` | Tailwind CSS, dark mode | [agents/ui-designer.md](agents/ui-designer.md) |
+| `frontend-developer` | React, JavaScript, UI | [agents/frontend-developer.md](agents/frontend-developer.md) |
+| `backend-developer` | Firebase, Firestore | [agents/backend-developer.md](agents/backend-developer.md) |
 | `fullstack-developer` | End-to-end features | [agents/fullstack-developer.md](agents/fullstack-developer.md) |
-| `mobile-developer` | React Native, mobile | [agents/mobile-developer.md](agents/mobile-developer.md) |
 
 ## 📋 Common Use Cases
 
@@ -131,11 +130,8 @@ What do you need?
 ├─ Backend/API/Firebase
 │  └─ Use: /firebase or /agent backend-developer
 │
-├─ Complete feature (DB → UI)
+├─ Complete feature (Firestore → UI)
 │  └─ Use: /agent fullstack-developer
-│
-├─ Mobile development
-│  └─ Use: /agent mobile-developer
 │
 ├─ Code quality improvement
 │  └─ Use: /refactor
@@ -176,13 +172,12 @@ What do you need?
 │  ├─ agent.md
 │  └─ _template.md           ← Template for new skills
 │
-└─ agents/                    ← 5 specialized agents
+└─ agents/                    ← 4 specialized agents
    ├─ README.md              ← Agent documentation
    ├─ ui-designer.md
    ├─ frontend-developer.md
    ├─ backend-developer.md
-   ├─ fullstack-developer.md
-   └─ mobile-developer.md
+   └─ fullstack-developer.md
 ```
 
 ## 🔧 Customization

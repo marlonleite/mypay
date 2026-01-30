@@ -6,7 +6,7 @@ This directory contains custom skills and settings for Claude Code when working 
 
 This configuration includes:
 - **10 Custom Skills** - Slash commands for common tasks
-- **5 Specialized Agents** - Expert AI agents following Voltagent protocol
+- **4 Specialized Agents** - Expert AI agents for myPay (React + Firebase)
 - **Project Settings** - Conventions and best practices
 - **Hooks System** - Automation and event triggers
 
@@ -60,14 +60,13 @@ Custom slash commands available in this project:
   - `--check` for pre-deploy verification
   - `--build-only` to just build
 
-### Agents (Voltagent Protocol)
+### Agents
 
 - **/agent** - Invoke specialized AI agents for complex tasks
-  - `ui-designer` - Visual design and design systems
-  - `frontend-developer` - React/TypeScript development
-  - `backend-developer` - APIs and backend logic
-  - `fullstack-developer` - End-to-end features
-  - `mobile-developer` - Mobile app development
+  - `ui-designer` - Tailwind CSS, dark mode, design patterns
+  - `frontend-developer` - React + JavaScript components
+  - `backend-developer` - Firebase/Firestore, Cloud Functions
+  - `fullstack-developer` - Complete features (Firestore → React)
 
 See `.claude/agents/README.md` for detailed agent documentation.
 

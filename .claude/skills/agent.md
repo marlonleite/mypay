@@ -1,6 +1,6 @@
 # agent
 
-Invoca agentes especializados para tarefas específicas do projeto.
+Invoca agentes especializados para tarefas específicas do projeto myPay.
 
 ## Usage
 
@@ -9,60 +9,40 @@ Invoca agentes especializados para tarefas específicas do projeto.
 ```
 
 Agentes disponíveis:
-- `ui-designer` - Design de interfaces e sistemas de design
-- `frontend-developer` - Desenvolvimento React/frontend
-- `backend-developer` - Desenvolvimento backend/APIs
-- `fullstack-developer` - Features completas end-to-end
-- `mobile-developer` - Desenvolvimento mobile (iOS/Android)
+- `ui-designer` - Design Tailwind CSS e dark mode
+- `frontend-developer` - Componentes React com JavaScript
+- `backend-developer` - Firebase/Firestore e Cloud Functions
+- `fullstack-developer` - Features completas (Firestore → React)
 
 ## Description
 
-Esta skill invoca agentes especializados definidos em `.claude/agents/` seguindo o protocolo Voltagent.
-
-**Cada agente possui:**
-- Expertise especializada em sua área
-- Protocolo de comunicação estruturado
-- Fluxo de execução padronizado
-- Integrações com outros agentes
-- Documentação de entregas
+Esta skill invoca agentes especializados definidos em `.claude/agents/`.
 
 **Quando usar cada agente:**
 
 **ui-designer:**
-- Criar componentes visuais
-- Design systems e tokens
-- Layouts responsivos
-- Acessibilidade visual
-- Dark mode
-- Motion design
+- Criar padrões visuais em Tailwind
+- Design system e tokens
+- Layouts responsivos dark mode
+- Estados de componentes (hover, active, disabled)
 
 **frontend-developer:**
-- Implementar componentes React
-- Integração com APIs
-- Estado e performance
-- Testes frontend
-- TypeScript
+- Implementar componentes React (.jsx)
+- Custom hooks
+- Integração com Context API
+- Performance e memoização
 
 **backend-developer:**
-- APIs e endpoints
-- Lógica de negócio
-- Integração com banco de dados
-- Autenticação/autorização
-- Migrations
+- Modelagem de dados Firestore
+- Services de acesso a dados
+- Security rules
+- Cloud Functions (quando necessário)
 
 **fullstack-developer:**
-- Features completas (DB → UI)
-- Arquitetura end-to-end
-- Fluxos de dados
-- Real-time features
-- Deploy completo
-
-**mobile-developer:**
-- Apps nativos (iOS/Android)
-- React Native
-- Integrações mobile
-- Performance mobile
-- App store deployment
+- Features completas end-to-end
+- Service + Hook + Component + Page
+- CRUD com Firestore
+- Integração entre camadas
 
 ## Instructions
 
@@ -70,14 +50,10 @@ Esta skill invoca agentes especializados definidos em `.claude/agents/` seguindo
 2. Se tarefa não especificada, perguntar objetivo
 3. Ler o arquivo do agente em `.claude/agents/[nome].md`
 4. Seguir o protocolo do agente:
-   - **Context Discovery**: Gather project context first
-   - **Execution**: Execute task following agent guidelines
-   - **Handoff**: Document deliverables and completion
-5. Aplicar expertise e boas práticas do agente
-6. Seguir estrutura de comunicação do agente
-7. Documentar entregas conforme padrão do agente
-8. Notificar sobre arquivos criados/modificados
-9. Fornecer next steps claros
+   - **Context Discovery**: Analisar código existente
+   - **Execution**: Implementar seguindo padrões do projeto
+   - **Handoff**: Documentar entregas
+5. Respeitar stack do projeto (JavaScript, npm, Firebase)
 
 **Protocolo de execução:**
 
@@ -85,78 +61,59 @@ Esta skill invoca agentes especializados definidos em `.claude/agents/` seguindo
 - Explorar codebase relevante
 - Identificar padrões existentes
 - Verificar convenções do projeto
-- Mapear dependências
-- Perguntar apenas detalhes críticos
 
-**Fase 2 - Development Execution:**
-- Implementar solução seguindo best practices do agente
+**Fase 2 - Execution:**
+- Implementar solução
 - Manter consistência com código existente
-- Documentar decisões arquiteturais
-- Fornecer updates de progresso
+- Documentar decisões
 
 **Fase 3 - Handoff:**
-- Listar todos os arquivos criados/modificados
-- Documentar API/uso dos componentes
-- Destacar decisões importantes
+- Listar arquivos criados/modificados
+- Documentar uso dos componentes
 - Fornecer próximos passos
-- Atualizar documentação relevante
 
 ## Examples
 
 ### Example 1: Design de componente
 ```bash
-/agent ui-designer Criar sistema de cards responsivos com dark mode
+/agent ui-designer Criar sistema de cards responsivos
 ```
-O ui-designer vai:
-1. Analisar design system existente
-2. Criar variações de cards
-3. Documentar tokens e specs
-4. Preparar handoff para frontend
+Entrega: Padrões Tailwind para cards com variantes
 
 ### Example 2: Feature fullstack
 ```bash
-/agent fullstack-developer Implementar sistema de orçamentos mensais
+/agent fullstack-developer Implementar sistema de orçamentos
 ```
-O fullstack-developer vai:
-1. Design do schema no Firestore
-2. Criar hook useFirestore
-3. Implementar UI components
-4. Integrar com sistema existente
-5. Testes end-to-end
+Entrega: Service + Hook + Components + Page integrados
 
-### Example 3: Implementar UI
+### Example 3: Componente React
 ```bash
-/agent frontend-developer Criar dashboard de transações com gráficos
+/agent frontend-developer Criar filtro de transações
 ```
-O frontend-developer vai:
-1. Criar componentes React
-2. Integração com hooks existentes
-3. Implementar gráficos com biblioteca
-4. Testes e acessibilidade
-5. Documentação Storybook
+Entrega: Componente .jsx com hook de estado
 
-### Example 4: API backend
+### Example 4: Serviço Firebase
 ```bash
-/agent backend-developer Criar API de export de dados em CSV
+/agent backend-developer Criar serviço de categorias
 ```
-O backend-developer vai:
-1. Criar endpoint de export
-2. Implementar geração de CSV
-3. Adicionar autenticação
-4. Testes de API
-5. Documentação
+Entrega: Service com CRUD para Firestore
+
+## Stack do Projeto
+
+```
+React 18 + Vite (JavaScript)
+Tailwind CSS
+Firebase (Firestore, Auth, Storage)
+Context API
+npm
+Vercel (deploy)
+```
+
+**Agentes NÃO adicionam:** TypeScript, pnpm, bibliotecas de UI, testes, Docker.
 
 ## Related Skills
 
-- `/component` - Criar componentes simples (use agent para componentes complexos)
-- `/page` - Criar páginas simples (use agent para features completas)
-- `/refactor` - Use com agent para refatorações arquiteturais
-- `/firebase` - Use com backend-developer para operações Firebase
-
-## Notes
-
-- Agentes seguem protocolos estruturados e produzem código de alta qualidade
-- Use agentes para tarefas complexas que requerem expertise específica
-- Para tarefas simples, use skills regulares (/component, /hook, etc)
-- Agentes automaticamente seguem best practices da sua área
-- Todos os agentes respeitam convenções do CLAUDE.md e settings.json
+- `/component` - Componentes simples
+- `/page` - Páginas simples
+- `/hook` - Hooks customizados
+- `/firebase` - Operações Firebase diretas
