@@ -635,30 +635,31 @@ export default function Cards({ month, year, onMonthChange }) {
                 onClick={() => openCardDetails(card)}
                 className="overflow-hidden"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   {/* Bank Icon or Card Color Indicator */}
                   {card.bankId && card.bankId !== 'generic' ? (
                     <div className="flex-shrink-0">
                       <BankIcon bankId={card.bankId} size="md" />
                     </div>
                   ) : (
-                    <div className={`w-12 h-12 rounded-xl ${getColorClass(card.color)} flex items-center justify-center flex-shrink-0`}>
-                      <CreditCard className="w-6 h-6 text-white" />
+                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${getColorClass(card.color)} flex items-center justify-center flex-shrink-0`}>
+                      <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                     </div>
                   )}
 
                   {/* Card Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-white font-medium truncate">{card.name}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-white font-medium truncate max-w-[120px] sm:max-w-none">{card.name}</h3>
                       {isPaid && billTotal > 0 && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded">
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-500/20 text-emerald-400 rounded flex-shrink-0">
                           PAGA
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-dark-400">
-                      Fecha dia {card.closingDay} • Vence dia {card.dueDay}
+                    <p className="text-xs text-dark-400 whitespace-nowrap">
+                      <span className="hidden sm:inline">Fecha dia {card.closingDay} • Vence dia {card.dueDay}</span>
+                      <span className="sm:hidden">F:{card.closingDay} • V:{card.dueDay}</span>
                     </p>
 
                     {/* Limit Progress Bar */}
@@ -675,7 +676,7 @@ export default function Cards({ month, year, onMonthChange }) {
                   </div>
 
                   {/* Total & Actions */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                     <div className="text-right">
                       <p className={`text-sm font-semibold ${isPaid ? 'text-emerald-400' : 'text-orange-400'}`}>
                         {formatCurrency(billTotal)}
@@ -683,7 +684,7 @@ export default function Cards({ month, year, onMonthChange }) {
                       <p className="text-xs text-dark-500">Fatura</p>
                     </div>
 
-                    <div className="flex gap-1">
+                    <div className="hidden sm:flex gap-1">
                       <button
                         onClick={(e) => openEditCardModal(card, e)}
                         className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"

@@ -41,7 +41,6 @@ load_dotenv(project_root / ".env")
 
 import boto3
 import firebase_admin
-from botocore.config import Config
 from firebase_admin import credentials, firestore
 
 # Configurações (usa as variáveis VITE_* do .env existente)
@@ -53,7 +52,9 @@ S3_ENDPOINT_URL = os.getenv("VITE_S3_ENDPOINT_URL")
 S3_ACCESS_KEY_ID = os.getenv("VITE_S3_ACCESS_KEY_ID")
 S3_SECRET_ACCESS_KEY = os.getenv("VITE_S3_SECRET_ACCESS_KEY")
 S3_BUCKET_NAME = os.getenv("VITE_S3_BUCKET_NAME")
-S3_REGION = os.getenv("VITE_S3_REGION", "us-east-1")
+S3_REGION = os.getenv("VITE_S3_REGION", "auto")
+S3_PUBLIC_URL = os.getenv("VITE_S3_PUBLIC_URL")
+S3_PATH_PREFIX = os.getenv("VITE_S3_PATH_PREFIX", "")
 
 # Inicializar Firebase
 firebase_creds = os.getenv("FIREBASE_CREDENTIALS")
@@ -83,7 +84,7 @@ else:
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# Inicializar S3
+# Inicializar S3/R2
 s3_client = None
 if S3_ENDPOINT_URL and S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY:
     s3_client = boto3.client(
@@ -92,7 +93,6 @@ if S3_ENDPOINT_URL and S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY:
         aws_access_key_id=S3_ACCESS_KEY_ID,
         aws_secret_access_key=S3_SECRET_ACCESS_KEY,
         region_name=S3_REGION,
-        config=Config(s3={"addressing_style": "path"}),
     )
 
 
@@ -108,6 +108,25 @@ def organizze_request(endpoint: str) -> dict:
     response = requests.get(f"{ORGANIZZE_BASE_URL}{endpoint}", headers=headers)
     response.raise_for_status()
     return response.json()
+
+
+def get_content_type_from_filename(filename: str) -> str:
+    """Detecta content-type pela extensão do arquivo"""
+    ext = filename.lower().split(".")[-1] if "." in filename else ""
+    mime_types = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "pdf": "application/pdf",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls": "application/vnd.ms-excel",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "txt": "text/plain",
+    }
+    return mime_types.get(ext, "application/octet-stream")
 
 
 def download_attachment(url: str, email: str, api_key: str) -> tuple[bytes, str, str]:
@@ -145,7 +164,7 @@ def download_attachment(url: str, email: str, api_key: str) -> tuple[bytes, str,
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
 
-    content_type = response.headers.get("content-type", "application/octet-stream")
+    content_type = response.headers.get("content-type", "")
 
     # Tentar extrair nome do arquivo do header
     content_disposition = response.headers.get("content-disposition", "")
@@ -157,23 +176,28 @@ def download_attachment(url: str, email: str, api_key: str) -> tuple[bytes, str,
         if match:
             filename = match.group(2)
 
+    # Se não veio content-type válido, detectar pela extensão
+    if not content_type or content_type in ("application/octet-stream", "binary/octet-stream"):
+        content_type = get_content_type_from_filename(filename)
+
     return response.content, content_type, filename
 
 
 def upload_to_s3(data: bytes, content_type: str, filename: str, user_id: str) -> str:
-    """Faz upload para S3/MinIO"""
-    if not s3_client:
+    """Faz upload para Cloudflare R2"""
+    if not s3_client or not S3_PUBLIC_URL:
         return None
 
     timestamp = int(datetime.now().timestamp() * 1000)
     safe_filename = "".join(c if c.isalnum() or c in ".-" else "_" for c in filename)
-    key = f"comprovantes/{user_id}/{timestamp}_{safe_filename}"
+    base_path = f"{S3_PATH_PREFIX}/comprovantes" if S3_PATH_PREFIX else "comprovantes"
+    key = f"{base_path}/{user_id}/{timestamp}_{safe_filename}"
 
     s3_client.put_object(
         Bucket=S3_BUCKET_NAME, Key=key, Body=data, ContentType=content_type
     )
 
-    return f"{S3_ENDPOINT_URL}/{S3_BUCKET_NAME}/{key}"
+    return f"{S3_PUBLIC_URL}/{key}"
 
 
 def parse_date(date_str: str) -> datetime:
