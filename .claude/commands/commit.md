@@ -19,9 +19,10 @@ Analise as mudanças staged e crie um commit seguindo Conventional Commits.
    - Ser em inglês
    - Ter no máximo 72 caracteres no título
    - Explicar o "porquê" no corpo se necessário
-   - Incluir Co-Authored-By no final
 
 5. Mostre o commit proposto e peça confirmação antes de executar
+
+**Nota:** Não é necessário incluir Co-Authored-By nas mensagens de commit.
 
 ## Formato
 
@@ -29,6 +30,4 @@ Analise as mudanças staged e crie um commit seguindo Conventional Commits.
 <type>(<scope>): <description>
 
 <body opcional>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
