@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { BarChart3, PieChart as PieChartIcon, TrendingUp } from 'lucide-react'
+import { BarChart3, PieChart as PieChartIcon, TrendingUp, GitCompare, Hash, LineChart } from 'lucide-react'
 import Card from '../components/ui/Card'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
@@ -7,6 +7,9 @@ import EmptyState from '../components/ui/EmptyState'
 import CategoryPieChart from '../components/reports/CategoryPieChart'
 import IncomeExpenseBarChart from '../components/reports/IncomeExpenseBarChart'
 import MonthlyTrendChart from '../components/reports/MonthlyTrendChart'
+import MonthComparisonChart from '../components/reports/MonthComparisonChart'
+import TagsReportChart from '../components/reports/TagsReportChart'
+import BalanceEvolutionChart from '../components/reports/BalanceEvolutionChart'
 import { useTransactions, useAllCardExpenses, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth } from '../utils/helpers'
@@ -201,6 +204,46 @@ export default function Reports({ month, year, onMonthChange }) {
               />
             </Card>
           )}
+
+          {/* Month Comparison */}
+          <Card>
+            <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+              <GitCompare className="w-4 h-4" />
+              Comparativo com Mês Anterior
+            </h3>
+            <MonthComparisonChart
+              month={month}
+              year={year}
+              formatCurrency={formatCurrency}
+            />
+          </Card>
+
+          {/* Balance Evolution */}
+          <Card>
+            <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+              <LineChart className="w-4 h-4" />
+              Evolução do Saldo
+            </h3>
+            <BalanceEvolutionChart
+              transactions={filteredTransactions}
+              month={month}
+              year={year}
+              formatCurrency={formatCurrency}
+            />
+          </Card>
+
+          {/* Tags Report */}
+          <Card>
+            <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+              <Hash className="w-4 h-4" />
+              Despesas por Tags
+            </h3>
+            <TagsReportChart
+              transactions={filteredTransactions}
+              cardExpenses={filteredCardExpenses}
+              formatCurrency={formatCurrency}
+            />
+          </Card>
 
           {/* Monthly Trend Chart */}
           <Card>

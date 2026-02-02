@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import { useSearch } from './contexts/SearchContext'
+import { usePrivacy } from './contexts/PrivacyContext'
 import { LoadingScreen } from './components/ui/Loading'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
@@ -15,12 +17,22 @@ import Documents from './pages/Documents'
 import Budgets from './pages/Budgets'
 import Accounts from './pages/Accounts'
 import Settings from './pages/Settings'
+import Goals from './pages/Goals'
+import Activities from './pages/Activities'
+import SearchModal from './components/search/SearchModal'
+import UndoToast from './components/ui/UndoToast'
+import OnboardingWizard from './components/onboarding/OnboardingWizard'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useUndo } from './contexts/UndoContext'
 import { getCurrentMonthYear } from './utils/helpers'
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthYear())
   const [showAddModal, setShowAddModal] = useState(false)
+  const { toggleSearch } = useSearch()
+  const { toggleShowValues } = usePrivacy()
+  const { undo, canUndo } = useUndo()
 
   const handleMonthChange = (month, year) => {
     setSelectedMonth({ month, year })
@@ -32,6 +44,27 @@ function AppContent() {
     setShowAddModal(true)
   }
 
+  // Handler para navegação via busca
+  const handleSearchNavigate = useCallback((tab, _params) => {
+    setActiveTab(tab)
+    // _params pode conter IDs para destacar/abrir itens específicos (futura implementação)
+  }, [])
+
+  // Handler para undo
+  const handleUndo = useCallback(() => {
+    if (canUndo) {
+      undo()
+    }
+  }, [canUndo, undo])
+
+  // Atalhos de teclado globais
+  useKeyboardShortcuts({
+    'mod+k': toggleSearch,
+    'mod+n': handleAddNew,
+    'mod+h': toggleShowValues,
+    'mod+z': handleUndo
+  })
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -40,6 +73,7 @@ function AppContent() {
             month={selectedMonth.month}
             year={selectedMonth.year}
             onMonthChange={handleMonthChange}
+            onNavigate={setActiveTab}
           />
         )
       case 'transactions':
@@ -89,6 +123,10 @@ function AppContent() {
         )
       case 'accounts':
         return <Accounts />
+      case 'goals':
+        return <Goals />
+      case 'activities':
+        return <Activities />
       case 'settings':
         return <Settings />
       default:
@@ -97,9 +135,14 @@ function AppContent() {
   }
 
   return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab} onAddNew={handleAddNew}>
-      {renderContent()}
-    </Layout>
+    <>
+      <Layout activeTab={activeTab} onTabChange={setActiveTab} onAddNew={handleAddNew}>
+        {renderContent()}
+      </Layout>
+      <SearchModal onNavigate={handleSearchNavigate} />
+      <UndoToast />
+      <OnboardingWizard />
+    </>
   )
 }
 

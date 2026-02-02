@@ -6,6 +6,10 @@ import { AuthProvider } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { PrivacyProvider } from './contexts/PrivacyContext'
 import { NotificationProvider } from './contexts/NotificationContext'
+import { SearchProvider } from './contexts/SearchContext'
+import { UndoProvider } from './contexts/UndoContext'
+import { GoalsProvider } from './contexts/GoalsContext'
+import { OnboardingProvider } from './contexts/OnboardingContext'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -15,7 +19,15 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <ThemeProvider>
           <PrivacyProvider>
             <NotificationProvider>
-              <App />
+              <SearchProvider>
+                <UndoProvider>
+                  <GoalsProvider>
+                    <OnboardingProvider>
+                      <App />
+                    </OnboardingProvider>
+                  </GoalsProvider>
+                </UndoProvider>
+              </SearchProvider>
             </NotificationProvider>
           </PrivacyProvider>
         </ThemeProvider>

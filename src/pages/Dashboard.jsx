@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from 'react'
 import {
   TrendingUp,
@@ -13,12 +12,14 @@ import Card from '../components/ui/Card'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
+import GoalTracker from '../components/goals/GoalTracker'
+import InsightsWidget from '../components/insights/InsightsWidget'
 import { useTransactions, useAllCardExpenses, useCards, useAccounts } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, isDateInMonth } from '../utils/helpers'
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES, TRANSACTION_TYPES } from '../utils/constants'
 
-export default function Dashboard({ month, year, onMonthChange }) {
+export default function Dashboard({ month, year, onMonthChange, onNavigate }) {
   const [dateRange, setDateRange] = useState(null)
   const { formatCurrencyPrivate } = usePrivacy()
 
@@ -230,6 +231,19 @@ export default function Dashboard({ month, year, onMonthChange }) {
               )}
             </Card>
           </div>
+
+          {/* Insights Widget */}
+          <InsightsWidget
+            month={month}
+            year={year}
+            onViewAll={() => onNavigate?.('reports')}
+          />
+
+          {/* Goals Tracker */}
+          <GoalTracker
+            onViewAll={() => onNavigate?.('goals')}
+            onAddGoal={() => onNavigate?.('goals')}
+          />
 
           {/* Account Balances */}
           {accountBalances.length > 0 && (

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal, Target, Wallet, Settings, Eye, EyeOff, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal, Target, Wallet, Settings, Eye, EyeOff, BarChart3, Search, Flag, History } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePrivacy } from '../contexts/PrivacyContext'
+import { useSearch } from '../contexts/SearchContext'
 import { ThemeToggleCompact } from './ui/ThemeToggle'
 import NotificationBadge from './notifications/NotificationBadge'
 import NotificationCenter from './notifications/NotificationCenter'
@@ -17,17 +18,20 @@ const mainTabs = [
 // Itens do menu "Mais"
 const moreMenuItems = [
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
+  { id: 'goals', label: 'Metas', icon: Flag },
   { id: 'budgets', label: 'Orçamentos', icon: Target },
   { id: 'accounts', label: 'Contas', icon: Wallet },
   { id: 'categories', label: 'Categorias', icon: Tag },
   { id: 'tags', label: 'Tags', icon: Hash },
   { id: 'documents', label: 'Importar IA', icon: Scan },
+  { id: 'activities', label: 'Atividades', icon: History },
   { id: 'settings', label: 'Configurações', icon: Settings }
 ]
 
 export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
   const { user, logout } = useAuth()
   const { showValues, toggleShowValues } = usePrivacy()
+  const { openSearch } = useSearch()
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const moreMenuRef = useRef(null)
@@ -66,6 +70,15 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
           <h1 className="text-2xl font-bold text-white">myPay</h1>
 
           <div className="flex items-center gap-2">
+            {/* Search Button */}
+            <button
+              onClick={openSearch}
+              className="p-2 text-dark-400 hover:text-white rounded-full hover:bg-dark-800 transition-colors"
+              title="Buscar (⌘K)"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+
             {/* Privacy Toggle */}
             <button
               onClick={toggleShowValues}

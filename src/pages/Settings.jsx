@@ -7,7 +7,8 @@ import {
   Loader2,
   Bell,
   BellOff,
-  Smartphone
+  Smartphone,
+  Download
 } from 'lucide-react'
 import {
   collection,
@@ -22,6 +23,7 @@ import { usePushNotifications } from '../hooks/usePushNotifications'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
+import ExportModal from '../components/export/ExportModal'
 
 // Coleções para deletar
 const COLLECTIONS = [
@@ -50,6 +52,7 @@ export default function Settings() {
     sendTestNotification
   } = usePushNotifications()
   const [showResetModal, setShowResetModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [counting, setCounting] = useState(false)
   const [progress, setProgress] = useState(null)
@@ -267,6 +270,30 @@ export default function Settings() {
         </div>
       </Card>
 
+      {/* Export Data */}
+      <Card>
+        <h2 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+          <Download className="w-4 h-4" />
+          Exportar Dados
+        </h2>
+
+        <div className="flex items-center justify-between p-4 bg-dark-800/50 rounded-xl">
+          <div>
+            <p className="text-white font-medium">Exportar para CSV/JSON</p>
+            <p className="text-sm text-dark-400">
+              Baixe seus dados em formato de planilha ou backup
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => setShowExportModal(true)}
+            icon={Download}
+          >
+            Exportar
+          </Button>
+        </div>
+      </Card>
+
       {/* Danger Zone */}
       <Card className="border-red-500/20">
         <h2 className="text-sm font-medium text-red-400 mb-4 flex items-center gap-2">
@@ -441,6 +468,12 @@ export default function Settings() {
           )}
         </div>
       </Modal>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+      />
     </div>
   )
 }

@@ -32,7 +32,9 @@ import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
+import CategorySelector from '../components/transactions/CategorySelector'
 import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
+import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
@@ -50,6 +52,12 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
     updateRecurrenceGroup,
     deleteRecurrenceGroup
   } = useTransactions(month, year)
+
+  const {
+    logTransactionCreate,
+    logTransactionUpdate,
+    logTransactionDelete
+  } = useActivityLogger()
 
   const {
     categories: allCategories,
@@ -568,7 +576,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
       const data = {
         description: formData.description,
         amount: parseFloat(formData.amount),
-        category: formData.category,
+        category: formData.category || 'other', // Categoria padrão se não selecionada
         accountId: formData.accountId,
         date: formData.date,
         type: transactionType,
@@ -592,6 +600,18 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
         } else {
           // Editar apenas este
           await updateTransaction(editingTransaction.id, data)
+          // Registrar atividade de atualização
+          logTransactionUpdate(
+            { id: editingTransaction.id, ...data },
+            {
+              description: editingTransaction.description,
+              amount: editingTransaction.amount,
+              date: editingTransaction.date,
+              paid: editingTransaction.paid,
+              accountId: editingTransaction.accountId,
+              category: editingTransaction.category
+            }
+          )
         }
         setEditMode('single') // Reset para próxima edição
       } else {
@@ -670,7 +690,11 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
             })
           }
         } else {
-          await addTransaction(data)
+          const result = await addTransaction(data)
+          // Registrar atividade
+          if (result?.id) {
+            logTransactionCreate({ id: result.id, ...data })
+          }
         }
       }
 
@@ -697,11 +721,18 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
     try {
       setDeleting(id)
 
+      // Encontrar transação para log
+      const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
+
       if (deleteAll && transactionToDelete?.recurrenceGroup) {
         // Exclui todas do grupo (busca no Firestore)
         await deleteRecurrenceGroup(transactionToDelete.recurrenceGroup)
       } else {
         await deleteTransaction(id)
+        // Registrar atividade de exclusão
+        if (transactionToLog) {
+          logTransactionDelete(transactionToLog)
+        }
       }
 
       setDetailModalOpen(false)
@@ -1313,25 +1344,19 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
               <label className="block text-sm font-medium text-dark-300 mb-1.5">
                 Categoria
               </label>
-              <div className="flex gap-2">
-                <Select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  options={categories.map(c => ({ value: c.id, label: c.name }))}
-                  className="flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewCategoryType(transactionType)
-                    setCategoryModalOpen(true)
-                  }}
-                  className="p-2.5 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-xl transition-colors"
-                  title="Nova categoria"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
+              <CategorySelector
+                value={formData.category}
+                onChange={(categoryId) => setFormData({ ...formData, category: categoryId })}
+                categories={categories}
+                type={transactionType}
+                onCreateCategory={async (data) => {
+                  const result = await addCategory(data)
+                  if (result?.id) {
+                    setFormData({ ...formData, category: result.id })
+                  }
+                }}
+                placeholder="Selecione uma categoria"
+              />
             </div>
           </div>
 
