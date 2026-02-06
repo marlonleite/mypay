@@ -507,7 +507,7 @@ export default function Transactions({
       amount: transaction.amount.toString(),
       category: transaction.category,
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
-      date: formatDateForInput(new Date()), // Data atual para a cópia
+      date: formatDateForInput(transaction.date), // Preserva data original
       notes: transaction.notes || '',
       tags: transaction.tags || [],
       attachments: [], // Não copia anexos
