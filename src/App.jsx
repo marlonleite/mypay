@@ -26,10 +26,16 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useUndo } from './contexts/UndoContext'
 import { getCurrentMonthYear } from './utils/helpers'
 
+const INITIAL_FILTERS = { type: 'all', account: 'all', category: 'all', tag: 'all' }
+
 function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthYear())
   const [showAddModal, setShowAddModal] = useState(false)
+  const [transactionFilters, setTransactionFilters] = useState(INITIAL_FILTERS)
+  const [transactionSearchTerm, setTransactionSearchTerm] = useState('')
+  const [transactionShowFilters, setTransactionShowFilters] = useState(false)
+  const [transactionDateRange, setTransactionDateRange] = useState(null)
   const { toggleSearch } = useSearch()
   const { toggleShowValues } = usePrivacy()
   const { undo, canUndo } = useUndo()
@@ -84,6 +90,14 @@ function AppContent() {
             onMonthChange={handleMonthChange}
             showAddModal={showAddModal}
             onCloseAddModal={() => setShowAddModal(false)}
+            filters={transactionFilters}
+            onFiltersChange={setTransactionFilters}
+            searchTerm={transactionSearchTerm}
+            onSearchTermChange={setTransactionSearchTerm}
+            showFilters={transactionShowFilters}
+            onShowFiltersChange={setTransactionShowFilters}
+            dateRange={transactionDateRange}
+            onDateRangeChange={setTransactionDateRange}
           />
         )
       case 'cards':

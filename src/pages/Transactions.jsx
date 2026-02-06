@@ -41,9 +41,16 @@ import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
-export default function Transactions({ month, year, onMonthChange, showAddModal, onCloseAddModal }) {
+export default function Transactions({
+  month, year, onMonthChange, showAddModal, onCloseAddModal,
+  filters, onFiltersChange, searchTerm, onSearchTermChange,
+  showFilters, onShowFiltersChange, dateRange, onDateRangeChange
+}) {
   const { formatCurrency } = usePrivacy()
-  const [dateRange, setDateRange] = useState(null)
+  const setDateRange = onDateRangeChange
+  const setFilters = onFiltersChange
+  const setSearchTerm = onSearchTermChange
+  const setShowFilters = onShowFiltersChange
 
   const {
     transactions,
@@ -90,14 +97,6 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
   const [transactionType, setTransactionType] = useState(TRANSACTION_TYPES.EXPENSE)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState({
-    type: 'all', // all, income, income_paid, income_pending, expense, expense_paid, expense_pending, fixed, installment
-    account: 'all',
-    category: 'all',
-    tag: 'all'
-  })
   const [activeFilterDropdown, setActiveFilterDropdown] = useState(null)
   const [showOverduePanel, setShowOverduePanel] = useState(false)
   const [saving, setSaving] = useState(false)
