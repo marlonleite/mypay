@@ -26,7 +26,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useUndo } from './contexts/UndoContext'
 import { getCurrentMonthYear } from './utils/helpers'
 
-const INITIAL_FILTERS = { type: 'all', account: 'all', category: 'all', tag: 'all' }
+const INITIAL_FILTERS = { type: 'all', account: 'all', category: [], tag: [] }
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard')

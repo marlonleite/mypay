@@ -195,21 +195,25 @@ export default function Transactions({
       result = result.filter(t => t.accountId === filters.account)
     }
 
-    // Filtro por categoria (suporta ID do Firestore e slug de migração Organizze)
-    if (filters.category !== 'all') {
-      const selectedCat = allCategories.find(c => c.id === filters.category)
-      const categorySlug = selectedCat
-        ? selectedCat.name.toLowerCase().replace(/ /g, '_')
-        : null
+    // Filtro por categoria (suporta multi-select, IDs do Firestore e slugs Organizze)
+    if (filters.category.length > 0) {
+      const categoryMatchers = filters.category.map(catId => {
+        const cat = allCategories.find(c => c.id === catId)
+        const slug = cat ? cat.name.toLowerCase().replace(/ /g, '_') : null
+        return { id: catId, slug }
+      })
       result = result.filter(t =>
-        t.category === filters.category ||
-        (categorySlug && t.category === categorySlug)
+        categoryMatchers.some(m =>
+          t.category === m.id || (m.slug && t.category === m.slug)
+        )
       )
     }
 
-    // Filtro por tag
-    if (filters.tag !== 'all') {
-      result = result.filter(t => t.tags?.includes(filters.tag))
+    // Filtro por tag (multi-select)
+    if (filters.tag.length > 0) {
+      result = result.filter(t =>
+        filters.tag.some(tag => t.tags?.includes(tag))
+      )
     }
 
     // Filtro por busca
@@ -226,7 +230,7 @@ export default function Transactions({
   }, [transactions, searchTerm, filters, dateRange])
 
   // Verificar se há filtros ativos
-  const hasActiveFilters = filters.type !== 'all' || filters.account !== 'all' || filters.category !== 'all' || filters.tag !== 'all'
+  const hasActiveFilters = filters.type !== 'all' || filters.account !== 'all' || filters.category.length > 0 || filters.tag.length > 0
 
   // Calcular lançamentos pendentes passados (vencidos)
   const overdueTransactions = useMemo(() => {
@@ -895,7 +899,7 @@ export default function Transactions({
           {/* Limpar filtros */}
           {hasActiveFilters && (
             <button
-              onClick={() => setFilters({ type: 'all', account: 'all', category: 'all', tag: 'all' })}
+              onClick={() => setFilters({ type: 'all', account: 'all', category: [], tag: [] })}
               className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
             >
               <X className="w-4 h-4" />
@@ -1007,6 +1011,7 @@ export default function Transactions({
             placeholder="Categoria"
             allLabel="Todas as categorias"
             searchPlaceholder="Buscar categoria..."
+            multiple
           />
 
           {/* Filtro Tag */}
@@ -1018,6 +1023,7 @@ export default function Transactions({
               placeholder="Tags"
               allLabel="Todas as tags"
               searchPlaceholder="Buscar tag..."
+              multiple
             />
           )}
         </div>

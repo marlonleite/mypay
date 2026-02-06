@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronDown, Search } from 'lucide-react'
+import { ChevronDown, Search, X, Check } from 'lucide-react'
 
 export default function SearchableSelect({
   options = [],
@@ -7,26 +7,52 @@ export default function SearchableSelect({
   onChange,
   placeholder = 'Selecione',
   allLabel = 'Todos',
-  searchPlaceholder = 'Buscar...'
+  searchPlaceholder = 'Buscar...',
+  multiple = false
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef(null)
   const searchInputRef = useRef(null)
 
-  const selectedOption = options.find(opt => opt.value === value)
-  const displayLabel = value === 'all' ? placeholder : (selectedOption?.label || placeholder)
-  const isActive = value !== 'all'
+  // Multi: value é array; Single: value é string
+  const selectedValues = multiple ? (Array.isArray(value) ? value : []) : []
+  const isActive = multiple ? selectedValues.length > 0 : value !== 'all'
+
+  const displayLabel = multiple
+    ? selectedValues.length === 0
+      ? placeholder
+      : selectedValues.length === 1
+        ? (options.find(opt => opt.value === selectedValues[0])?.label || placeholder)
+        : `${placeholder} (${selectedValues.length})`
+    : value === 'all'
+      ? placeholder
+      : (options.find(opt => opt.value === value)?.label || placeholder)
 
   const filteredOptions = search
     ? options.filter(opt => opt.label.toLowerCase().includes(search.toLowerCase()))
     : options
 
-  const handleSelect = useCallback((val) => {
+  const handleSingleSelect = useCallback((val) => {
     onChange(val)
     setIsOpen(false)
     setSearch('')
   }, [onChange])
+
+  const handleMultiToggle = useCallback((val) => {
+    if (selectedValues.includes(val)) {
+      const next = selectedValues.filter(v => v !== val)
+      onChange(next.length > 0 ? next : [])
+    } else {
+      onChange([...selectedValues, val])
+    }
+  }, [onChange, selectedValues])
+
+  const handleClearAll = useCallback(() => {
+    onChange(multiple ? [] : 'all')
+    setIsOpen(false)
+    setSearch('')
+  }, [onChange, multiple])
 
   const handleToggle = useCallback(() => {
     setIsOpen(prev => !prev)
@@ -36,7 +62,6 @@ export default function SearchableSelect({
   // Foco no input ao abrir
   useEffect(() => {
     if (isOpen && searchInputRef.current) {
-      // Timeout para garantir que o dropdown já renderizou
       const timer = setTimeout(() => searchInputRef.current?.focus(), 50)
       return () => clearTimeout(timer)
     }
@@ -57,6 +82,10 @@ export default function SearchableSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen])
 
+  const isSelected = (val) => {
+    return multiple ? selectedValues.includes(val) : value === val
+  }
+
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -69,7 +98,14 @@ export default function SearchableSelect({
         }`}
       >
         <span className="truncate max-w-[140px]">{displayLabel}</span>
-        <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        {isActive && multiple ? (
+          <X
+            className="w-4 h-4 flex-shrink-0 hover:text-violet-200"
+            onClick={(e) => { e.stopPropagation(); handleClearAll() }}
+          />
+        ) : (
+          <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        )}
       </button>
 
       {isOpen && (
@@ -91,13 +127,13 @@ export default function SearchableSelect({
 
           {/* Lista de opções */}
           <div className="max-h-60 overflow-y-auto py-1">
-            {/* Opção "Todos" */}
+            {/* Opção "Todos" / limpar */}
             {!search && (
               <button
                 type="button"
-                onClick={() => handleSelect('all')}
+                onClick={() => handleClearAll()}
                 className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                  value === 'all'
+                  !isActive
                     ? 'text-violet-400 bg-violet-500/10'
                     : 'text-dark-300 hover:bg-dark-700 hover:text-white'
                 }`}
@@ -110,14 +146,17 @@ export default function SearchableSelect({
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => handleSelect(opt.value)}
-                className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                  value === opt.value
+                onClick={() => multiple ? handleMultiToggle(opt.value) : handleSingleSelect(opt.value)}
+                className={`w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between ${
+                  isSelected(opt.value)
                     ? 'text-violet-400 bg-violet-500/10'
                     : 'text-dark-300 hover:bg-dark-700 hover:text-white'
                 }`}
               >
-                {opt.label}
+                <span>{opt.label}</span>
+                {multiple && isSelected(opt.value) && (
+                  <Check className="w-4 h-4 flex-shrink-0" />
+                )}
               </button>
             ))}
 
