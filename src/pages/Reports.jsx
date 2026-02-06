@@ -20,7 +20,7 @@ export default function Reports({ month, year, onMonthChange }) {
   const [dateRange, setDateRange] = useState(null)
   const [includePending, setIncludePending] = useState(false)
 
-  const { transactions, loading: loadingTransactions } = useTransactions(month, year)
+  const { transactions, loading: loadingTransactions } = useTransactions(month, year, dateRange)
   const { expenses: allCardExpenses, loading: loadingExpenses } = useAllCardExpenses()
   const { categories, loading: loadingCategories } = useCategories()
 

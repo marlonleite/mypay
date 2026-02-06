@@ -42,6 +42,7 @@ import { uploadComprovante } from '../services/storage'
 
 export default function Transactions({ month, year, onMonthChange, showAddModal, onCloseAddModal }) {
   const { formatCurrency } = usePrivacy()
+  const [dateRange, setDateRange] = useState(null)
 
   const {
     transactions,
@@ -51,7 +52,7 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
     deleteTransaction,
     updateRecurrenceGroup,
     deleteRecurrenceGroup
-  } = useTransactions(month, year)
+  } = useTransactions(month, year, dateRange)
 
   const {
     logTransactionCreate,
@@ -97,7 +98,6 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
     tag: 'all'
   })
   const [activeFilterDropdown, setActiveFilterDropdown] = useState(null)
-  const [dateRange, setDateRange] = useState(null)
   const [showOverduePanel, setShowOverduePanel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingCategory, setSavingCategory] = useState(false)

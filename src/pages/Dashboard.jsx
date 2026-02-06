@@ -23,7 +23,7 @@ export default function Dashboard({ month, year, onMonthChange, onNavigate }) {
   const [dateRange, setDateRange] = useState(null)
   const { formatCurrencyPrivate } = usePrivacy()
 
-  const { transactions, loading: loadingTransactions } = useTransactions(month, year)
+  const { transactions, loading: loadingTransactions } = useTransactions(month, year, dateRange)
   const { expenses: allCardExpenses, loading: loadingCardExpenses } = useAllCardExpenses()
   const { cards } = useCards()
   const { accounts, getActiveAccounts } = useAccounts()

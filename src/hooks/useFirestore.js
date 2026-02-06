@@ -17,11 +17,15 @@ import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
 
 // Hook para transações (receitas e despesas)
-export function useTransactions(month, year) {
+// dateRange: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' } | null
+export function useTransactions(month, year, dateRange) {
   const { user } = useAuth()
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Serializar dateRange para usar como dependência estável do useEffect
+  const dateRangeKey = dateRange ? `${dateRange.startDate}_${dateRange.endDate}` : null
 
   useEffect(() => {
     if (!user) {
@@ -33,8 +37,19 @@ export function useTransactions(month, year) {
     setLoading(true)
     setError(null)
 
-    const startDate = new Date(year, month, 1)
-    const endDate = new Date(year, month + 1, 0, 23, 59, 59)
+    let startDate, endDate
+
+    if (dateRange && dateRange.startDate && dateRange.endDate) {
+      // Período customizado: usar datas do dateRange
+      const [sy, sm, sd] = dateRange.startDate.split('-').map(Number)
+      const [ey, em, ed] = dateRange.endDate.split('-').map(Number)
+      startDate = new Date(sy, sm - 1, sd, 0, 0, 0)
+      endDate = new Date(ey, em - 1, ed, 23, 59, 59)
+    } else {
+      // Padrão: mês/ano selecionado
+      startDate = new Date(year, month, 1)
+      endDate = new Date(year, month + 1, 0, 23, 59, 59)
+    }
 
     const q = query(
       collection(db, `users/${user.uid}/transactions`),
@@ -62,7 +77,7 @@ export function useTransactions(month, year) {
     )
 
     return () => unsubscribe()
-  }, [user, month, year])
+  }, [user, month, year, dateRangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addTransaction = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
