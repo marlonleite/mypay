@@ -28,6 +28,7 @@ import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
+import SearchableSelect from '../components/ui/SearchableSelect'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
@@ -195,9 +196,16 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
       result = result.filter(t => t.accountId === filters.account)
     }
 
-    // Filtro por categoria
+    // Filtro por categoria (suporta ID do Firestore e slug de migração Organizze)
     if (filters.category !== 'all') {
-      result = result.filter(t => t.category === filters.category)
+      const selectedCat = allCategories.find(c => c.id === filters.category)
+      const categorySlug = selectedCat
+        ? selectedCat.name.toLowerCase().replace(/ /g, '_')
+        : null
+      result = result.filter(t =>
+        t.category === filters.category ||
+        (categorySlug && t.category === categorySlug)
+      )
     }
 
     // Filtro por tag
@@ -990,101 +998,28 @@ export default function Transactions({ month, year, onMonthChange, showAddModal,
           </div>
 
           {/* Filtro Categoria */}
-          <div className="relative">
-            <button
-              onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'category' ? null : 'category')}
-              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${
-                filters.category !== 'all'
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-dark-700 text-dark-300 hover:text-white'
-              }`}
-            >
-              {filters.category === 'all' ? 'Categoria' : getCategoryName(filters.category)}
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            {activeFilterDropdown === 'category' && (
-              <div className="absolute top-full left-0 mt-1 bg-dark-900 border border-dark-600 rounded-xl shadow-lg py-1 min-w-[150px] z-50 max-h-60 overflow-y-auto">
-                <button
-                  onClick={() => {
-                    setFilters({ ...filters, category: 'all' })
-                    setActiveFilterDropdown(null)
-                  }}
-                  className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                    filters.category === 'all'
-                      ? 'text-violet-400 bg-violet-500/10'
-                      : 'text-dark-300 hover:bg-dark-700 hover:text-white'
-                  }`}
-                >
-                  Todas as categorias
-                </button>
-                {allCategories.filter(c => !c.archived).map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setFilters({ ...filters, category: cat.id })
-                      setActiveFilterDropdown(null)
-                    }}
-                    className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                      filters.category === cat.id
-                        ? 'text-violet-400 bg-violet-500/10'
-                        : 'text-dark-300 hover:bg-dark-700 hover:text-white'
-                    }`}
-                  >
-                    {cat.parentId ? `  ${cat.name}` : cat.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <SearchableSelect
+            options={allCategories.filter(c => !c.archived).map(cat => ({
+              value: cat.id,
+              label: cat.parentId ? `  ${cat.name}` : cat.name
+            }))}
+            value={filters.category}
+            onChange={(val) => setFilters({ ...filters, category: val })}
+            placeholder="Categoria"
+            allLabel="Todas as categorias"
+            searchPlaceholder="Buscar categoria..."
+          />
 
           {/* Filtro Tag */}
           {existingTags.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'tag' ? null : 'tag')}
-                className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  filters.tag !== 'all'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-dark-700 text-dark-300 hover:text-white'
-                }`}
-              >
-                {filters.tag === 'all' ? 'Tags' : filters.tag}
-                <ChevronDown className="w-4 h-4" />
-              </button>
-              {activeFilterDropdown === 'tag' && (
-                <div className="absolute top-full left-0 mt-1 bg-dark-900 border border-dark-600 rounded-xl shadow-lg py-1 min-w-[150px] z-50 max-h-60 overflow-y-auto">
-                  <button
-                    onClick={() => {
-                      setFilters({ ...filters, tag: 'all' })
-                      setActiveFilterDropdown(null)
-                    }}
-                    className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                      filters.tag === 'all'
-                        ? 'text-violet-400 bg-violet-500/10'
-                        : 'text-dark-300 hover:bg-dark-700 hover:text-white'
-                    }`}
-                  >
-                    Todas as tags
-                  </button>
-                  {existingTags.map(tag => (
-                    <button
-                      key={tag}
-                      onClick={() => {
-                        setFilters({ ...filters, tag: tag })
-                        setActiveFilterDropdown(null)
-                      }}
-                      className={`w-full px-4 py-2 text-sm text-left transition-colors ${
-                        filters.tag === tag
-                          ? 'text-violet-400 bg-violet-500/10'
-                          : 'text-dark-300 hover:bg-dark-700 hover:text-white'
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <SearchableSelect
+              options={existingTags.map(tag => ({ value: tag, label: tag }))}
+              value={filters.tag}
+              onChange={(val) => setFilters({ ...filters, tag: val })}
+              placeholder="Tags"
+              allLabel="Todas as tags"
+              searchPlaceholder="Buscar tag..."
+            />
           )}
         </div>
       )}
