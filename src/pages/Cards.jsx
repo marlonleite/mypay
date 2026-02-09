@@ -17,7 +17,9 @@ import {
   FileText,
   Image as ImageIcon,
   FileSpreadsheet,
-  File
+  File,
+  Search,
+  Filter
 } from 'lucide-react'
 import {
   collection,
@@ -40,6 +42,7 @@ import EmptyState from '../components/ui/EmptyState'
 import LimitProgressBar from '../components/ui/LimitProgressBar'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
+import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth } from '../utils/helpers'
@@ -100,6 +103,11 @@ export default function Cards({ month, year, onMonthChange }) {
   // Tags
   const [tagInput, setTagInput] = useState('')
   const [showTagSuggestions, setShowTagSuggestions] = useState(false)
+
+  // Filtros de lançamentos
+  const [expenseSearch, setExpenseSearch] = useState('')
+  const [showExpenseFilters, setShowExpenseFilters] = useState(false)
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState([])
 
   // Nova categoria
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
@@ -184,6 +192,41 @@ export default function Cards({ month, year, onMonthChange }) {
       .sort((a, b) => new Date(b.date) - new Date(a.date))
   }, [allExpenses, selectedCard, month, year])
 
+  // Categorias para filtro de lançamentos (apenas expense)
+  const expenseFilterCategories = useMemo(() => {
+    const mainCats = getMainCategories('expense')
+    const result = []
+    for (const cat of mainCats) {
+      result.push({ value: cat.id, label: cat.name })
+      const subs = getSubcategories(cat.id)
+      for (const sub of subs) {
+        result.push({ value: sub.id, label: `  ${sub.name}` })
+      }
+    }
+    return result
+  }, [allCategories])
+
+  // Lançamentos filtrados por busca e categoria
+  const filteredCardExpenses = useMemo(() => {
+    let result = selectedCardExpenses
+
+    if (expenseSearch) {
+      const term = expenseSearch.toLowerCase()
+      result = result.filter(e =>
+        e.description?.toLowerCase().includes(term) ||
+        allCategories.find(c => c.id === e.category)?.name?.toLowerCase().includes(term)
+      )
+    }
+
+    if (expenseCategoryFilter.length > 0) {
+      result = result.filter(e =>
+        expenseCategoryFilter.includes(e.category)
+      )
+    }
+
+    return result
+  }, [selectedCardExpenses, expenseSearch, expenseCategoryFilter, allCategories])
+
   const loading = loadingCards || loadingExpenses || loadingAccounts || loadingCategories
 
   const openNewCardModal = () => {
@@ -215,6 +258,9 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const openCardDetails = (card) => {
     setSelectedCard(card)
+    setExpenseSearch('')
+    setExpenseCategoryFilter([])
+    setShowExpenseFilters(false)
     setModalType('details')
   }
 
@@ -896,6 +942,55 @@ export default function Cards({ month, year, onMonthChange }) {
             )}
           </div>
 
+          {/* Search and Filter */}
+          {selectedCardExpenses.length > 0 && (
+            <>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Buscar lançamentos..."
+                    value={expenseSearch}
+                    onChange={(e) => setExpenseSearch(e.target.value)}
+                    icon={Search}
+                  />
+                </div>
+                <button
+                  onClick={() => setShowExpenseFilters(!showExpenseFilters)}
+                  className={`p-3.5 rounded-2xl transition-all active:scale-95 ${
+                    showExpenseFilters || expenseCategoryFilter.length > 0
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-dark-900 text-dark-400 hover:text-white'
+                  }`}
+                >
+                  <Filter className="w-5 h-5" />
+                </button>
+              </div>
+
+              {showExpenseFilters && (
+                <div className="flex flex-wrap gap-2 p-3 bg-dark-900 rounded-2xl">
+                  {expenseCategoryFilter.length > 0 && (
+                    <button
+                      onClick={() => setExpenseCategoryFilter([])}
+                      className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  <SearchableSelect
+                    options={expenseFilterCategories}
+                    value={expenseCategoryFilter}
+                    onChange={setExpenseCategoryFilter}
+                    placeholder="Categoria"
+                    allLabel="Todas as categorias"
+                    searchPlaceholder="Buscar categoria..."
+                    multiple
+                  />
+                </div>
+              )}
+            </>
+          )}
+
           {/* Expenses List */}
           {selectedCardExpenses.length === 0 ? (
             <EmptyState
@@ -903,10 +998,16 @@ export default function Cards({ month, year, onMonthChange }) {
               title="Sem lançamentos"
               description="Adicione despesas ou receitas neste cartão"
             />
+          ) : filteredCardExpenses.length === 0 ? (
+            <EmptyState
+              icon={Search}
+              title="Nenhum resultado"
+              description="Nenhum lançamento encontrado com os filtros aplicados"
+            />
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-dark-400 font-medium">Lançamentos do mês</p>
-              {selectedCardExpenses.map((expense) => {
+              {filteredCardExpenses.map((expense) => {
                 const isIncome = expense.type === TRANSACTION_TYPES.INCOME
                 return (
                   <div
