@@ -192,30 +192,11 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante (1x)
-      let comprovanteData = null
-      try {
-        comprovanteData = await uploadComprovante(file)
-      } catch (uploadErr) {
-        console.warn('Upload do comprovante falhou:', uploadErr)
-      }
-
-      // Salvar em chunks de BATCH_CHUNK_SIZE
+      // Salvar em chunks de BATCH_CHUNK_SIZE (sem anexo — fatura será anexada no pagamento)
       for (let i = 0; i < expenses.length; i += BATCH_CHUNK_SIZE) {
         const chunk = expenses.slice(i, i + BATCH_CHUNK_SIZE)
         await Promise.all(
-          chunk.map(expense =>
-            addCardExpense({
-              ...expense,
-              ...(comprovanteData && {
-                attachments: [{
-                  url: comprovanteData.url,
-                  fileName: comprovanteData.fileName || file.name,
-                  fileType: comprovanteData.type || file.type
-                }]
-              })
-            })
-          )
+          chunk.map(expense => addCardExpense(expense))
         )
       }
 
@@ -228,7 +209,6 @@ export default function Documents({ month, year }) {
         status: 'completed',
         action: 'batchCardExpense',
         count: expenses.length,
-        ...(comprovanteData && { comprovante: comprovanteData })
       })
 
       setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)

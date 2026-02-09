@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 import Select from '../ui/Select'
+import CategorySelector from '../transactions/CategorySelector'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { findBestCategory } from '../../utils/categoryMapping'
 
@@ -298,15 +299,12 @@ export default function FaturaResult({
                     </div>
                     <div>
                       <label className="block text-xs text-dark-400 mb-1">Categoria</label>
-                      <select
+                      <CategorySelector
                         value={t.categoryId}
-                        onChange={(e) => updateTransaction(t.id, 'categoryId', e.target.value)}
-                        className="w-full px-3 py-2 bg-dark-800 rounded-xl text-sm text-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                      >
-                        {expenseCategories.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
+                        onChange={(id) => updateTransaction(t.id, 'categoryId', id)}
+                        categories={expenseCategories}
+                        type="expense"
+                      />
                     </div>
                   </div>
                 </div>
