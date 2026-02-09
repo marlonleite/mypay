@@ -19,58 +19,12 @@ import Button from '../ui/Button'
 import Input from '../ui/Input'
 import Select from '../ui/Select'
 import { usePrivacy } from '../../contexts/PrivacyContext'
-
-// Mapeamento de categorias AI (inglês) para palavras-chave em português
-const AI_CATEGORY_MAPPING = {
-  // Despesas
-  food: ['alimentação', 'comida', 'refeição', 'restaurante', 'mercado'],
-  transport: ['transporte', 'uber', 'combustível', 'gasolina', 'ônibus'],
-  housing: ['moradia', 'aluguel', 'condomínio', 'casa', 'tributos', 'iptu', 'água', 'luz', 'energia'],
-  health: ['saúde', 'médico', 'remédio', 'farmácia', 'hospital', 'plano'],
-  leisure: ['lazer', 'entretenimento', 'cinema', 'streaming', 'jogos'],
-  education: ['educação', 'curso', 'escola', 'faculdade', 'livro'],
-  other: ['outros', 'geral'],
-  // Receitas
-  salary: ['salário', 'remuneração', 'pagamento'],
-  freelance: ['freelance', 'serviço', 'trabalho', 'autônomo'],
-  investments: ['investimento', 'rendimento', 'dividendo', 'juros'],
-}
+import { findBestCategory } from '../../utils/categoryMapping'
 
 const confidenceConfig = {
   alta: { color: 'text-emerald-400', bg: 'bg-emerald-500/20', icon: CheckCircle2 },
   media: { color: 'text-yellow-400', bg: 'bg-yellow-500/20', icon: AlertTriangle },
   baixa: { color: 'text-red-400', bg: 'bg-red-500/20', icon: AlertCircle }
-}
-
-// Função para encontrar a melhor categoria Firestore com base na categoria AI
-function findBestCategory(aiCategory, firestoreCategories, type) {
-  if (!aiCategory || !firestoreCategories?.length) return null
-
-  const aiCatLower = aiCategory.toLowerCase()
-  const keywords = AI_CATEGORY_MAPPING[aiCatLower] || []
-
-  // Filtra categorias pelo tipo
-  const categoriesOfType = firestoreCategories.filter(c => c.type === type && !c.parentId)
-
-  // Procura por correspondência exata ou palavras-chave
-  for (const cat of categoriesOfType) {
-    const catNameLower = cat.name.toLowerCase()
-
-    // Verifica se alguma palavra-chave está no nome da categoria
-    for (const keyword of keywords) {
-      if (catNameLower.includes(keyword)) {
-        return cat.id
-      }
-    }
-
-    // Verifica se o nome da categoria contém a categoria AI
-    if (catNameLower.includes(aiCatLower)) {
-      return cat.id
-    }
-  }
-
-  // Se não encontrar, retorna a primeira categoria do tipo ou null
-  return categoriesOfType[0]?.id || null
 }
 
 export default function ProcessingResult({

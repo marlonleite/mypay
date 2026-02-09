@@ -12,6 +12,7 @@ import Select from '../components/ui/Select'
 import FileUpload from '../components/documents/FileUpload'
 import FilePreview from '../components/documents/FilePreview'
 import ProcessingResult from '../components/documents/ProcessingResult'
+import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
 import { useCards, useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
@@ -19,6 +20,8 @@ import { processDocument } from '../services/ai/gemini'
 import { uploadComprovante } from '../services/storage'
 import { fileToBase64 } from '../utils/fileProcessing'
 import { DOCUMENT_TYPES } from '../utils/constants'
+
+const BATCH_CHUNK_SIZE = 20
 
 export default function Documents({ month, year }) {
   // Estados
@@ -28,6 +31,7 @@ export default function Documents({ month, year }) {
   const [extractedData, setExtractedData] = useState(null)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [successMessage, setSuccessMessage] = useState(null)
 
   // Hooks
   const { cards } = useCards()
@@ -184,6 +188,64 @@ export default function Documents({ month, year }) {
     }
   }
 
+  const handleBatchCardExpenses = async (expenses) => {
+    setSaving(true)
+
+    try {
+      // Upload do comprovante (1x)
+      let comprovanteData = null
+      try {
+        comprovanteData = await uploadComprovante(file)
+      } catch (uploadErr) {
+        console.warn('Upload do comprovante falhou:', uploadErr)
+      }
+
+      // Salvar em chunks de BATCH_CHUNK_SIZE
+      for (let i = 0; i < expenses.length; i += BATCH_CHUNK_SIZE) {
+        const chunk = expenses.slice(i, i + BATCH_CHUNK_SIZE)
+        await Promise.all(
+          chunk.map(expense =>
+            addCardExpense({
+              ...expense,
+              ...(comprovanteData && {
+                attachments: [{
+                  url: comprovanteData.url,
+                  fileName: comprovanteData.fileName || file.name,
+                  fileType: comprovanteData.type || file.type
+                }]
+              })
+            })
+          )
+        )
+      }
+
+      // Registrar no histórico
+      await addImport({
+        fileName: file.name,
+        fileType: file.type,
+        documentType: 'fatura_batch',
+        extractedData: extractedData.dados_completos,
+        status: 'completed',
+        action: 'batchCardExpense',
+        count: expenses.length,
+        ...(comprovanteData && { comprovante: comprovanteData })
+      })
+
+      setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)
+      setStatus('success')
+
+      setTimeout(() => {
+        handleReset()
+      }, 2000)
+
+    } catch (err) {
+      console.error('Erro ao importar despesas em batch:', err)
+      setError('Erro ao importar despesas. Algumas podem ter sido salvas parcialmente.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDiscard = () => {
     handleReset()
   }
@@ -195,6 +257,7 @@ export default function Documents({ month, year }) {
     setExtractedData(null)
     setError(null)
     setSaving(false)
+    setSuccessMessage(null)
   }
 
   const handleRetry = () => {
@@ -262,19 +325,33 @@ export default function Documents({ month, year }) {
 
       {/* Result */}
       {status === 'result' && extractedData && (
-        <ProcessingResult
-          data={extractedData}
-          onCreateTransaction={handleCreateTransaction}
-          onCreateCardExpense={handleCreateCardExpense}
-          onDiscard={handleDiscard}
-          cards={cards}
-          accounts={accounts}
-          tags={tags}
-          file={file}
-          saving={saving}
-          categories={allCategories}
-          getMainCategories={getMainCategories}
-        />
+        extractedData.tipo_documento === 'fatura_batch' ? (
+          <FaturaResult
+            data={extractedData}
+            onSave={handleBatchCardExpenses}
+            onDiscard={handleDiscard}
+            cards={cards}
+            categories={allCategories}
+            getMainCategories={getMainCategories}
+            saving={saving}
+            month={month}
+            year={year}
+          />
+        ) : (
+          <ProcessingResult
+            data={extractedData}
+            onCreateTransaction={handleCreateTransaction}
+            onCreateCardExpense={handleCreateCardExpense}
+            onDiscard={handleDiscard}
+            cards={cards}
+            accounts={accounts}
+            tags={tags}
+            file={file}
+            saving={saving}
+            categories={allCategories}
+            getMainCategories={getMainCategories}
+          />
+        )
       )}
 
       {/* Success */}
@@ -285,7 +362,9 @@ export default function Documents({ month, year }) {
               <CheckCircle className="w-8 h-8 text-emerald-400" />
             </div>
             <p className="text-white font-medium mt-4">Salvo com sucesso!</p>
-            <p className="text-sm text-dark-400 mt-1">O lançamento foi criado</p>
+            <p className="text-sm text-dark-400 mt-1">
+              {successMessage || 'O lançamento foi criado'}
+            </p>
           </div>
         </Card>
       )}

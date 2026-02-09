@@ -51,39 +51,49 @@ IMPORTANTE:
 - Se for um recebimento, tipo_transacao = "income"
 - Responda APENAS com JSON válido, sem explicações ou markdown.`
 
-// Prompt para Fatura de Cartão de Crédito
-export const PROMPT_FATURA = `Analise esta fatura de cartão de crédito e extraia TODAS as informações.
+// Prompt para Fatura de Cartão de Crédito (extração batch)
+export const PROMPT_FATURA = `Analise esta fatura de cartão de crédito brasileiro e extraia todas as compras.
 
+REGRAS DE EXTRAÇÃO:
+
+INCLUIR (são compras):
+- Compras nacionais e internacionais em estabelecimentos
+- IOF de transações internacionais (ex: "CUSTO TRANS. EXTERIOR-IOF", "IOF Transações Exterior")
+- Assinaturas e serviços recorrentes (Netflix, Spotify, Google, etc.)
+
+IGNORAR (NÃO são compras):
+- Linhas de pagamento: "PAGTO.", "Pagamento Fatura", "PAGAMENTO"
+- Saldo anterior, créditos, estornos
+- Juros, multas, encargos de financiamento, CET, IOF de financiamento
+- Linhas de subtotal: "Total para...", "Subtotal deste cartão", "Total da fatura em real"
+- Cabeçalhos de cartão: "MARLON CEZAR... Cartão 4066..."
+- Informações de limite, taxas, parcelamento de fatura
+
+TRATAMENTO ESPECIAL:
+- Compras internacionais: use o valor em R$ (já convertido), não o valor em USD/EUR
+- Parcelas (ex: "AMAZON BR 09/10"): extraia normalmente, o "09/10" faz parte da descrição
+- Múltiplos cartões na mesma fatura: extraia compras de TODOS os cartões
+- Data: normalize para DD/MM (se vier "09 jan", converta para "09/01")
+
+CATEGORIAS (escolha a mais adequada para cada compra):
+food, transport, housing, health, leisure, education, other
+
+Retorne APENAS este JSON, sem markdown nem texto adicional:
 {
-  "tipo_documento": "fatura_cartao",
-  "cartao": {
-    "bandeira": "Visa | Mastercard | Elo | Amex | Hipercard | Outro",
-    "banco": "nome do banco emissor",
-    "final": "últimos 4 dígitos se visível"
-  },
-  "fatura": {
-    "mes_referencia": "YYYY-MM",
-    "data_fechamento": "YYYY-MM-DD",
-    "data_vencimento": "YYYY-MM-DD",
-    "valor_total": 0.00
-  },
-  "compras": [
-    {
-      "data": "YYYY-MM-DD",
-      "descricao": "nome do estabelecimento",
-      "valor": 0.00,
-      "parcela": "1/3 ou null se à vista",
-      "categoria_sugerida": "food" | "transport" | "housing" | "health" | "leisure" | "education" | "other"
-    }
-  ],
-  "confianca": "alta" | "media" | "baixa"
+  "valor_total_fatura": 0.00,
+  "soma_lancamentos": 0.00,
+  "diferenca": 0.00,
+  "transacoes": [
+    {"data": "DD/MM", "descricao": "texto", "valor": 0.00, "categoria": "other"}
+  ]
 }
 
-IMPORTANTE:
-- Liste TODAS as compras individualmente
-- Valores devem ser números (sem aspas)
-- categoria_sugerida deve ser um dos IDs: food, transport, housing, health, leisure, education, other
-- Responda APENAS com JSON válido.`
+REGRAS DO JSON:
+- Valores numéricos (sem aspas, sem "R$")
+- soma_lancamentos = soma de todos os valores em transacoes
+- diferenca = valor_total_fatura - soma_lancamentos
+- NÃO duplique: cada lançamento aparece UMA única vez
+- Apenas JSON puro, sem comentários`
 
 // Prompt para Extrato Bancário
 export const PROMPT_EXTRATO = `Analise este extrato bancário e extraia TODAS as transações.
