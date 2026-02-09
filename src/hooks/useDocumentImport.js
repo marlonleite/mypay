@@ -74,8 +74,8 @@ export function useImportHistory() {
     return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
       ...data,
       date: new Date(data.date),
-      installment: 1,
-      totalInstallments: 1,
+      installment: data.installment || 1,
+      totalInstallments: data.totalInstallments || 1,
       createdAt: serverTimestamp()
     })
   }

@@ -38,7 +38,7 @@ export async function processDocument(base64, mimeType, documentType = 'auto') {
           temperature: 0.1,
           topK: 32,
           topP: 1,
-          maxOutputTokens: 4096
+          maxOutputTokens: 65536
         }
       })
     })
@@ -75,46 +75,91 @@ export async function processDocument(base64, mimeType, documentType = 'auto') {
  * Parseia a resposta do Gemini e extrai o JSON
  */
 function parseGeminiResponse(response) {
+  const candidate = response.candidates?.[0]
+
+  // Verifica bloqueio por safety filters
+  if (!candidate) {
+    const blockReason = response.promptFeedback?.blockReason
+    console.error('Gemini: sem candidatos. blockReason:', blockReason)
+    throw new Error(
+      blockReason
+        ? `Documento bloqueado pelo filtro de segurança (${blockReason}).`
+        : 'Resposta vazia da IA. Tente novamente.'
+    )
+  }
+
+  // Verifica truncamento por tokens
+  const finishReason = candidate.finishReason
+  if (finishReason === 'MAX_TOKENS') {
+    console.warn('Gemini: resposta truncada (MAX_TOKENS)')
+  }
+
+  const text = candidate.content?.parts?.[0]?.text
+
+  if (!text) {
+    console.error('Gemini: resposta sem texto. finishReason:', finishReason)
+    throw new Error(
+      finishReason === 'SAFETY'
+        ? 'Documento bloqueado pelo filtro de segurança.'
+        : 'Resposta vazia da IA. Tente novamente.'
+    )
+  }
+
   try {
-    // Extrai o texto da resposta do Gemini
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text
-
-    if (!text) {
-      throw new Error('Resposta vazia da IA')
-    }
-
-    // Remove possíveis marcadores de código markdown
-    let jsonStr = text.trim()
-
-    // Remove ```json e ``` se existirem
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.slice(7)
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.slice(3)
-    }
-
-    if (jsonStr.endsWith('```')) {
-      jsonStr = jsonStr.slice(0, -3)
-    }
-
-    jsonStr = jsonStr.trim()
-
-    // Tenta fazer parse do JSON
-    const parsed = JSON.parse(jsonStr)
-
-    // Normaliza os dados para o formato esperado pelo app
+    const parsed = JSON.parse(extractJson(text))
     return normalizeExtractedData(parsed)
-
   } catch (error) {
     console.error('Erro ao parsear resposta:', error)
+    console.error('Texto bruto (primeiros 500 chars):', text.slice(0, 500))
+
+    if (finishReason === 'MAX_TOKENS') {
+      throw new Error('Fatura muito grande: resposta da IA foi truncada. Tente com uma fatura menor.')
+    }
     throw new Error('Não foi possível extrair dados do documento. Tente novamente.')
   }
+}
+
+/**
+ * Extrai JSON válido de uma string que pode conter texto extra
+ */
+function extractJson(text) {
+  let str = text.trim()
+
+  // Remove marcadores markdown
+  if (str.startsWith('```json')) {
+    str = str.slice(7)
+  } else if (str.startsWith('```')) {
+    str = str.slice(3)
+  }
+  if (str.endsWith('```')) {
+    str = str.slice(0, -3)
+  }
+  str = str.trim()
+
+  // Se já é JSON válido, retorna
+  if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+    return str
+  }
+
+  // Tenta extrair JSON de texto misto (ex: "Aqui está: {...}")
+  const firstBrace = str.indexOf('{')
+  const lastBrace = str.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return str.slice(firstBrace, lastBrace + 1)
+  }
+
+  return str
 }
 
 /**
  * Normaliza os dados extraídos para o formato padrão do app
  */
 function normalizeExtractedData(data) {
+  // Detecta formato batch de fatura (novo prompt)
+  if (data.valor_total_fatura !== undefined && Array.isArray(data.transacoes)) {
+    return normalizeFaturaBatch(data)
+  }
+
   // Dados básicos
   const normalized = {
     tipo_documento: data.tipo_documento || 'outro',
@@ -127,7 +172,7 @@ function normalizeExtractedData(data) {
     dados_completos: data
   }
 
-  // Se for fatura de cartão, inclui as compras
+  // Se for fatura de cartão (formato legado), inclui as compras
   if (data.tipo_documento === 'fatura_cartao' && data.compras) {
     normalized.compras = data.compras
     normalized.cartao = data.cartao
@@ -151,6 +196,51 @@ function normalizeExtractedData(data) {
   }
 
   return normalized
+}
+
+/**
+ * Normaliza dados de fatura batch (novo formato com transacoes)
+ */
+function normalizeFaturaBatch(data) {
+  const originalCount = data.transacoes.length
+  const originalSum = data.transacoes.reduce((s, t) => s + parseFloat(t.valor || 0), 0)
+
+  // Deduplica transações com mesma data + descrição + valor
+  const seen = new Set()
+  const removed = []
+  const deduped = data.transacoes.filter((t) => {
+    const key = `${t.data}|${(t.descricao || '').trim().toLowerCase()}|${parseFloat(t.valor || 0).toFixed(2)}`
+    if (seen.has(key)) {
+      removed.push(t)
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+
+  if (removed.length > 0) {
+    console.warn(`Fatura batch: ${removed.length} duplicatas removidas:`, removed)
+  }
+  console.log(`Fatura batch: IA retornou ${originalCount} transações (R$ ${originalSum.toFixed(2)}), após dedup: ${deduped.length}`)
+
+  const transacoes = deduped.map((t, index) => ({
+    id: index + 1,
+    data: t.data || '',
+    descricao: t.descricao || '',
+    valor: parseFloat(t.valor || 0),
+    categoria: t.categoria || 'other',
+  }))
+
+  const somaReal = transacoes.reduce((sum, t) => sum + t.valor, 0)
+
+  return {
+    tipo_documento: 'fatura_batch',
+    valor_total_fatura: parseFloat(data.valor_total_fatura || 0),
+    soma_lancamentos: somaReal,
+    diferenca: parseFloat(data.valor_total_fatura || 0) - somaReal,
+    transacoes,
+    dados_completos: data,
+  }
 }
 
 export default { processDocument }
