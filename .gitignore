@@ -8,6 +8,7 @@ dist
 dist-ssr
 build
 *.local
+public/version.json
 
 # Environment
 .env
