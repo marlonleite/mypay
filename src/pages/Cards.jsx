@@ -192,15 +192,17 @@ export default function Cards({ month, year, onMonthChange }) {
       .sort((a, b) => new Date(b.date) - new Date(a.date))
   }, [allExpenses, selectedCard, month, year])
 
-  // Categorias para filtro de lançamentos (apenas expense)
+  // Categorias para filtro de lançamentos (expense + income)
   const expenseFilterCategories = useMemo(() => {
-    const mainCats = getMainCategories('expense')
     const result = []
-    for (const cat of mainCats) {
-      result.push({ value: cat.id, label: cat.name })
-      const subs = getSubcategories(cat.id)
-      for (const sub of subs) {
-        result.push({ value: sub.id, label: `  ${sub.name}` })
+    for (const type of ['expense', 'income']) {
+      const mainCats = getMainCategories(type)
+      for (const cat of mainCats) {
+        result.push({ value: cat.id, label: cat.name })
+        const subs = getSubcategories(cat.id)
+        for (const sub of subs) {
+          result.push({ value: sub.id, label: `  ${sub.name}` })
+        }
       }
     }
     return result
