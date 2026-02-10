@@ -777,7 +777,7 @@ export default function Cards({ month, year, onMonthChange }) {
                     </p>
 
                     {/* Limit Progress Bar */}
-                    {card.limit && (
+                    {card.limit > 0 && (
                       <div className="mt-2">
                         <LimitProgressBar
                           used={billTotal}
@@ -957,7 +957,7 @@ export default function Cards({ month, year, onMonthChange }) {
             </div>
 
             {/* Limit Progress Bar */}
-            {selectedCard?.limit && (
+            {selectedCard?.limit > 0 && (
               <div className="mt-3 pt-3 border-t border-white/20">
                 <LimitProgressBar
                   used={cardTotals[selectedCard?.id] || 0}
