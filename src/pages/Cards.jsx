@@ -139,19 +139,22 @@ export default function Cards({ month, year, onMonthChange }) {
     fixedFrequency: 'monthly'
   })
 
-  // Categorias do Firestore baseadas no tipo selecionado (principais + subcategorias)
-  const categories = useMemo(() => {
+  // Categorias do Firestore agrupadas (principais + subcategorias como optgroup)
+  const categoryOptions = useMemo(() => {
     const mainCats = getMainCategories(expenseForm.type)
-    const result = []
-
-    for (const cat of mainCats) {
-      result.push({ id: cat.id, name: cat.name, isMain: true })
+    return mainCats.map(cat => {
       const subs = getSubcategories(cat.id)
-      for (const sub of subs) {
-        result.push({ id: sub.id, name: `  ${sub.name}`, isMain: false, parentId: cat.id })
+      if (subs.length === 0) {
+        return { value: cat.id, label: cat.name }
       }
-    }
-    return result
+      return {
+        label: cat.name,
+        options: [
+          { value: cat.id, label: cat.name },
+          ...subs.map(sub => ({ value: sub.id, label: sub.name }))
+        ]
+      }
+    })
   }, [allCategories, expenseForm.type])
 
   const [paymentForm, setPaymentForm] = useState({
@@ -1244,7 +1247,7 @@ export default function Cards({ month, year, onMonthChange }) {
               <Select
                 value={expenseForm.category}
                 onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                options={categories.map(c => ({ value: c.id, label: c.name }))}
+                options={categoryOptions}
                 className="flex-1"
               />
               <button

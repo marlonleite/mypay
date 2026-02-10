@@ -26,11 +26,24 @@ export default function Select({
           `}
           {...props}
         >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
+          {options.map((option, index) => {
+            if (option.options) {
+              return (
+                <optgroup key={`group-${index}`} label={option.label}>
+                  {option.options.map((sub) => (
+                    <option key={sub.value} value={sub.value}>
+                      {sub.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            }
+            return (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            )
+          })}
         </select>
         <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-dark-400">
           <ChevronDown className="w-5 h-5" />
