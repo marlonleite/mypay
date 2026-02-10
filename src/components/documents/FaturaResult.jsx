@@ -41,12 +41,16 @@ export default function FaturaResult({
   }, [firestoreCategories, getMainCategories])
 
   // Mapeia categorias da IA para categorias Firestore
+  // Se a IA retornou um ID de categoria Firestore válido, usa direto; senão, fallback para findBestCategory
   const mapInitialTransactions = useCallback(() => {
     if (!data?.transacoes?.length) return []
-    return data.transacoes.map((t) => ({
-      ...t,
-      categoryId: findBestCategory(t.categoria, firestoreCategories, 'expense') || expenseCategories[0]?.id || '',
-    }))
+    return data.transacoes.map((t) => {
+      const isFirestoreId = t.categoria && expenseCategories.some(c => c.id === t.categoria)
+      const categoryId = isFirestoreId
+        ? t.categoria
+        : findBestCategory(t.categoria, firestoreCategories, 'expense') || expenseCategories[0]?.id || ''
+      return { ...t, categoryId }
+    })
   }, [data, firestoreCategories, expenseCategories])
 
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')

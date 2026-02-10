@@ -55,15 +55,21 @@ export default function ProcessingResult({
   }, [firestoreCategories, getMainCategories])
 
   // Encontra a melhor categoria inicial
+  // Se a IA retornou um ID de categoria Firestore válido, usa direto; senão, fallback para findBestCategory
   const initialCategory = useMemo(() => {
     const type = data.tipo_transacao || 'expense'
     const aiSuggested = data.categoria_sugerida
+    const cats = type === 'income' ? incomeCategories : expenseCategories
+
+    // Tenta usar ID direto do Firestore
+    if (aiSuggested && cats.some(c => c.id === aiSuggested)) {
+      return aiSuggested
+    }
 
     const bestMatch = findBestCategory(aiSuggested, firestoreCategories, type)
     if (bestMatch) return bestMatch
 
     // Fallback para primeira categoria do tipo
-    const cats = type === 'income' ? incomeCategories : expenseCategories
     return cats[0]?.id || ''
   }, [data, firestoreCategories, incomeCategories, expenseCategories])
 
