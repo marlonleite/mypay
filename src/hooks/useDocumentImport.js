@@ -72,9 +72,13 @@ export function useImportHistory() {
   const addCardExpense = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
 
+    const parsedDate = parseLocalDate(data.date)
+
     return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
       ...data,
-      date: parseLocalDate(data.date),
+      date: parsedDate,
+      billMonth: data.billMonth ?? parsedDate.getMonth(),
+      billYear: data.billYear ?? parsedDate.getFullYear(),
       installment: data.installment || 1,
       totalInstallments: data.totalInstallments || 1,
       createdAt: serverTimestamp()

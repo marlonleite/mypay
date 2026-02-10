@@ -115,6 +115,8 @@ export default function FaturaResult({
         date: faturaDate,
         originalDate: t.data,
         category: t.categoryId,
+        billMonth: month,
+        billYear: year,
       }))
 
     onSave(expenses)

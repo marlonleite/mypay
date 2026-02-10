@@ -172,12 +172,20 @@ export default function Cards({ month, year, onMonthChange }) {
     )
   }, [tagInput, existingTags, expenseForm.tags])
 
+  // Verificar se despesa pertence à fatura (billMonth/billYear com fallback para data)
+  const isExpenseInBill = (expense, billMonth, billYear) => {
+    if (expense.billMonth != null && expense.billYear != null) {
+      return expense.billMonth === billMonth && expense.billYear === billYear
+    }
+    return isDateInMonth(expense.date, billMonth, billYear)
+  }
+
   // Calcular totais por cartão (despesas - receitas/estornos)
   const cardTotals = useMemo(() => {
     const totals = {}
     cards.forEach(card => {
       const cardItems = allExpenses.filter(e =>
-        e.cardId === card.id && isDateInMonth(e.date, month, year)
+        e.cardId === card.id && isExpenseInBill(e, month, year)
       )
       // Despesas somam, receitas (estornos) subtraem
       totals[card.id] = cardItems.reduce((sum, e) => {
@@ -192,7 +200,7 @@ export default function Cards({ month, year, onMonthChange }) {
   const selectedCardExpenses = useMemo(() => {
     if (!selectedCard) return []
     return allExpenses
-      .filter(e => e.cardId === selectedCard.id && isDateInMonth(e.date, month, year))
+      .filter(e => e.cardId === selectedCard.id && isExpenseInBill(e, month, year))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
   }, [allExpenses, selectedCard, month, year])
 
@@ -496,7 +504,7 @@ export default function Cards({ month, year, onMonthChange }) {
       setSaving(true)
 
       if (editingItem) {
-        // Atualizar lançamento existente
+        // Atualizar lançamento existente — preserva billMonth/billYear da fatura atual
         await updateCardExpense(editingItem.id, {
           type: expenseForm.type,
           description: expenseForm.description,
@@ -505,10 +513,12 @@ export default function Cards({ month, year, onMonthChange }) {
           date: expenseForm.date,
           notes: expenseForm.notes || null,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
-          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null
+          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
+          billMonth: editingItem.billMonth ?? month,
+          billYear: editingItem.billYear ?? year
         })
       } else {
-        // Criar novo lançamento
+        // Criar novo lançamento — vincula à fatura sendo visualizada
         await addCardExpense({
           cardId: selectedCard.id,
           type: expenseForm.type,
@@ -521,7 +531,9 @@ export default function Cards({ month, year, onMonthChange }) {
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
           attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
           isFixed: expenseForm.isFixed,
-          fixedFrequency: expenseForm.isFixed ? expenseForm.fixedFrequency : null
+          fixedFrequency: expenseForm.isFixed ? expenseForm.fixedFrequency : null,
+          billMonth: month,
+          billYear: year
         })
       }
 

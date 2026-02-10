@@ -320,16 +320,28 @@ export function useCardExpenses(cardId, month, year) {
       const expenses = []
       const baseDate = parseLocalDate(data.date)
       const installmentValue = data.amount / data.installments
+      const baseBillMonth = data.billMonth ?? baseDate.getMonth()
+      const baseBillYear = data.billYear ?? baseDate.getFullYear()
 
       for (let i = 0; i < data.installments; i++) {
         const installmentDate = new Date(baseDate)
         installmentDate.setMonth(installmentDate.getMonth() + i)
+
+        // Avançar billMonth/billYear para cada parcela
+        let instBillMonth = baseBillMonth + i
+        let instBillYear = baseBillYear
+        while (instBillMonth > 11) {
+          instBillMonth -= 12
+          instBillYear++
+        }
 
         expenses.push(
           addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
             ...data,
             amount: installmentValue,
             date: installmentDate,
+            billMonth: instBillMonth,
+            billYear: instBillYear,
             installment: i + 1,
             totalInstallments: data.installments,
             createdAt: serverTimestamp()
@@ -340,9 +352,13 @@ export function useCardExpenses(cardId, month, year) {
       return await Promise.all(expenses)
     }
 
+    const parsedDate = parseLocalDate(data.date)
+
     return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
       ...data,
-      date: parseLocalDate(data.date),
+      date: parsedDate,
+      billMonth: data.billMonth ?? parsedDate.getMonth(),
+      billYear: data.billYear ?? parsedDate.getFullYear(),
       installment: 1,
       totalInstallments: 1,
       createdAt: serverTimestamp()
@@ -353,11 +369,17 @@ export function useCardExpenses(cardId, month, year) {
     if (!user) throw new Error('Usuário não autenticado')
 
     const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    return await updateDoc(docRef, {
+    const updateData = {
       ...data,
       date: parseLocalDate(data.date),
       updatedAt: serverTimestamp()
-    })
+    }
+
+    // Preservar billMonth/billYear se fornecidos (trava na fatura atual)
+    if (data.billMonth != null) updateData.billMonth = data.billMonth
+    if (data.billYear != null) updateData.billYear = data.billYear
+
+    return await updateDoc(docRef, updateData)
   }
 
   const deleteCardExpense = async (id) => {
