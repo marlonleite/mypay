@@ -97,28 +97,38 @@ export function buildFaturaPrompt(categories) {
   const catBlock = buildCategoryBlock(categories, DEFAULT_EXPENSE_CATEGORIES)
   const hasUserCategories = categories?.length > 0
 
-  return `Analise esta fatura de cartão de crédito brasileiro e extraia todas as compras.
+  return `Analise esta fatura de cartão de crédito brasileiro e extraia TODAS as compras de TODAS as páginas.
+
+ATENÇÃO - COMPLETUDE (CRÍTICO):
+- Extraia transações de TODAS as páginas do documento, não apenas da primeira ou segunda.
+- A fatura pode ter MÚLTIPLOS CARTÕES (titular + adicional). Cada seção começa com nome do titular e número do cartão. Extraia compras de TODOS os cartões.
+- Após o subtotal de um cartão ("Total para..."), pode haver outro cartão com mais transações. NÃO pare no primeiro subtotal.
+- IMPORTANTE: Após linhas de "Encargos sobre parcelado" e IOFs de parcelamento, a tabela de transações CONTINUA. NÃO pare nessa seção.
+- IMPORTANTE: Compras parceladas têm datas ANTERIORES ao período da fatura (ex: "19/12 DELL 11/12" numa fatura de outubro). São parcelas de compras antigas que devem ser INCLUÍDAS.
+- Ignore informações nas laterais da página (limites, taxas mensais, programa de fidelidade, total parcelados para próximas faturas).
 
 REGRAS DE EXTRAÇÃO:
 
-INCLUIR (são compras):
+INCLUIR (são compras — extraia TODAS):
 - Compras nacionais e internacionais em estabelecimentos
 - IOF de transações internacionais (ex: "CUSTO TRANS. EXTERIOR-IOF", "IOF Transações Exterior", "IOF S/ TRANS INTER REAIS")
 - Assinaturas e serviços recorrentes (Netflix, Spotify, Google, etc.)
+- Compras parceladas, mesmo com datas de meses anteriores (ex: "19/12 DELL 11/12" = parcela 11 de 12 da compra original de 19/12)
 
 IGNORAR (NÃO são compras):
 - Linhas de pagamento: "PAGTO.", "Pagamento Fatura", "PAGAMENTO", "PAGTO. POR DEB EM C/C"
 - Saldo anterior, créditos, estornos
+- Encargos sobre parcelado, IOF diário sobre parcelado, IOF adicional sobre parcelado
 - Juros, multas, encargos de financiamento, CET, IOF de financiamento (IOF que NÃO seja de transação internacional)
 - Linhas de subtotal: "Total para...", "Subtotal deste cartão", "Total da fatura em real"
-- Cabeçalhos de cartão: "MARLON CEZAR... Cartão 4066..."
-- Informações de limite, taxas, parcelamento de fatura
+- Cabeçalhos de cartão com nome do titular e número do cartão
+- Informações de limite, taxas, parcelamento de fatura, programa de fidelidade
+- Linhas de data isolada após encargos (ex: "03/06" sozinha numa linha)
 
 TRATAMENTO ESPECIAL:
 - Compras internacionais: use o valor em R$ (já convertido), não o valor em USD/EUR
-- Parcelas (ex: "AMAZON BR 09/10"): extraia normalmente, o "09/10" faz parte da descrição
-- Múltiplos cartões na mesma fatura: extraia compras de TODOS os cartões
-- Data: normalize para DD/MM (se vier "09 jan", converta para "09/01")
+- Parcelas: o número após a descrição é a parcela (ex: "AMAZON BR 09/10" = parcela 9 de 10). Inclua na descrição.
+- Data: use a data que aparece na coluna "Data" da tabela, normalize para DD/MM
 
 ${catBlock}
 

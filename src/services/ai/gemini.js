@@ -5,7 +5,7 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 /**
  * Processa um documento usando a API do Google Gemini
  */
-export async function processDocument(base64, mimeType, documentType = 'auto', categories = null) {
+export async function processDocument(base64, mimeType, documentType = 'auto', categories = null, pdfText = null) {
   const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY
 
   if (!apiKey) {
@@ -13,6 +13,13 @@ export async function processDocument(base64, mimeType, documentType = 'auto', c
   }
 
   const prompt = getPromptForType(documentType, categories)
+
+  const parts = pdfText
+    ? [{ text: prompt + '\n\n--- TEXTO EXTRAÍDO DO DOCUMENTO ---\n' + pdfText }]
+    : [
+        { inline_data: { mime_type: mimeType, data: base64 } },
+        { text: prompt }
+      ]
 
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
@@ -22,23 +29,17 @@ export async function processDocument(base64, mimeType, documentType = 'auto', c
       },
       body: JSON.stringify({
         contents: [{
-          parts: [
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64
-              }
-            },
-            {
-              text: prompt
-            }
-          ]
+          parts
         }],
         generationConfig: {
           temperature: 0.1,
           topK: 32,
           topP: 1,
-          maxOutputTokens: 65536
+          maxOutputTokens: 65536,
+          responseMimeType: 'application/json',
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
         }
       })
     })
@@ -94,7 +95,10 @@ function parseGeminiResponse(response) {
     console.warn('Gemini: resposta truncada (MAX_TOKENS)')
   }
 
-  const text = candidate.content?.parts?.[0]?.text
+  // Pula thinking parts (thought: true) e pega a parte com o JSON real
+  const parts = candidate.content?.parts || []
+  const responsePart = parts.find(p => !p.thought) || parts[0]
+  const text = responsePart?.text
 
   if (!text) {
     console.error('Gemini: resposta sem texto. finishReason:', finishReason)

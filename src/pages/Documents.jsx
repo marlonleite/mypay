@@ -18,7 +18,7 @@ import { useCards, useTransactions, useCategories, useAccounts, useTags } from '
 import { useImportHistory } from '../hooks/useDocumentImport'
 import { processDocument } from '../services/ai/gemini'
 import { uploadComprovante } from '../services/storage'
-import { fileToBase64 } from '../utils/fileProcessing'
+import { fileToBase64, extractTextFromPDF, getFileType } from '../utils/fileProcessing'
 import { DOCUMENT_TYPES } from '../utils/constants'
 
 const BATCH_CHUNK_SIZE = 20
@@ -75,9 +75,24 @@ export default function Documents({ month, year }) {
     setError(null)
 
     try {
-      const base64 = await fileToBase64(file)
+      let pdfText = null
+      let base64 = null
+      const isPDF = getFileType(file) === 'pdf'
+
+      if (isPDF) {
+        try {
+          pdfText = await extractTextFromPDF(file)
+        } catch (extractErr) {
+          console.warn('Extração de texto do PDF falhou, usando fallback de imagem:', extractErr)
+        }
+      }
+
+      if (!pdfText) {
+        base64 = await fileToBase64(file)
+      }
+
       const categories = getCategoriesForAI()
-      const result = await processDocument(base64, file.type, documentType, categories)
+      const result = await processDocument(base64, file.type, documentType, categories, pdfText)
 
       setExtractedData(result)
       setStatus('result')
