@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
+import { parseLocalDate } from '../utils/helpers'
 
 /**
  * Hook para gerenciar histórico de importações e operações relacionadas
@@ -73,7 +74,7 @@ export function useImportHistory() {
 
     return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
       ...data,
-      date: new Date(data.date),
+      date: parseLocalDate(data.date),
       installment: data.installment || 1,
       totalInstallments: data.totalInstallments || 1,
       createdAt: serverTimestamp()

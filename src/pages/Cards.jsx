@@ -47,7 +47,7 @@ import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
-import { isDateInMonth } from '../utils/helpers'
+import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, FIXED_FREQUENCIES, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
@@ -306,7 +306,7 @@ export default function Cards({ month, year, onMonthChange }) {
       description: expense.description || '',
       amount: expense.amount || null,
       category: expense.category || '',
-      date: expenseDate.toISOString().split('T')[0],
+      date: formatDateForInput(expenseDate),
       installments: '1',
       notes: expense.notes || '',
       tags: expense.tags || [],

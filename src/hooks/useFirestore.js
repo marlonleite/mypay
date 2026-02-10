@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
+import { parseLocalDate } from '../utils/helpers'
 
 // Hook para transações (receitas e despesas)
 // dateRange: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' } | null
@@ -317,7 +318,7 @@ export function useCardExpenses(cardId, month, year) {
     // Se tem parcelamento, criar múltiplas despesas
     if (data.installments && data.installments > 1) {
       const expenses = []
-      const baseDate = new Date(data.date)
+      const baseDate = parseLocalDate(data.date)
       const installmentValue = data.amount / data.installments
 
       for (let i = 0; i < data.installments; i++) {
@@ -341,7 +342,7 @@ export function useCardExpenses(cardId, month, year) {
 
     return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
       ...data,
-      date: new Date(data.date),
+      date: parseLocalDate(data.date),
       installment: 1,
       totalInstallments: 1,
       createdAt: serverTimestamp()
@@ -354,7 +355,7 @@ export function useCardExpenses(cardId, month, year) {
     const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
     return await updateDoc(docRef, {
       ...data,
-      date: new Date(data.date),
+      date: parseLocalDate(data.date),
       updatedAt: serverTimestamp()
     })
   }

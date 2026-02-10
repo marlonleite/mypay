@@ -17,7 +17,22 @@ export const formatDate = (date) => {
 export const formatDateForInput = (date) => {
   if (!date) return ''
   const d = date instanceof Date ? date : new Date(date)
-  return d.toISOString().split('T')[0]
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Converter string de data para Date em timezone local
+// new Date("YYYY-MM-DD") usa UTC midnight, causando shift de dia em timezones negativos
+// Esta função garante que a data fique no dia correto em qualquer timezone
+export const parseLocalDate = (date) => {
+  if (!date) return new Date()
+  if (date instanceof Date) return date
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return new Date(date + 'T12:00:00')
+  }
+  return new Date(date)
 }
 
 // Obter mês e ano atual
