@@ -15,6 +15,7 @@ import Select from '../ui/Select'
 import CategorySelector from '../transactions/CategorySelector'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { findBestCategory } from '../../utils/categoryMapping'
+import { MONTHS } from '../../utils/constants'
 
 const VALIDATION_TOLERANCE = 0.02
 
@@ -54,6 +55,14 @@ export default function FaturaResult({
   }, [data, firestoreCategories, expenseCategories])
 
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')
+  const [billMonth, setBillMonth] = useState(() => {
+    if (data?.mes_referencia >= 1 && data?.mes_referencia <= 12) return data.mes_referencia - 1
+    return month
+  })
+  const [billYear, setBillYear] = useState(() => {
+    if (data?.ano_referencia) return data.ano_referencia
+    return year
+  })
   const [selectedIds, setSelectedIds] = useState(() => {
     if (!data?.transacoes?.length) return new Set()
     return new Set(data.transacoes.map(t => t.id))
@@ -109,7 +118,7 @@ export default function FaturaResult({
   const handleSave = useCallback(() => {
     if (!selectedCard || selectedCount === 0) return
 
-    const faturaDate = new Date(year, month, 1)
+    const faturaDate = new Date(billYear, billMonth, 1)
     const expenses = editedTransactions
       .filter(t => selectedIds.has(t.id))
       .map(t => ({
@@ -119,12 +128,12 @@ export default function FaturaResult({
         date: faturaDate,
         originalDate: t.data,
         category: t.categoryId,
-        billMonth: month,
-        billYear: year,
+        billMonth,
+        billYear,
       }))
 
     onSave(expenses)
-  }, [selectedCard, selectedCount, editedTransactions, selectedIds, year, month, onSave])
+  }, [selectedCard, selectedCount, editedTransactions, selectedIds, billYear, billMonth, onSave])
 
   // Empty state
   if (!data?.transacoes?.length) {
@@ -203,6 +212,28 @@ export default function FaturaResult({
             options={cards.map(c => ({ value: c.id, label: c.name }))}
           />
         )}
+      </div>
+
+      {/* Seletor de mês/ano da fatura */}
+      <div className="px-4 py-3 border-b border-dark-700">
+        <label className="block text-sm font-medium text-dark-300 mb-2">Fatura de referência</label>
+        <div className="flex gap-2">
+          <Select
+            value={billMonth}
+            onChange={(e) => setBillMonth(Number(e.target.value))}
+            options={MONTHS.map((name, i) => ({ value: i, label: name }))}
+            className="flex-1"
+          />
+          <Select
+            value={billYear}
+            onChange={(e) => setBillYear(Number(e.target.value))}
+            options={Array.from({ length: 5 }, (_, i) => {
+              const y = new Date().getFullYear() - 2 + i
+              return { value: y, label: String(y) }
+            })}
+            className="w-28"
+          />
+        </div>
       </div>
 
       {/* Toolbar select all */}

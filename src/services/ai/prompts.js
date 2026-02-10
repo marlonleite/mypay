@@ -103,13 +103,13 @@ REGRAS DE EXTRAÇÃO:
 
 INCLUIR (são compras):
 - Compras nacionais e internacionais em estabelecimentos
-- IOF de transações internacionais (ex: "CUSTO TRANS. EXTERIOR-IOF", "IOF Transações Exterior")
+- IOF de transações internacionais (ex: "CUSTO TRANS. EXTERIOR-IOF", "IOF Transações Exterior", "IOF S/ TRANS INTER REAIS")
 - Assinaturas e serviços recorrentes (Netflix, Spotify, Google, etc.)
 
 IGNORAR (NÃO são compras):
-- Linhas de pagamento: "PAGTO.", "Pagamento Fatura", "PAGAMENTO"
+- Linhas de pagamento: "PAGTO.", "Pagamento Fatura", "PAGAMENTO", "PAGTO. POR DEB EM C/C"
 - Saldo anterior, créditos, estornos
-- Juros, multas, encargos de financiamento, CET, IOF de financiamento
+- Juros, multas, encargos de financiamento, CET, IOF de financiamento (IOF que NÃO seja de transação internacional)
 - Linhas de subtotal: "Total para...", "Subtotal deste cartão", "Total da fatura em real"
 - Cabeçalhos de cartão: "MARLON CEZAR... Cartão 4066..."
 - Informações de limite, taxas, parcelamento de fatura
@@ -124,6 +124,8 @@ ${catBlock}
 
 Retorne APENAS este JSON, sem markdown nem texto adicional:
 {
+  "mes_referencia": 4,
+  "ano_referencia": 2025,
   "valor_total_fatura": 0.00,
   "soma_lancamentos": 0.00,
   "diferenca": 0.00,
@@ -131,6 +133,10 @@ Retorne APENAS este JSON, sem markdown nem texto adicional:
     {"data": "DD/MM", "descricao": "texto", "valor": 0.00, "categoria": "${hasUserCategories ? 'ID da categoria' : 'other'}"}
   ]
 }
+
+REGRAS DE PERÍODO:
+- mes_referencia: mês de VENCIMENTO da fatura (1-12), extraído do campo "Data de Vencimento" (ex: vencimento 10/04/2025 → mes_referencia = 4)
+- ano_referencia: ano de VENCIMENTO da fatura (ex: 2025)
 
 REGRAS DO JSON:
 - Valores numéricos (sem aspas, sem "R$")

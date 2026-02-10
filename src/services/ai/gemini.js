@@ -235,6 +235,8 @@ function normalizeFaturaBatch(data) {
 
   return {
     tipo_documento: 'fatura_batch',
+    mes_referencia: data.mes_referencia || null,
+    ano_referencia: data.ano_referencia || null,
     valor_total_fatura: parseFloat(data.valor_total_fatura || 0),
     soma_lancamentos: somaReal,
     diferenca: parseFloat(data.valor_total_fatura || 0) - somaReal,
