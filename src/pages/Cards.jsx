@@ -19,7 +19,8 @@ import {
   FileSpreadsheet,
   File,
   Search,
-  Filter
+  Filter,
+  AlertTriangle
 } from 'lucide-react'
 import {
   collection,
@@ -157,8 +158,10 @@ export default function Cards({ month, year, onMonthChange }) {
     accountId: '',
     date: new Date().toISOString().split('T')[0],
     amount: null, // Para pagamento parcial
-    isPartial: false
+    isPartial: false,
+    attachments: []
   })
+  const paymentFileInputRef = useRef(null)
 
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
@@ -328,7 +331,8 @@ export default function Cards({ month, year, onMonthChange }) {
       accountId: activeAccounts[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
       amount: totalDue,
-      isPartial: false
+      isPartial: false,
+      attachments: []
     })
     setModalType('pay_bill')
   }
@@ -405,6 +409,40 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const removeAttachment = (index) => {
     setExpenseForm(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }))
+  }
+
+  // Upload de comprovante de pagamento
+  const handlePaymentFileSelect = async (e) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    try {
+      setUploading(true)
+      setUploadError(null)
+
+      const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
+      const results = await Promise.all(uploadPromises)
+
+      setPaymentForm(prev => ({
+        ...prev,
+        attachments: [...prev.attachments, ...results]
+      }))
+    } catch (error) {
+      console.error('Error uploading payment receipt:', error)
+      setUploadError(error.message || 'Erro ao enviar comprovante')
+    } finally {
+      setUploading(false)
+      if (paymentFileInputRef.current) {
+        paymentFileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const removePaymentAttachment = (index) => {
+    setPaymentForm(prev => ({
       ...prev,
       attachments: prev.attachments.filter((_, i) => i !== index)
     }))
@@ -520,7 +558,7 @@ export default function Cards({ month, year, onMonthChange }) {
       const isPartialPayment = paymentAmount < totalDue
 
       // 1. Criar transação de pagamento
-      const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), {
+      const transactionData = {
         description: `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}${isPartialPayment ? ' (parcial)' : ''}`,
         amount: paymentAmount,
         category: 'card_payment',
@@ -533,7 +571,13 @@ export default function Cards({ month, year, onMonthChange }) {
         paid: true,
         isPartialPayment: isPartialPayment,
         createdAt: serverTimestamp()
-      })
+      }
+
+      if (paymentForm.attachments.length > 0) {
+        transactionData.attachments = paymentForm.attachments
+      }
+
+      const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), transactionData)
 
       // 2. Registrar pagamento da fatura
       await addBillPayment({
@@ -1527,6 +1571,79 @@ export default function Cards({ month, year, onMonthChange }) {
                 value={paymentForm.date}
                 onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
                 required
+              />
+
+              {/* Comprovante de Pagamento */}
+              {uploadError && modalType === 'pay_bill' && (
+                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span className="flex-1">{uploadError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadError(null)}
+                    className="ml-auto p-1 hover:text-red-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
+              {paymentForm.attachments.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-300 mb-1.5">
+                    Comprovante
+                  </label>
+                  <div className="space-y-2">
+                    {paymentForm.attachments.map((attachment, index) => {
+                      const FileIcon = getFileIcon(attachment)
+                      return (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-dark-800 rounded-xl">
+                          <FileIcon className={`w-5 h-5 ${getFileIconColor(attachment)}`} />
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download={attachment.fileName}
+                            className="text-sm text-dark-300 flex-1 truncate hover:text-white transition-colors"
+                          >
+                            {attachment.fileName}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => removePaymentAttachment(index)}
+                            className="p-1 text-dark-400 hover:text-red-400"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => paymentFileInputRef.current?.click()}
+                disabled={uploading}
+                className={`flex items-center gap-2 w-full p-3 rounded-xl border border-dashed transition-colors ${
+                  paymentForm.attachments.length > 0
+                    ? 'border-violet-500/30 text-violet-400'
+                    : 'border-dark-600 text-dark-400 hover:border-dark-500 hover:text-white'
+                } ${uploading ? 'opacity-50' : ''}`}
+              >
+                <Paperclip className="w-4 h-4" />
+                <span className="text-sm">
+                  {uploading ? 'Enviando...' : 'Anexar comprovante'}
+                </span>
+              </button>
+              <input
+                ref={paymentFileInputRef}
+                type="file"
+                accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
+                onChange={handlePaymentFileSelect}
+                multiple
+                className="hidden"
               />
             </>
           )}
