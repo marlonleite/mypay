@@ -318,6 +318,8 @@ export default function Cards({ month, year, onMonthChange }) {
       installments: '1',
       notes: expense.notes || '',
       tags: expense.tags || [],
+      billMonth: expense.billMonth ?? month,
+      billYear: expense.billYear ?? year,
       attachments: expense.attachments || [],
       isFixed: expense.isFixed || false,
       fixedFrequency: expense.fixedFrequency || 'monthly'
@@ -504,7 +506,7 @@ export default function Cards({ month, year, onMonthChange }) {
       setSaving(true)
 
       if (editingItem) {
-        // Atualizar lançamento existente — preserva billMonth/billYear da fatura atual
+        // Atualizar lançamento existente — usa billMonth/billYear do form (editável)
         await updateCardExpense(editingItem.id, {
           type: expenseForm.type,
           description: expenseForm.description,
@@ -514,8 +516,8 @@ export default function Cards({ month, year, onMonthChange }) {
           notes: expenseForm.notes || null,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
           attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
-          billMonth: editingItem.billMonth ?? month,
-          billYear: editingItem.billYear ?? year
+          billMonth: expenseForm.billMonth,
+          billYear: expenseForm.billYear
         })
       } else {
         // Criar novo lançamento — vincula à fatura sendo visualizada
@@ -1139,6 +1141,31 @@ export default function Cards({ month, year, onMonthChange }) {
         headerVariant={expenseForm.type === TRANSACTION_TYPES.INCOME ? 'income' : 'expense'}
       >
         <form onSubmit={handleSaveExpense} className="space-y-4">
+          {/* Seletor de fatura vinculada */}
+          {editingItem && (
+            <Select
+              label="Fatura"
+              value={`${expenseForm.billMonth}-${expenseForm.billYear}`}
+              onChange={(e) => {
+                const [m, y] = e.target.value.split('-').map(Number)
+                setExpenseForm(prev => ({ ...prev, billMonth: m, billYear: y }))
+              }}
+              options={(() => {
+                const opts = []
+                const baseMonth = expenseForm.billMonth ?? month
+                const baseYear = expenseForm.billYear ?? year
+                for (let offset = -6; offset <= 6; offset++) {
+                  let m = baseMonth + offset
+                  let y = baseYear
+                  while (m < 0) { m += 12; y-- }
+                  while (m > 11) { m -= 12; y++ }
+                  opts.push({ value: `${m}-${y}`, label: `${MONTHS[m]} de ${y}` })
+                }
+                return opts
+              })()}
+            />
+          )}
+
           {/* Type Toggle */}
           <div className="flex gap-2 p-1.5 bg-dark-800 rounded-2xl">
             <button
@@ -1763,6 +1790,9 @@ function useCardExpensesActions() {
       createdAt: serverTimestamp()
     }
 
+    const baseBillMonth = data.billMonth ?? new Date(data.date).getMonth()
+    const baseBillYear = data.billYear ?? new Date(data.date).getFullYear()
+
     // Se é despesa fixa, criar 12 meses
     if (data.isFixed) {
       const expenses = []
@@ -1772,11 +1802,17 @@ function useCardExpensesActions() {
         const expenseDate = new Date(baseDate)
         expenseDate.setMonth(expenseDate.getMonth() + i)
 
+        let m = baseBillMonth + i
+        let y = baseBillYear
+        while (m > 11) { m -= 12; y++ }
+
         expenses.push(
           addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
             ...baseData,
             amount: data.amount,
             date: expenseDate,
+            billMonth: m,
+            billYear: y,
             installment: i + 1,
             totalInstallments: 12,
             recurrenceGroup: `fixed_${Date.now()}`
@@ -1797,11 +1833,17 @@ function useCardExpensesActions() {
         const installmentDate = new Date(baseDate)
         installmentDate.setMonth(installmentDate.getMonth() + i)
 
+        let m = baseBillMonth + i
+        let y = baseBillYear
+        while (m > 11) { m -= 12; y++ }
+
         expenses.push(
           addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
             ...baseData,
             amount: installmentValue,
             date: installmentDate,
+            billMonth: m,
+            billYear: y,
             installment: i + 1,
             totalInstallments: data.installments
           })
@@ -1816,6 +1858,8 @@ function useCardExpensesActions() {
       ...baseData,
       amount: data.amount,
       date: new Date(data.date),
+      billMonth: baseBillMonth,
+      billYear: baseBillYear,
       installment: 1,
       totalInstallments: 1
     })
@@ -1824,7 +1868,7 @@ function useCardExpensesActions() {
   const updateCardExpense = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    return await updateDoc(docRef, {
+    const updateData = {
       type: data.type,
       description: data.description,
       amount: data.amount,
@@ -1834,7 +1878,12 @@ function useCardExpensesActions() {
       tags: data.tags,
       attachments: data.attachments,
       updatedAt: serverTimestamp()
-    })
+    }
+
+    if (data.billMonth != null) updateData.billMonth = data.billMonth
+    if (data.billYear != null) updateData.billYear = data.billYear
+
+    return await updateDoc(docRef, updateData)
   }
 
   const deleteCardExpense = async (id) => {
