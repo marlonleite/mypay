@@ -20,7 +20,8 @@ import {
   File,
   Search,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  Lock
 } from 'lucide-react'
 import {
   collection,
@@ -243,6 +244,9 @@ export default function Cards({ month, year, onMonthChange }) {
 
     return result
   }, [selectedCardExpenses, expenseSearch, expenseCategoryFilter, allCategories])
+
+  // Fatura paga = lançamentos bloqueados (read-only)
+  const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0
 
   const loading = loadingCards || loadingExpenses || loadingAccounts || loadingCategories
 
@@ -991,16 +995,23 @@ export default function Cards({ month, year, onMonthChange }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
-              Novo Lançamento
-            </Button>
-            {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
-              <Button onClick={openPayBillModal} icon={Check} className="flex-1" variant="success">
-                Pagar Fatura
+          {isBillLocked ? (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-dark-800/50 rounded-xl border border-dark-700/30">
+              <Lock className="w-4 h-4 text-dark-500" />
+              <span className="text-xs text-dark-400">Fatura paga — lançamentos bloqueados. Estorne para editar.</span>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
+                Novo Lançamento
               </Button>
-            )}
-          </div>
+              {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+                <Button onClick={openPayBillModal} icon={Check} className="flex-1" variant="success">
+                  Pagar Fatura
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Search and Filter */}
           {selectedCardExpenses.length > 0 && (
@@ -1116,18 +1127,22 @@ export default function Cards({ month, year, onMonthChange }) {
                     <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
                       {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
                     </p>
-                    <button
-                      onClick={() => openEditExpenseModal(expense)}
-                      className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteExpense(expense.id)}
-                      className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isBillLocked && (
+                      <>
+                        <button
+                          onClick={() => openEditExpenseModal(expense)}
+                          className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors flex-shrink-0"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(expense.id)}
+                          className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 )
               })}
