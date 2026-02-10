@@ -344,9 +344,11 @@ export default function Cards({ month, year, onMonthChange }) {
     const previousBalance = getPreviousBalance(selectedCard?.id)
     const totalDue = billAmount + previousBalance
 
+    const dueDate = new Date(year, month, selectedCard?.dueDay || 1)
+
     setPaymentForm({
       accountId: activeAccounts[0]?.id || '',
-      date: new Date().toISOString().split('T')[0],
+      date: formatDateForInput(dueDate),
       amount: totalDue,
       isPartial: false,
       attachments: []
