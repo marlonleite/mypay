@@ -27,6 +27,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
+import CurrencyInput from '../components/ui/CurrencyInput'
 import Select from '../components/ui/Select'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import MonthSelector from '../components/ui/MonthSelector'
@@ -112,7 +113,7 @@ export default function Transactions({
 
   const [formData, setFormData] = useState({
     description: '',
-    amount: '',
+    amount: null,
     category: '',
     accountId: '',
     date: formatDateForInput(new Date()),
@@ -421,7 +422,7 @@ export default function Transactions({
   const resetForm = () => {
     setFormData({
       description: '',
-      amount: '',
+      amount: null,
       category: categories[0]?.id || '',
       accountId: activeAccounts[0]?.id || '',
       date: formatDateForInput(new Date()),
@@ -479,7 +480,7 @@ export default function Transactions({
     setEditingTransaction(transaction)
     setFormData({
       description: transaction.description,
-      amount: transaction.amount.toString(),
+      amount: transaction.amount,
       category: transaction.category,
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date),
@@ -504,7 +505,7 @@ export default function Transactions({
     setEditingTransaction(null) // É uma nova transação (cópia)
     setFormData({
       description: transaction.description,
-      amount: transaction.amount.toString(),
+      amount: transaction.amount,
       category: transaction.category,
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date), // Preserva data original
@@ -586,7 +587,7 @@ export default function Transactions({
       setSaving(true)
       const data = {
         description: formData.description,
-        amount: parseFloat(formData.amount),
+        amount: formData.amount,
         category: formData.category || 'other', // Categoria padrão se não selecionada
         accountId: formData.accountId,
         date: formData.date,
@@ -674,7 +675,7 @@ export default function Transactions({
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
           // Parcelado com período selecionado
           const numInstallments = parseInt(formData.installments) || 1
-          const total = parseFloat(formData.amount)
+          const total = formData.amount || 0
           const baseInstallmentAmount = Math.floor((total / numInstallments) * 100) / 100
           const remainder = Math.round((total - (baseInstallmentAmount * numInstallments)) * 100) / 100
           const baseDate = new Date(formData.date)
@@ -1250,14 +1251,10 @@ export default function Transactions({
           />
 
           <div className="grid grid-cols-2 gap-3">
-            <Input
+            <CurrencyInput
               label="Valor"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0,00"
               value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              onChange={(val) => setFormData({ ...formData, amount: val })}
               required
             />
 
@@ -1526,7 +1523,7 @@ export default function Transactions({
                     {formData.installments && parseInt(formData.installments) >= 2 && (
                       <div className="text-xs text-dark-400 space-y-1">
                         {(() => {
-                          const total = parseFloat(formData.amount || 0)
+                          const total = formData.amount || 0
                           const numInstallments = parseInt(formData.installments)
                           const installmentValue = Math.floor((total / numInstallments) * 100) / 100
                           const remainder = Math.round((total - (installmentValue * numInstallments)) * 100) / 100

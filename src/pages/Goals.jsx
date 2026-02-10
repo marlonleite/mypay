@@ -3,6 +3,7 @@ import { Plus, Target, Archive, CheckCircle } from 'lucide-react'
 import { useGoals } from '../contexts/GoalsContext'
 import GoalCard from '../components/goals/GoalCard'
 import Loading from '../components/ui/Loading'
+import CurrencyInput from '../components/ui/CurrencyInput'
 
 const GOAL_TYPES = [
   { value: 'saving', label: 'Economia', description: 'Juntar um valor específico' },
@@ -47,19 +48,20 @@ export default function Goals() {
   const [formData, setFormData] = useState({
     name: '',
     type: 'saving',
-    targetAmount: '',
-    currentAmount: '',
+    targetAmount: null,
+    currentAmount: null,
     deadline: '',
     color: 'violet'
   })
+  const [progressAmount, setProgressAmount] = useState(null)
 
   // Reset form
   const resetForm = () => {
     setFormData({
       name: '',
       type: 'saving',
-      targetAmount: '',
-      currentAmount: '',
+      targetAmount: null,
+      currentAmount: null,
       deadline: '',
       color: 'violet'
     })
@@ -77,8 +79,8 @@ export default function Goals() {
     setFormData({
       name: goal.name,
       type: goal.type,
-      targetAmount: goal.targetAmount.toString(),
-      currentAmount: goal.currentAmount.toString(),
+      targetAmount: goal.targetAmount,
+      currentAmount: goal.currentAmount,
       deadline: goal.deadline ? new Date(goal.deadline).toISOString().split('T')[0] : '',
       color: goal.color
     })
@@ -96,8 +98,8 @@ export default function Goals() {
       const data = {
         name: formData.name.trim(),
         type: formData.type,
-        targetAmount: parseFloat(formData.targetAmount),
-        currentAmount: parseFloat(formData.currentAmount) || 0,
+        targetAmount: formData.targetAmount,
+        currentAmount: formData.currentAmount || 0,
         deadline: formData.deadline ? new Date(formData.deadline) : null,
         color: formData.color
       }
@@ -120,6 +122,7 @@ export default function Goals() {
   // Abrir modal de progresso
   const handleUpdateProgress = (goal) => {
     setProgressGoal(goal)
+    setProgressAmount(goal.currentAmount)
     setShowProgressModal(true)
   }
 
@@ -128,8 +131,7 @@ export default function Goals() {
     e.preventDefault()
     if (!progressGoal) return
 
-    const newAmount = parseFloat(e.target.amount.value)
-    if (isNaN(newAmount)) return
+    const newAmount = progressAmount || 0
 
     setSaving(true)
     try {
@@ -332,35 +334,17 @@ export default function Goals() {
 
               {/* Valores */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-dark-300 mb-1">
-                    Valor alvo
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.targetAmount}
-                    onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
-                    placeholder="5000"
-                    step="0.01"
-                    min="0"
-                    className="w-full px-4 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-500 focus:outline-none focus:border-violet-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-dark-300 mb-1">
-                    Valor atual
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.currentAmount}
-                    onChange={(e) => setFormData({ ...formData, currentAmount: e.target.value })}
-                    placeholder="0"
-                    step="0.01"
-                    min="0"
-                    className="w-full px-4 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-500 focus:outline-none focus:border-violet-500"
-                  />
-                </div>
+                <CurrencyInput
+                  label="Valor alvo"
+                  value={formData.targetAmount}
+                  onChange={(val) => setFormData({ ...formData, targetAmount: val })}
+                  required
+                />
+                <CurrencyInput
+                  label="Valor atual"
+                  value={formData.currentAmount}
+                  onChange={(val) => setFormData({ ...formData, currentAmount: val })}
+                />
               </div>
 
               {/* Deadline */}
@@ -436,16 +420,10 @@ export default function Goals() {
 
             <form onSubmit={handleSaveProgress} className="p-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-dark-300 mb-1">
-                  Valor atual
-                </label>
-                <input
-                  type="number"
-                  name="amount"
-                  defaultValue={progressGoal.currentAmount}
-                  step="0.01"
-                  min="0"
-                  className="w-full px-4 py-2 bg-dark-800 border border-dark-700 rounded-xl text-white focus:outline-none focus:border-violet-500"
+                <CurrencyInput
+                  label="Valor atual"
+                  value={progressAmount}
+                  onChange={setProgressAmount}
                   required
                   autoFocus
                 />

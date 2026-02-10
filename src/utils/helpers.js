@@ -100,6 +100,28 @@ export const isExpenseInCardBill = (expenseDate, billMonth, billYear, closingDay
   return expense >= startDate && expense <= endDate
 }
 
+// Converter string monetária (BR ou US) para number
+export const parseCurrencyInput = (value) => {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') return value
+
+  const cleaned = String(value).replace(/[R$\s]/g, '').trim()
+
+  // Formato BR: 1.234,56
+  if (/^\d{1,3}(\.\d{3})*,\d{1,2}$/.test(cleaned)) {
+    return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
+  }
+
+  // Formato BR simples: 123,45
+  if (/^\d+,\d{1,2}$/.test(cleaned)) {
+    return parseFloat(cleaned.replace(',', '.'))
+  }
+
+  // Formato US ou number puro
+  const num = parseFloat(cleaned.replace(/,/g, ''))
+  return isNaN(num) ? null : num
+}
+
 // Gerar ID único
 export const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2)

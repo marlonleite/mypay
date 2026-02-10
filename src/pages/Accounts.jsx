@@ -20,6 +20,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
+import CurrencyInput from '../components/ui/CurrencyInput'
 import Select from '../components/ui/Select'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
@@ -77,20 +78,20 @@ export default function Accounts() {
     name: '',
     type: 'checking',
     color: 'blue',
-    initialBalance: '',
+    initialBalance: null,
     bankId: 'generic'
   })
 
   const [transferForm, setTransferForm] = useState({
     fromAccountId: '',
     toAccountId: '',
-    amount: '',
+    amount: null,
     date: new Date().toISOString().split('T')[0],
     description: ''
   })
 
   const [adjustForm, setAdjustForm] = useState({
-    newBalance: '',
+    newBalance: null,
     date: new Date().toISOString().split('T')[0],
     notes: ''
   })
@@ -153,7 +154,7 @@ export default function Accounts() {
       name: '',
       type: 'checking',
       color: 'blue',
-      initialBalance: '',
+      initialBalance: null,
       bankId: 'generic'
     })
     setModalOpen(true)
@@ -165,7 +166,7 @@ export default function Accounts() {
       name: account.name,
       type: account.type,
       color: account.color || 'blue',
-      initialBalance: (account.balance || 0).toString(),
+      initialBalance: account.balance || 0,
       bankId: account.bankId || 'generic'
     })
     setModalOpen(true)
@@ -182,7 +183,7 @@ export default function Accounts() {
         name: form.name,
         type: form.type,
         color: form.color,
-        balance: parseFloat(form.initialBalance) || 0,
+        balance: form.initialBalance || 0,
         bankId: form.bankId || 'generic'
       }
 
@@ -218,7 +219,7 @@ export default function Accounts() {
     setTransferForm({
       fromAccountId: activeAccounts[0]?.id || '',
       toAccountId: activeAccounts[1]?.id || '',
-      amount: '',
+      amount: null,
       date: new Date().toISOString().split('T')[0],
       description: ''
     })
@@ -243,7 +244,7 @@ export default function Accounts() {
         fromAccountName: fromAccount?.name || 'Conta',
         toAccountId: transferForm.toAccountId,
         toAccountName: toAccount?.name || 'Conta',
-        amount: parseFloat(transferForm.amount),
+        amount: transferForm.amount,
         date: transferForm.date,
         description: transferForm.description
       })
@@ -269,7 +270,7 @@ export default function Accounts() {
   const openAdjustModal = (account) => {
     setAdjustingAccount(account)
     setAdjustForm({
-      newBalance: account.currentBalance.toFixed(2),
+      newBalance: account.currentBalance,
       date: new Date().toISOString().split('T')[0],
       notes: ''
     })
@@ -280,7 +281,7 @@ export default function Accounts() {
     e.preventDefault()
     if (!adjustingAccount || !adjustForm.newBalance) return
 
-    const newBalance = parseFloat(adjustForm.newBalance)
+    const newBalance = adjustForm.newBalance || 0
     const currentBalance = adjustingAccount.currentBalance
     const difference = newBalance - currentBalance
 
@@ -523,13 +524,10 @@ export default function Accounts() {
             options={ACCOUNT_TYPES.map(t => ({ value: t.value, label: t.label }))}
           />
 
-          <Input
+          <CurrencyInput
             label="Saldo Inicial"
-            type="number"
-            step="0.01"
-            placeholder="0,00"
             value={form.initialBalance}
-            onChange={(e) => setForm({ ...form, initialBalance: e.target.value })}
+            onChange={(val) => setForm({ ...form, initialBalance: val })}
           />
 
           {/* Bank Selector */}
@@ -646,20 +644,15 @@ export default function Accounts() {
           </div>
 
           <div>
-            <Input
+            <CurrencyInput
               label="Valor da Transferência"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0,00"
               value={transferForm.amount}
-              onChange={(e) => setTransferForm({ ...transferForm, amount: e.target.value })}
+              onChange={(val) => setTransferForm({ ...transferForm, amount: val })}
               required
             />
             {transferForm.amount && transferForm.fromAccountId && (() => {
               const fromAccount = accountsWithBalance.find(a => a.id === transferForm.fromAccountId)
-              const amount = parseFloat(transferForm.amount)
-              if (fromAccount && amount > fromAccount.currentBalance) {
+              if (fromAccount && transferForm.amount > fromAccount.currentBalance) {
                 return (
                   <p className="mt-2 text-xs text-yellow-400 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
@@ -740,32 +733,29 @@ export default function Accounts() {
                   <div className="flex justify-between items-center pt-2 border-t border-dark-700">
                     <span className="text-dark-400">Novo saldo</span>
                     <span className="text-violet-400 font-bold">
-                      {adjustForm.newBalance ? formatCurrency(parseFloat(adjustForm.newBalance)) : '-'}
+                      {adjustForm.newBalance != null ? formatCurrency(adjustForm.newBalance) : '-'}
                     </span>
                   </div>
-                  {adjustForm.newBalance && parseFloat(adjustForm.newBalance) !== adjustingAccount.currentBalance && (
+                  {adjustForm.newBalance != null && adjustForm.newBalance !== adjustingAccount.currentBalance && (
                     <div className="flex justify-between items-center pt-2 border-t border-dark-700">
                       <span className="text-dark-400">Diferença</span>
                       <span className={`font-bold ${
-                        parseFloat(adjustForm.newBalance) > adjustingAccount.currentBalance
+                        adjustForm.newBalance > adjustingAccount.currentBalance
                           ? 'text-emerald-400'
                           : 'text-red-400'
                       }`}>
-                        {parseFloat(adjustForm.newBalance) > adjustingAccount.currentBalance ? '+' : ''}
-                        {formatCurrency(parseFloat(adjustForm.newBalance) - adjustingAccount.currentBalance)}
+                        {adjustForm.newBalance > adjustingAccount.currentBalance ? '+' : ''}
+                        {formatCurrency(adjustForm.newBalance - adjustingAccount.currentBalance)}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              <Input
+              <CurrencyInput
                 label="Saldo Real da Conta"
-                type="number"
-                step="0.01"
-                placeholder="0,00"
                 value={adjustForm.newBalance}
-                onChange={(e) => setAdjustForm({ ...adjustForm, newBalance: e.target.value })}
+                onChange={(val) => setAdjustForm({ ...adjustForm, newBalance: val })}
                 required
               />
 

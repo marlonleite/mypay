@@ -13,7 +13,7 @@ import {
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
-import Input from '../components/ui/Input'
+import CurrencyInput from '../components/ui/CurrencyInput'
 import Select from '../components/ui/Select'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
@@ -45,7 +45,7 @@ export default function Budgets({ month, year, onMonthChange }) {
 
   const [form, setForm] = useState({
     categoryId: '',
-    amount: ''
+    amount: null
   })
 
   // Categorias de despesa disponíveis (que ainda não têm orçamento)
@@ -117,7 +117,7 @@ export default function Budgets({ month, year, onMonthChange }) {
     setEditingBudget(null)
     setForm({
       categoryId: availableCategories[0]?.id || '',
-      amount: ''
+      amount: null
     })
     setError(null)
     setModalOpen(true)
@@ -127,7 +127,7 @@ export default function Budgets({ month, year, onMonthChange }) {
     setEditingBudget(budget)
     setForm({
       categoryId: budget.categoryId,
-      amount: budget.amount.toString()
+      amount: budget.amount
     })
     setError(null)
     setModalOpen(true)
@@ -135,7 +135,7 @@ export default function Budgets({ month, year, onMonthChange }) {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!form.amount || parseFloat(form.amount) <= 0) {
+    if (!form.amount || form.amount <= 0) {
       setError('Informe um valor válido')
       return
     }
@@ -146,12 +146,12 @@ export default function Budgets({ month, year, onMonthChange }) {
 
       if (editingBudget) {
         await updateBudget(editingBudget.id, {
-          amount: parseFloat(form.amount)
+          amount: form.amount
         })
       } else {
         await addBudget({
           categoryId: form.categoryId,
-          amount: parseFloat(form.amount)
+          amount: form.amount
         })
       }
 
@@ -374,14 +374,10 @@ export default function Budgets({ month, year, onMonthChange }) {
             </div>
           )}
 
-          <Input
+          <CurrencyInput
             label="Limite Mensal"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0,00"
             value={form.amount}
-            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            onChange={(val) => setForm({ ...form, amount: val })}
             required
           />
 

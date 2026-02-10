@@ -35,6 +35,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
+import CurrencyInput from '../components/ui/CurrencyInput'
 import Select from '../components/ui/Select'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
@@ -119,14 +120,14 @@ export default function Cards({ month, year, onMonthChange }) {
     closingDay: '10',
     dueDay: '20',
     color: CARD_COLORS[0].id,
-    limit: '',
+    limit: null,
     bankId: 'generic'
   })
 
   const [expenseForm, setExpenseForm] = useState({
     type: TRANSACTION_TYPES.EXPENSE,
     description: '',
-    amount: '',
+    amount: null,
     category: '',
     date: new Date().toISOString().split('T')[0],
     installments: '1',
@@ -155,7 +156,7 @@ export default function Cards({ month, year, onMonthChange }) {
   const [paymentForm, setPaymentForm] = useState({
     accountId: '',
     date: new Date().toISOString().split('T')[0],
-    amount: '', // Para pagamento parcial
+    amount: null, // Para pagamento parcial
     isPartial: false
   })
 
@@ -238,7 +239,7 @@ export default function Cards({ month, year, onMonthChange }) {
       closingDay: '10',
       dueDay: '20',
       color: CARD_COLORS[0].id,
-      limit: '',
+      limit: null,
       bankId: 'generic'
     })
     setModalType('card')
@@ -252,7 +253,7 @@ export default function Cards({ month, year, onMonthChange }) {
       closingDay: card.closingDay.toString(),
       dueDay: card.dueDay.toString(),
       color: card.color,
-      limit: card.limit?.toString() || '',
+      limit: card.limit || null,
       bankId: card.bankId || 'generic'
     })
     setModalType('card')
@@ -272,7 +273,7 @@ export default function Cards({ month, year, onMonthChange }) {
     setExpenseForm({
       type: TRANSACTION_TYPES.EXPENSE,
       description: '',
-      amount: '',
+      amount: null,
       category: expenseCats[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
       installments: '1',
@@ -300,7 +301,7 @@ export default function Cards({ month, year, onMonthChange }) {
     setExpenseForm({
       type: expense.type || TRANSACTION_TYPES.EXPENSE,
       description: expense.description || '',
-      amount: expense.amount?.toString() || '',
+      amount: expense.amount || null,
       category: expense.category || '',
       date: expenseDate.toISOString().split('T')[0],
       installments: '1',
@@ -326,7 +327,7 @@ export default function Cards({ month, year, onMonthChange }) {
     setPaymentForm({
       accountId: activeAccounts[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
-      amount: totalDue.toFixed(2),
+      amount: totalDue,
       isPartial: false
     })
     setModalType('pay_bill')
@@ -343,7 +344,7 @@ export default function Cards({ month, year, onMonthChange }) {
         closingDay: parseInt(cardForm.closingDay),
         dueDay: parseInt(cardForm.dueDay),
         color: cardForm.color,
-        limit: cardForm.limit ? parseFloat(cardForm.limit) : null,
+        limit: cardForm.limit || null,
         bankId: cardForm.bankId || 'generic'
       }
 
@@ -461,7 +462,7 @@ export default function Cards({ month, year, onMonthChange }) {
         await updateCardExpense(editingItem.id, {
           type: expenseForm.type,
           description: expenseForm.description,
-          amount: parseFloat(expenseForm.amount),
+          amount: expenseForm.amount,
           category: expenseForm.category,
           date: expenseForm.date,
           notes: expenseForm.notes || null,
@@ -474,7 +475,7 @@ export default function Cards({ month, year, onMonthChange }) {
           cardId: selectedCard.id,
           type: expenseForm.type,
           description: expenseForm.description,
-          amount: parseFloat(expenseForm.amount),
+          amount: expenseForm.amount,
           category: expenseForm.category,
           date: expenseForm.date,
           installments: parseInt(expenseForm.installments) || 1,
@@ -509,7 +510,7 @@ export default function Cards({ month, year, onMonthChange }) {
     const billAmount = cardTotals[selectedCard.id] || 0
     const previousBalance = getPreviousBalance(selectedCard.id)
     const totalDue = billAmount + previousBalance
-    const paymentAmount = parseFloat(paymentForm.amount)
+    const paymentAmount = paymentForm.amount || 0
 
     if (paymentAmount <= 0) return
 
@@ -794,14 +795,10 @@ export default function Cards({ month, year, onMonthChange }) {
             />
           </div>
 
-          <Input
+          <CurrencyInput
             label="Limite do Cartão (opcional)"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0,00"
             value={cardForm.limit}
-            onChange={(e) => setCardForm({ ...cardForm, limit: e.target.value })}
+            onChange={(val) => setCardForm({ ...cardForm, limit: val })}
           />
 
           {/* Bank Selector */}
@@ -1136,14 +1133,10 @@ export default function Cards({ month, year, onMonthChange }) {
           />
 
           <div className={`grid gap-3 ${editingItem ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            <Input
+            <CurrencyInput
               label="Valor"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0,00"
               value={expenseForm.amount}
-              onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+              onChange={(val) => setExpenseForm({ ...expenseForm, amount: val })}
               required
             />
 
@@ -1194,7 +1187,7 @@ export default function Cards({ month, year, onMonthChange }) {
             <p className="text-sm text-dark-400 text-center p-2 bg-dark-800 rounded-xl">
               {expenseForm.installments}x de{' '}
               <span className="text-orange-400 font-medium">
-                {formatCurrency(parseFloat(expenseForm.amount) / parseInt(expenseForm.installments))}
+                {formatCurrency((expenseForm.amount || 0) / parseInt(expenseForm.installments))}
               </span>
             </p>
           )}
@@ -1509,23 +1502,19 @@ export default function Cards({ month, year, onMonthChange }) {
                 options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
               />
 
-              <Input
+              <CurrencyInput
                 label="Valor do Pagamento"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="0,00"
                 value={paymentForm.amount}
-                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                onChange={(val) => setPaymentForm({ ...paymentForm, amount: val })}
                 required
               />
 
-              {paymentForm.amount && parseFloat(paymentForm.amount) < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
+              {paymentForm.amount && paymentForm.amount < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
                 <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <p className="text-xs text-amber-400">
                     Pagamento parcial. O saldo restante de{' '}
                     <span className="font-bold">
-                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - parseFloat(paymentForm.amount || 0))}
+                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - (paymentForm.amount || 0))}
                     </span>
                     {' '}será transferido para a próxima fatura.
                   </p>
