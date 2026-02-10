@@ -17,7 +17,22 @@ export const formatDate = (date) => {
 export const formatDateForInput = (date) => {
   if (!date) return ''
   const d = date instanceof Date ? date : new Date(date)
-  return d.toISOString().split('T')[0]
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Converter string de data para Date em timezone local
+// new Date("YYYY-MM-DD") usa UTC midnight, causando shift de dia em timezones negativos
+// Esta função garante que a data fique no dia correto em qualquer timezone
+export const parseLocalDate = (date) => {
+  if (!date) return new Date()
+  if (date instanceof Date) return date
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return new Date(date + 'T12:00:00')
+  }
+  return new Date(date)
 }
 
 // Obter mês e ano atual
@@ -98,6 +113,28 @@ export const isExpenseInCardBill = (expenseDate, billMonth, billYear, closingDay
   const endDate = new Date(endYear, endMonth, closingDay)
 
   return expense >= startDate && expense <= endDate
+}
+
+// Converter string monetária (BR ou US) para number
+export const parseCurrencyInput = (value) => {
+  if (value == null || value === '') return null
+  if (typeof value === 'number') return value
+
+  const cleaned = String(value).replace(/[R$\s]/g, '').trim()
+
+  // Formato BR: 1.234,56
+  if (/^\d{1,3}(\.\d{3})*,\d{1,2}$/.test(cleaned)) {
+    return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
+  }
+
+  // Formato BR simples: 123,45
+  if (/^\d+,\d{1,2}$/.test(cleaned)) {
+    return parseFloat(cleaned.replace(',', '.'))
+  }
+
+  // Formato US ou number puro
+  const num = parseFloat(cleaned.replace(/,/g, ''))
+  return isNaN(num) ? null : num
 }
 
 // Gerar ID único

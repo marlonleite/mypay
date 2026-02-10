@@ -15,6 +15,7 @@ import { useOnboarding } from '../../contexts/OnboardingContext'
 import { useAccounts, useCategories } from '../../hooks/useFirestore'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
+import CurrencyInput from '../ui/CurrencyInput'
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../utils/constants'
 
 // Ícones para cada step
@@ -51,7 +52,7 @@ export default function OnboardingWizard() {
   const { addCategory, categories } = useCategories()
 
   const [accountName, setAccountName] = useState('')
-  const [accountBalance, setAccountBalance] = useState('')
+  const [accountBalance, setAccountBalance] = useState(null)
   const [savingAccount, setSavingAccount] = useState(false)
 
   const [categoryName, setCategoryName] = useState('')
@@ -70,12 +71,12 @@ export default function OnboardingWizard() {
       await addAccount({
         name: accountName.trim(),
         type: 'checking',
-        balance: parseFloat(accountBalance) || 0,
+        balance: accountBalance || 0,
         color: 'blue',
         active: true
       })
       setAccountName('')
-      setAccountBalance('')
+      setAccountBalance(null)
     } catch (error) {
       console.error('Erro ao adicionar conta:', error)
     } finally {
@@ -185,12 +186,10 @@ export default function OnboardingWizard() {
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
               />
-              <Input
+              <CurrencyInput
                 label="Saldo inicial"
-                type="number"
-                placeholder="0.00"
                 value={accountBalance}
-                onChange={(e) => setAccountBalance(e.target.value)}
+                onChange={setAccountBalance}
               />
               <Button
                 onClick={handleAddAccount}

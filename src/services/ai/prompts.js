@@ -1,5 +1,43 @@
+// Categorias fixas originais (fallback quando o usuário não tem categorias)
+const DEFAULT_EXPENSE_CATEGORIES = 'food, transport, housing, health, leisure, education, other'
+const DEFAULT_ALL_CATEGORIES = 'food, transport, housing, health, leisure, education, salary, freelance, investments, other'
+const DEFAULT_BOLETO_CATEGORIES = 'housing, health, education, other'
+
+/**
+ * Formata categorias do usuário para injeção no prompt.
+ * Se categories estiver vazio/null, retorna null (usar fallback).
+ */
+function formatCategoriesForPrompt(categories) {
+  if (!categories?.length) return null
+
+  return categories
+    .map(c => `- "${c.id}": ${c.name}`)
+    .join('\n')
+}
+
+/**
+ * Gera o bloco de categorias para o prompt.
+ * Se houver categorias do usuário, instrui a IA a usar o ID exato.
+ * Senão, usa as categorias fixas originais como fallback.
+ */
+function buildCategoryBlock(categories, fallbackList) {
+  const formatted = formatCategoriesForPrompt(categories)
+
+  if (formatted) {
+    return `CATEGORIAS (use o ID exato do campo entre aspas):
+${formatted}`
+  }
+
+  return `CATEGORIAS (escolha a mais adequada):
+${fallbackList}`
+}
+
 // Prompt genérico para auto-detecção de documentos
-export const PROMPT_GENERIC = `Analise esta imagem de documento financeiro e extraia as informações.
+export function buildGenericPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_ALL_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise esta imagem de documento financeiro e extraia as informações.
 
 Identifique o tipo de documento e extraia:
 {
@@ -7,19 +45,22 @@ Identifique o tipo de documento e extraia:
   "descricao": "nome do estabelecimento, beneficiário ou descrição",
   "valor": 0.00,
   "data": "YYYY-MM-DD",
-  "categoria_sugerida": "food" | "transport" | "housing" | "health" | "leisure" | "education" | "other",
+  "categoria_sugerida": "${hasUserCategories ? 'ID da categoria' : 'food | transport | housing | health | leisure | education | other'}",
   "tipo_transacao": "expense" | "income",
   "confianca": "alta" | "media" | "baixa",
   "dados_adicionais": {}
 }
 
+${catBlock}
+
 IMPORTANTE:
 - O campo "valor" deve ser um número (sem aspas)
-- O campo "categoria_sugerida" deve ser um dos IDs: food, transport, housing, health, leisure, education, other
+- O campo "categoria_sugerida" deve ser ${hasUserCategories ? 'um dos IDs listados acima' : 'um dos IDs: food, transport, housing, health, leisure, education, other'}
 - O campo "tipo_transacao" deve ser "expense" para despesas ou "income" para receitas
 - Responda APENAS com JSON válido, sem explicações ou markdown.`
+}
 
-// Prompt para PIX / TED / DOC
+// Prompt para PIX / TED / DOC (sem categorias do usuário — usa "other" fixo)
 export const PROMPT_TRANSFERENCIA = `Analise este comprovante de transferência bancária (PIX, TED ou DOC).
 
 Extraia:
@@ -52,7 +93,11 @@ IMPORTANTE:
 - Responda APENAS com JSON válido, sem explicações ou markdown.`
 
 // Prompt para Fatura de Cartão de Crédito (extração batch)
-export const PROMPT_FATURA = `Analise esta fatura de cartão de crédito brasileiro e extraia todas as compras.
+export function buildFaturaPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_EXPENSE_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise esta fatura de cartão de crédito brasileiro e extraia todas as compras.
 
 REGRAS DE EXTRAÇÃO:
 
@@ -75,8 +120,7 @@ TRATAMENTO ESPECIAL:
 - Múltiplos cartões na mesma fatura: extraia compras de TODOS os cartões
 - Data: normalize para DD/MM (se vier "09 jan", converta para "09/01")
 
-CATEGORIAS (escolha a mais adequada para cada compra):
-food, transport, housing, health, leisure, education, other
+${catBlock}
 
 Retorne APENAS este JSON, sem markdown nem texto adicional:
 {
@@ -84,7 +128,7 @@ Retorne APENAS este JSON, sem markdown nem texto adicional:
   "soma_lancamentos": 0.00,
   "diferenca": 0.00,
   "transacoes": [
-    {"data": "DD/MM", "descricao": "texto", "valor": 0.00, "categoria": "other"}
+    {"data": "DD/MM", "descricao": "texto", "valor": 0.00, "categoria": "${hasUserCategories ? 'ID da categoria' : 'other'}"}
   ]
 }
 
@@ -94,9 +138,14 @@ REGRAS DO JSON:
 - diferenca = valor_total_fatura - soma_lancamentos
 - NÃO duplique: cada lançamento aparece UMA única vez
 - Apenas JSON puro, sem comentários`
+}
 
 // Prompt para Extrato Bancário
-export const PROMPT_EXTRATO = `Analise este extrato bancário e extraia TODAS as transações.
+export function buildExtratoPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_ALL_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise este extrato bancário e extraia TODAS as transações.
 
 {
   "tipo_documento": "extrato",
@@ -119,20 +168,27 @@ export const PROMPT_EXTRATO = `Analise este extrato bancário e extraia TODAS as
       "descricao": "descrição da transação",
       "valor": 0.00,
       "tipo_transacao": "income" | "expense",
-      "categoria_sugerida": "food" | "transport" | "housing" | "health" | "leisure" | "education" | "salary" | "freelance" | "investments" | "other"
+      "categoria_sugerida": "${hasUserCategories ? 'ID da categoria' : 'food | transport | housing | health | leisure | education | salary | freelance | investments | other'}"
     }
   ],
   "confianca": "alta" | "media" | "baixa"
 }
+
+${catBlock}
 
 IMPORTANTE:
 - Liste TODAS as transações
 - Valores devem ser números (sem aspas)
 - Créditos = income, Débitos = expense
 - Responda APENAS com JSON válido.`
+}
 
 // Prompt para Boleto
-export const PROMPT_BOLETO = `Analise este boleto bancário e extraia as informações.
+export function buildBoletoPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_BOLETO_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise este boleto bancário e extraia as informações.
 
 {
   "tipo_documento": "boleto",
@@ -143,17 +199,24 @@ export const PROMPT_BOLETO = `Analise este boleto bancário e extraia as informa
   "data_documento": "YYYY-MM-DD",
   "codigo_barras": "número do código de barras se legível",
   "descricao": "descrição ou referência do boleto",
-  "categoria_sugerida": "housing" | "health" | "education" | "other",
+  "categoria_sugerida": "${hasUserCategories ? 'ID da categoria' : 'housing | health | education | other'}",
   "tipo_transacao": "expense",
   "confianca": "alta" | "media" | "baixa"
 }
 
+${catBlock}
+
 IMPORTANTE:
 - O campo "valor" deve ser um número (sem aspas)
 - Responda APENAS com JSON válido.`
+}
 
 // Prompt para Nota Fiscal
-export const PROMPT_NF = `Analise esta nota fiscal e extraia as informações.
+export function buildNfPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_EXPENSE_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise esta nota fiscal e extraia as informações.
 
 {
   "tipo_documento": "nf",
@@ -171,17 +234,24 @@ export const PROMPT_NF = `Analise esta nota fiscal e extraia as informações.
     }
   ],
   "descricao": "descrição resumida da compra",
-  "categoria_sugerida": "food" | "transport" | "housing" | "health" | "leisure" | "education" | "other",
+  "categoria_sugerida": "${hasUserCategories ? 'ID da categoria' : 'food | transport | housing | health | leisure | education | other'}",
   "tipo_transacao": "expense",
   "confianca": "alta" | "media" | "baixa"
 }
 
+${catBlock}
+
 IMPORTANTE:
 - Valores devem ser números (sem aspas)
 - Responda APENAS com JSON válido.`
+}
 
 // Prompt para Recibo
-export const PROMPT_RECIBO = `Analise este recibo e extraia as informações.
+export function buildReciboPrompt(categories) {
+  const catBlock = buildCategoryBlock(categories, DEFAULT_EXPENSE_CATEGORIES)
+  const hasUserCategories = categories?.length > 0
+
+  return `Analise este recibo e extraia as informações.
 
 {
   "tipo_documento": "recibo",
@@ -189,30 +259,33 @@ export const PROMPT_RECIBO = `Analise este recibo e extraia as informações.
   "valor": 0.00,
   "data": "YYYY-MM-DD",
   "descricao": "descrição do serviço ou produto",
-  "categoria_sugerida": "food" | "transport" | "housing" | "health" | "leisure" | "education" | "other",
+  "categoria_sugerida": "${hasUserCategories ? 'ID da categoria' : 'food | transport | housing | health | leisure | education | other'}",
   "tipo_transacao": "expense",
   "confianca": "alta" | "media" | "baixa"
 }
 
+${catBlock}
+
 IMPORTANTE:
 - O campo "valor" deve ser um número (sem aspas)
 - Responda APENAS com JSON válido.`
+}
 
 /**
  * Retorna o prompt apropriado para o tipo de documento
  */
-export const getPromptForType = (documentType) => {
+export const getPromptForType = (documentType, categories) => {
   const prompts = {
-    auto: PROMPT_GENERIC,
-    comprovante: PROMPT_GENERIC,
-    boleto: PROMPT_BOLETO,
+    auto: buildGenericPrompt(categories),
+    comprovante: buildGenericPrompt(categories),
+    boleto: buildBoletoPrompt(categories),
     pix: PROMPT_TRANSFERENCIA,
     ted: PROMPT_TRANSFERENCIA,
-    fatura: PROMPT_FATURA,
-    extrato: PROMPT_EXTRATO,
-    nf: PROMPT_NF,
-    recibo: PROMPT_RECIBO
+    fatura: buildFaturaPrompt(categories),
+    extrato: buildExtratoPrompt(categories),
+    nf: buildNfPrompt(categories),
+    recibo: buildReciboPrompt(categories)
   }
 
-  return prompts[documentType] || PROMPT_GENERIC
+  return prompts[documentType] || buildGenericPrompt(categories)
 }

@@ -5,14 +5,14 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 /**
  * Processa um documento usando a API do Google Gemini
  */
-export async function processDocument(base64, mimeType, documentType = 'auto') {
+export async function processDocument(base64, mimeType, documentType = 'auto', categories = null) {
   const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY
 
   if (!apiKey) {
     throw new Error('API key do Google AI não configurada. Adicione VITE_GOOGLE_AI_KEY no arquivo .env')
   }
 
-  const prompt = getPromptForType(documentType)
+  const prompt = getPromptForType(documentType, categories)
 
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {

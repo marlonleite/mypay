@@ -17,7 +17,11 @@ import {
   FileText,
   Image as ImageIcon,
   FileSpreadsheet,
-  File
+  File,
+  Search,
+  Filter,
+  AlertTriangle,
+  Lock
 } from 'lucide-react'
 import {
   collection,
@@ -33,6 +37,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
+import CurrencyInput from '../components/ui/CurrencyInput'
 import Select from '../components/ui/Select'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
@@ -40,9 +45,10 @@ import EmptyState from '../components/ui/EmptyState'
 import LimitProgressBar from '../components/ui/LimitProgressBar'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
+import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
-import { isDateInMonth } from '../utils/helpers'
+import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, FIXED_FREQUENCIES, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
@@ -101,6 +107,11 @@ export default function Cards({ month, year, onMonthChange }) {
   const [tagInput, setTagInput] = useState('')
   const [showTagSuggestions, setShowTagSuggestions] = useState(false)
 
+  // Filtros de lançamentos
+  const [expenseSearch, setExpenseSearch] = useState('')
+  const [showExpenseFilters, setShowExpenseFilters] = useState(false)
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState([])
+
   // Nova categoria
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -111,14 +122,14 @@ export default function Cards({ month, year, onMonthChange }) {
     closingDay: '10',
     dueDay: '20',
     color: CARD_COLORS[0].id,
-    limit: '',
+    limit: null,
     bankId: 'generic'
   })
 
   const [expenseForm, setExpenseForm] = useState({
     type: TRANSACTION_TYPES.EXPENSE,
     description: '',
-    amount: '',
+    amount: null,
     category: '',
     date: new Date().toISOString().split('T')[0],
     installments: '1',
@@ -129,27 +140,32 @@ export default function Cards({ month, year, onMonthChange }) {
     fixedFrequency: 'monthly'
   })
 
-  // Categorias do Firestore baseadas no tipo selecionado (principais + subcategorias)
-  const categories = useMemo(() => {
+  // Categorias do Firestore agrupadas (principais + subcategorias como optgroup)
+  const categoryOptions = useMemo(() => {
     const mainCats = getMainCategories(expenseForm.type)
-    const result = []
-
-    for (const cat of mainCats) {
-      result.push({ id: cat.id, name: cat.name, isMain: true })
+    return mainCats.map(cat => {
       const subs = getSubcategories(cat.id)
-      for (const sub of subs) {
-        result.push({ id: sub.id, name: `  ${sub.name}`, isMain: false, parentId: cat.id })
+      if (subs.length === 0) {
+        return { value: cat.id, label: cat.name }
       }
-    }
-    return result
+      return {
+        label: cat.name,
+        options: [
+          { value: cat.id, label: cat.name },
+          ...subs.map(sub => ({ value: sub.id, label: sub.name }))
+        ]
+      }
+    })
   }, [allCategories, expenseForm.type])
 
   const [paymentForm, setPaymentForm] = useState({
     accountId: '',
     date: new Date().toISOString().split('T')[0],
-    amount: '', // Para pagamento parcial
-    isPartial: false
+    amount: null, // Para pagamento parcial
+    isPartial: false,
+    attachments: []
   })
+  const paymentFileInputRef = useRef(null)
 
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
@@ -160,12 +176,20 @@ export default function Cards({ month, year, onMonthChange }) {
     )
   }, [tagInput, existingTags, expenseForm.tags])
 
+  // Verificar se despesa pertence à fatura (billMonth/billYear com fallback para data)
+  const isExpenseInBill = (expense, billMonth, billYear) => {
+    if (expense.billMonth != null && expense.billYear != null) {
+      return expense.billMonth === billMonth && expense.billYear === billYear
+    }
+    return isDateInMonth(expense.date, billMonth, billYear)
+  }
+
   // Calcular totais por cartão (despesas - receitas/estornos)
   const cardTotals = useMemo(() => {
     const totals = {}
     cards.forEach(card => {
       const cardItems = allExpenses.filter(e =>
-        e.cardId === card.id && isDateInMonth(e.date, month, year)
+        e.cardId === card.id && isExpenseInBill(e, month, year)
       )
       // Despesas somam, receitas (estornos) subtraem
       totals[card.id] = cardItems.reduce((sum, e) => {
@@ -180,9 +204,49 @@ export default function Cards({ month, year, onMonthChange }) {
   const selectedCardExpenses = useMemo(() => {
     if (!selectedCard) return []
     return allExpenses
-      .filter(e => e.cardId === selectedCard.id && isDateInMonth(e.date, month, year))
+      .filter(e => e.cardId === selectedCard.id && isExpenseInBill(e, month, year))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
   }, [allExpenses, selectedCard, month, year])
+
+  // Categorias para filtro de lançamentos (expense + income)
+  const expenseFilterCategories = useMemo(() => {
+    const result = []
+    for (const type of ['expense', 'income']) {
+      const mainCats = getMainCategories(type)
+      for (const cat of mainCats) {
+        result.push({ value: cat.id, label: cat.name })
+        const subs = getSubcategories(cat.id)
+        for (const sub of subs) {
+          result.push({ value: sub.id, label: `  ${sub.name}` })
+        }
+      }
+    }
+    return result
+  }, [allCategories])
+
+  // Lançamentos filtrados por busca e categoria
+  const filteredCardExpenses = useMemo(() => {
+    let result = selectedCardExpenses
+
+    if (expenseSearch) {
+      const term = expenseSearch.toLowerCase()
+      result = result.filter(e =>
+        e.description?.toLowerCase().includes(term) ||
+        allCategories.find(c => c.id === e.category)?.name?.toLowerCase().includes(term)
+      )
+    }
+
+    if (expenseCategoryFilter.length > 0) {
+      result = result.filter(e =>
+        expenseCategoryFilter.includes(e.category)
+      )
+    }
+
+    return result
+  }, [selectedCardExpenses, expenseSearch, expenseCategoryFilter, allCategories])
+
+  // Fatura paga = lançamentos bloqueados (read-only)
+  const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0
 
   const loading = loadingCards || loadingExpenses || loadingAccounts || loadingCategories
 
@@ -193,7 +257,7 @@ export default function Cards({ month, year, onMonthChange }) {
       closingDay: '10',
       dueDay: '20',
       color: CARD_COLORS[0].id,
-      limit: '',
+      limit: null,
       bankId: 'generic'
     })
     setModalType('card')
@@ -207,7 +271,7 @@ export default function Cards({ month, year, onMonthChange }) {
       closingDay: card.closingDay.toString(),
       dueDay: card.dueDay.toString(),
       color: card.color,
-      limit: card.limit?.toString() || '',
+      limit: card.limit || null,
       bankId: card.bankId || 'generic'
     })
     setModalType('card')
@@ -215,6 +279,9 @@ export default function Cards({ month, year, onMonthChange }) {
 
   const openCardDetails = (card) => {
     setSelectedCard(card)
+    setExpenseSearch('')
+    setExpenseCategoryFilter([])
+    setShowExpenseFilters(false)
     setModalType('details')
   }
 
@@ -224,7 +291,7 @@ export default function Cards({ month, year, onMonthChange }) {
     setExpenseForm({
       type: TRANSACTION_TYPES.EXPENSE,
       description: '',
-      amount: '',
+      amount: null,
       category: expenseCats[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
       installments: '1',
@@ -252,12 +319,14 @@ export default function Cards({ month, year, onMonthChange }) {
     setExpenseForm({
       type: expense.type || TRANSACTION_TYPES.EXPENSE,
       description: expense.description || '',
-      amount: expense.amount?.toString() || '',
+      amount: expense.amount || null,
       category: expense.category || '',
-      date: expenseDate.toISOString().split('T')[0],
+      date: formatDateForInput(expenseDate),
       installments: '1',
       notes: expense.notes || '',
       tags: expense.tags || [],
+      billMonth: expense.billMonth ?? month,
+      billYear: expense.billYear ?? year,
       attachments: expense.attachments || [],
       isFixed: expense.isFixed || false,
       fixedFrequency: expense.fixedFrequency || 'monthly'
@@ -278,8 +347,9 @@ export default function Cards({ month, year, onMonthChange }) {
     setPaymentForm({
       accountId: activeAccounts[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
-      amount: totalDue.toFixed(2),
-      isPartial: false
+      amount: totalDue,
+      isPartial: false,
+      attachments: []
     })
     setModalType('pay_bill')
   }
@@ -295,7 +365,7 @@ export default function Cards({ month, year, onMonthChange }) {
         closingDay: parseInt(cardForm.closingDay),
         dueDay: parseInt(cardForm.dueDay),
         color: cardForm.color,
-        limit: cardForm.limit ? parseFloat(cardForm.limit) : null,
+        limit: cardForm.limit || null,
         bankId: cardForm.bankId || 'generic'
       }
 
@@ -361,6 +431,40 @@ export default function Cards({ month, year, onMonthChange }) {
     }))
   }
 
+  // Upload de comprovante de pagamento
+  const handlePaymentFileSelect = async (e) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    try {
+      setUploading(true)
+      setUploadError(null)
+
+      const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
+      const results = await Promise.all(uploadPromises)
+
+      setPaymentForm(prev => ({
+        ...prev,
+        attachments: [...prev.attachments, ...results]
+      }))
+    } catch (error) {
+      console.error('Error uploading payment receipt:', error)
+      setUploadError(error.message || 'Erro ao enviar comprovante')
+    } finally {
+      setUploading(false)
+      if (paymentFileInputRef.current) {
+        paymentFileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const removePaymentAttachment = (index) => {
+    setPaymentForm(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }))
+  }
+
   // Tags
   const addTag = (tag = tagInput.trim()) => {
     if (tag && !expenseForm.tags.includes(tag)) {
@@ -409,24 +513,26 @@ export default function Cards({ month, year, onMonthChange }) {
       setSaving(true)
 
       if (editingItem) {
-        // Atualizar lançamento existente
+        // Atualizar lançamento existente — usa billMonth/billYear do form (editável)
         await updateCardExpense(editingItem.id, {
           type: expenseForm.type,
           description: expenseForm.description,
-          amount: parseFloat(expenseForm.amount),
+          amount: expenseForm.amount,
           category: expenseForm.category,
           date: expenseForm.date,
           notes: expenseForm.notes || null,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
-          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null
+          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
+          billMonth: expenseForm.billMonth,
+          billYear: expenseForm.billYear
         })
       } else {
-        // Criar novo lançamento
+        // Criar novo lançamento — vincula à fatura sendo visualizada
         await addCardExpense({
           cardId: selectedCard.id,
           type: expenseForm.type,
           description: expenseForm.description,
-          amount: parseFloat(expenseForm.amount),
+          amount: expenseForm.amount,
           category: expenseForm.category,
           date: expenseForm.date,
           installments: parseInt(expenseForm.installments) || 1,
@@ -434,7 +540,9 @@ export default function Cards({ month, year, onMonthChange }) {
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
           attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
           isFixed: expenseForm.isFixed,
-          fixedFrequency: expenseForm.isFixed ? expenseForm.fixedFrequency : null
+          fixedFrequency: expenseForm.isFixed ? expenseForm.fixedFrequency : null,
+          billMonth: month,
+          billYear: year
         })
       }
 
@@ -461,7 +569,7 @@ export default function Cards({ month, year, onMonthChange }) {
     const billAmount = cardTotals[selectedCard.id] || 0
     const previousBalance = getPreviousBalance(selectedCard.id)
     const totalDue = billAmount + previousBalance
-    const paymentAmount = parseFloat(paymentForm.amount)
+    const paymentAmount = paymentForm.amount || 0
 
     if (paymentAmount <= 0) return
 
@@ -471,7 +579,7 @@ export default function Cards({ month, year, onMonthChange }) {
       const isPartialPayment = paymentAmount < totalDue
 
       // 1. Criar transação de pagamento
-      const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), {
+      const transactionData = {
         description: `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}${isPartialPayment ? ' (parcial)' : ''}`,
         amount: paymentAmount,
         category: 'card_payment',
@@ -484,7 +592,13 @@ export default function Cards({ month, year, onMonthChange }) {
         paid: true,
         isPartialPayment: isPartialPayment,
         createdAt: serverTimestamp()
-      })
+      }
+
+      if (paymentForm.attachments.length > 0) {
+        transactionData.attachments = paymentForm.attachments
+      }
+
+      const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), transactionData)
 
       // 2. Registrar pagamento da fatura
       await addBillPayment({
@@ -663,7 +777,7 @@ export default function Cards({ month, year, onMonthChange }) {
                     </p>
 
                     {/* Limit Progress Bar */}
-                    {card.limit && (
+                    {card.limit > 0 && (
                       <div className="mt-2">
                         <LimitProgressBar
                           used={billTotal}
@@ -746,14 +860,10 @@ export default function Cards({ month, year, onMonthChange }) {
             />
           </div>
 
-          <Input
+          <CurrencyInput
             label="Limite do Cartão (opcional)"
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="0,00"
             value={cardForm.limit}
-            onChange={(e) => setCardForm({ ...cardForm, limit: e.target.value })}
+            onChange={(val) => setCardForm({ ...cardForm, limit: val })}
           />
 
           {/* Bank Selector */}
@@ -847,7 +957,7 @@ export default function Cards({ month, year, onMonthChange }) {
             </div>
 
             {/* Limit Progress Bar */}
-            {selectedCard?.limit && (
+            {selectedCard?.limit > 0 && (
               <div className="mt-3 pt-3 border-t border-white/20">
                 <LimitProgressBar
                   used={cardTotals[selectedCard?.id] || 0}
@@ -885,16 +995,72 @@ export default function Cards({ month, year, onMonthChange }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
-              Novo Lançamento
-            </Button>
-            {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
-              <Button onClick={openPayBillModal} icon={Check} className="flex-1" variant="success">
-                Pagar Fatura
+          {isBillLocked ? (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-dark-800/50 rounded-xl border border-dark-700/30">
+              <Lock className="w-4 h-4 text-dark-500" />
+              <span className="text-xs text-dark-400">Fatura paga — lançamentos bloqueados. Estorne para editar.</span>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
+                Novo Lançamento
               </Button>
-            )}
-          </div>
+              {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+                <Button onClick={openPayBillModal} icon={Check} className="flex-1" variant="success">
+                  Pagar Fatura
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Search and Filter */}
+          {selectedCardExpenses.length > 0 && (
+            <>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    placeholder="Buscar lançamentos..."
+                    value={expenseSearch}
+                    onChange={(e) => setExpenseSearch(e.target.value)}
+                    icon={Search}
+                  />
+                </div>
+                <button
+                  onClick={() => setShowExpenseFilters(!showExpenseFilters)}
+                  className={`p-3.5 rounded-2xl transition-all active:scale-95 ${
+                    showExpenseFilters || expenseCategoryFilter.length > 0
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-dark-900 text-dark-400 hover:text-white'
+                  }`}
+                >
+                  <Filter className="w-5 h-5" />
+                </button>
+              </div>
+
+              {showExpenseFilters && (
+                <div className="flex flex-wrap gap-2 p-3 bg-dark-900 rounded-2xl">
+                  {expenseCategoryFilter.length > 0 && (
+                    <button
+                      onClick={() => setExpenseCategoryFilter([])}
+                      className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  <SearchableSelect
+                    options={expenseFilterCategories}
+                    value={expenseCategoryFilter}
+                    onChange={setExpenseCategoryFilter}
+                    placeholder="Categoria"
+                    allLabel="Todas as categorias"
+                    searchPlaceholder="Buscar categoria..."
+                    multiple
+                  />
+                </div>
+              )}
+            </>
+          )}
 
           {/* Expenses List */}
           {selectedCardExpenses.length === 0 ? (
@@ -903,10 +1069,16 @@ export default function Cards({ month, year, onMonthChange }) {
               title="Sem lançamentos"
               description="Adicione despesas ou receitas neste cartão"
             />
+          ) : filteredCardExpenses.length === 0 ? (
+            <EmptyState
+              icon={Search}
+              title="Nenhum resultado"
+              description="Nenhum lançamento encontrado com os filtros aplicados"
+            />
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-dark-400 font-medium">Lançamentos do mês</p>
-              {selectedCardExpenses.map((expense) => {
+              {filteredCardExpenses.map((expense) => {
                 const isIncome = expense.type === TRANSACTION_TYPES.INCOME
                 return (
                   <div
@@ -955,18 +1127,22 @@ export default function Cards({ month, year, onMonthChange }) {
                     <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
                       {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
                     </p>
-                    <button
-                      onClick={() => openEditExpenseModal(expense)}
-                      className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteExpense(expense.id)}
-                      className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isBillLocked && (
+                      <>
+                        <button
+                          onClick={() => openEditExpenseModal(expense)}
+                          className="p-1.5 text-dark-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors flex-shrink-0"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(expense.id)}
+                          className="p-1.5 text-dark-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors flex-shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 )
               })}
@@ -983,6 +1159,31 @@ export default function Cards({ month, year, onMonthChange }) {
         headerVariant={expenseForm.type === TRANSACTION_TYPES.INCOME ? 'income' : 'expense'}
       >
         <form onSubmit={handleSaveExpense} className="space-y-4">
+          {/* Seletor de fatura vinculada */}
+          {editingItem && (
+            <Select
+              label="Fatura"
+              value={`${expenseForm.billMonth}-${expenseForm.billYear}`}
+              onChange={(e) => {
+                const [m, y] = e.target.value.split('-').map(Number)
+                setExpenseForm(prev => ({ ...prev, billMonth: m, billYear: y }))
+              }}
+              options={(() => {
+                const opts = []
+                const baseMonth = expenseForm.billMonth ?? month
+                const baseYear = expenseForm.billYear ?? year
+                for (let offset = -6; offset <= 6; offset++) {
+                  let m = baseMonth + offset
+                  let y = baseYear
+                  while (m < 0) { m += 12; y-- }
+                  while (m > 11) { m -= 12; y++ }
+                  opts.push({ value: `${m}-${y}`, label: `${MONTHS[m]} de ${y}` })
+                }
+                return opts
+              })()}
+            />
+          )}
+
           {/* Type Toggle */}
           <div className="flex gap-2 p-1.5 bg-dark-800 rounded-2xl">
             <button
@@ -1033,14 +1234,10 @@ export default function Cards({ month, year, onMonthChange }) {
           />
 
           <div className={`grid gap-3 ${editingItem ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            <Input
+            <CurrencyInput
               label="Valor"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0,00"
               value={expenseForm.amount}
-              onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+              onChange={(val) => setExpenseForm({ ...expenseForm, amount: val })}
               required
             />
 
@@ -1065,7 +1262,7 @@ export default function Cards({ month, year, onMonthChange }) {
               <Select
                 value={expenseForm.category}
                 onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
-                options={categories.map(c => ({ value: c.id, label: c.name }))}
+                options={categoryOptions}
                 className="flex-1"
               />
               <button
@@ -1091,7 +1288,7 @@ export default function Cards({ month, year, onMonthChange }) {
             <p className="text-sm text-dark-400 text-center p-2 bg-dark-800 rounded-xl">
               {expenseForm.installments}x de{' '}
               <span className="text-orange-400 font-medium">
-                {formatCurrency(parseFloat(expenseForm.amount) / parseInt(expenseForm.installments))}
+                {formatCurrency((expenseForm.amount || 0) / parseInt(expenseForm.installments))}
               </span>
             </p>
           )}
@@ -1406,23 +1603,19 @@ export default function Cards({ month, year, onMonthChange }) {
                 options={activeAccounts.map(a => ({ value: a.id, label: a.name }))}
               />
 
-              <Input
+              <CurrencyInput
                 label="Valor do Pagamento"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="0,00"
                 value={paymentForm.amount}
-                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                onChange={(val) => setPaymentForm({ ...paymentForm, amount: val })}
                 required
               />
 
-              {paymentForm.amount && parseFloat(paymentForm.amount) < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
+              {paymentForm.amount && paymentForm.amount < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
                 <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <p className="text-xs text-amber-400">
                     Pagamento parcial. O saldo restante de{' '}
                     <span className="font-bold">
-                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - parseFloat(paymentForm.amount || 0))}
+                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - (paymentForm.amount || 0))}
                     </span>
                     {' '}será transferido para a próxima fatura.
                   </p>
@@ -1435,6 +1628,79 @@ export default function Cards({ month, year, onMonthChange }) {
                 value={paymentForm.date}
                 onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
                 required
+              />
+
+              {/* Comprovante de Pagamento */}
+              {uploadError && modalType === 'pay_bill' && (
+                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span className="flex-1">{uploadError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadError(null)}
+                    className="ml-auto p-1 hover:text-red-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
+              {paymentForm.attachments.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-dark-300 mb-1.5">
+                    Comprovante
+                  </label>
+                  <div className="space-y-2">
+                    {paymentForm.attachments.map((attachment, index) => {
+                      const FileIcon = getFileIcon(attachment)
+                      return (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-dark-800 rounded-xl">
+                          <FileIcon className={`w-5 h-5 ${getFileIconColor(attachment)}`} />
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download={attachment.fileName}
+                            className="text-sm text-dark-300 flex-1 truncate hover:text-white transition-colors"
+                          >
+                            {attachment.fileName}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => removePaymentAttachment(index)}
+                            className="p-1 text-dark-400 hover:text-red-400"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => paymentFileInputRef.current?.click()}
+                disabled={uploading}
+                className={`flex items-center gap-2 w-full p-3 rounded-xl border border-dashed transition-colors ${
+                  paymentForm.attachments.length > 0
+                    ? 'border-violet-500/30 text-violet-400'
+                    : 'border-dark-600 text-dark-400 hover:border-dark-500 hover:text-white'
+                } ${uploading ? 'opacity-50' : ''}`}
+              >
+                <Paperclip className="w-4 h-4" />
+                <span className="text-sm">
+                  {uploading ? 'Enviando...' : 'Anexar comprovante'}
+                </span>
+              </button>
+              <input
+                ref={paymentFileInputRef}
+                type="file"
+                accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
+                onChange={handlePaymentFileSelect}
+                multiple
+                className="hidden"
               />
             </>
           )}
@@ -1542,6 +1808,9 @@ function useCardExpensesActions() {
       createdAt: serverTimestamp()
     }
 
+    const baseBillMonth = data.billMonth ?? new Date(data.date).getMonth()
+    const baseBillYear = data.billYear ?? new Date(data.date).getFullYear()
+
     // Se é despesa fixa, criar 12 meses
     if (data.isFixed) {
       const expenses = []
@@ -1551,11 +1820,17 @@ function useCardExpensesActions() {
         const expenseDate = new Date(baseDate)
         expenseDate.setMonth(expenseDate.getMonth() + i)
 
+        let m = baseBillMonth + i
+        let y = baseBillYear
+        while (m > 11) { m -= 12; y++ }
+
         expenses.push(
           addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
             ...baseData,
             amount: data.amount,
             date: expenseDate,
+            billMonth: m,
+            billYear: y,
             installment: i + 1,
             totalInstallments: 12,
             recurrenceGroup: `fixed_${Date.now()}`
@@ -1576,11 +1851,17 @@ function useCardExpensesActions() {
         const installmentDate = new Date(baseDate)
         installmentDate.setMonth(installmentDate.getMonth() + i)
 
+        let m = baseBillMonth + i
+        let y = baseBillYear
+        while (m > 11) { m -= 12; y++ }
+
         expenses.push(
           addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
             ...baseData,
             amount: installmentValue,
             date: installmentDate,
+            billMonth: m,
+            billYear: y,
             installment: i + 1,
             totalInstallments: data.installments
           })
@@ -1595,6 +1876,8 @@ function useCardExpensesActions() {
       ...baseData,
       amount: data.amount,
       date: new Date(data.date),
+      billMonth: baseBillMonth,
+      billYear: baseBillYear,
       installment: 1,
       totalInstallments: 1
     })
@@ -1603,7 +1886,7 @@ function useCardExpensesActions() {
   const updateCardExpense = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    return await updateDoc(docRef, {
+    const updateData = {
       type: data.type,
       description: data.description,
       amount: data.amount,
@@ -1613,7 +1896,12 @@ function useCardExpensesActions() {
       tags: data.tags,
       attachments: data.attachments,
       updatedAt: serverTimestamp()
-    })
+    }
+
+    if (data.billMonth != null) updateData.billMonth = data.billMonth
+    if (data.billYear != null) updateData.billYear = data.billYear
+
+    return await updateDoc(docRef, updateData)
   }
 
   const deleteCardExpense = async (id) => {

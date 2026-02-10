@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
+import CurrencyInput from '../ui/CurrencyInput'
 import Select from '../ui/Select'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { findBestCategory } from '../../utils/categoryMapping'
@@ -54,15 +55,21 @@ export default function ProcessingResult({
   }, [firestoreCategories, getMainCategories])
 
   // Encontra a melhor categoria inicial
+  // Se a IA retornou um ID de categoria Firestore válido, usa direto; senão, fallback para findBestCategory
   const initialCategory = useMemo(() => {
     const type = data.tipo_transacao || 'expense'
     const aiSuggested = data.categoria_sugerida
+    const cats = type === 'income' ? incomeCategories : expenseCategories
+
+    // Tenta usar ID direto do Firestore
+    if (aiSuggested && cats.some(c => c.id === aiSuggested)) {
+      return aiSuggested
+    }
 
     const bestMatch = findBestCategory(aiSuggested, firestoreCategories, type)
     if (bestMatch) return bestMatch
 
     // Fallback para primeira categoria do tipo
-    const cats = type === 'income' ? incomeCategories : expenseCategories
     return cats[0]?.id || ''
   }, [data, firestoreCategories, incomeCategories, expenseCategories])
 
@@ -106,7 +113,7 @@ export default function ProcessingResult({
   const handleCreateTransaction = () => {
     const transactionData = {
       description: editedData.descricao,
-      amount: parseFloat(editedData.valor),
+      amount: editedData.valor || 0,
       date: editedData.data,
       category: editedData.categoria,
       type: editedData.tipo,
@@ -124,7 +131,7 @@ export default function ProcessingResult({
     onCreateCardExpense({
       cardId: selectedCard,
       description: editedData.descricao,
-      amount: parseFloat(editedData.valor),
+      amount: editedData.valor || 0,
       date: editedData.data,
       category: editedData.categoria,
       ...(notes && { notes }),
@@ -197,13 +204,10 @@ export default function ProcessingResult({
 
         {/* Valor e Data */}
         <div className="grid grid-cols-2 gap-3">
-          <Input
+          <CurrencyInput
             label="Valor"
-            type="number"
-            step="0.01"
-            min="0"
             value={editedData.valor}
-            onChange={(e) => setEditedData({ ...editedData, valor: e.target.value })}
+            onChange={(val) => setEditedData({ ...editedData, valor: val })}
           />
           <Input
             label="Data"

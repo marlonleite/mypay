@@ -1,4 +1,5 @@
 export { default as BankIcon } from './BankIcon'
+export { default as CurrencyInput } from './CurrencyInput'
 export { default as BankSelector } from './BankSelector'
 export { default as Button } from './Button'
 export { default as Card } from './Card'

@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react'
 import Button from '../ui/Button'
+import CurrencyInput from '../ui/CurrencyInput'
 import Select from '../ui/Select'
 import CategorySelector from '../transactions/CategorySelector'
 import { usePrivacy } from '../../contexts/PrivacyContext'
@@ -40,12 +41,16 @@ export default function FaturaResult({
   }, [firestoreCategories, getMainCategories])
 
   // Mapeia categorias da IA para categorias Firestore
+  // Se a IA retornou um ID de categoria Firestore válido, usa direto; senão, fallback para findBestCategory
   const mapInitialTransactions = useCallback(() => {
     if (!data?.transacoes?.length) return []
-    return data.transacoes.map((t) => ({
-      ...t,
-      categoryId: findBestCategory(t.categoria, firestoreCategories, 'expense') || expenseCategories[0]?.id || '',
-    }))
+    return data.transacoes.map((t) => {
+      const isFirestoreId = t.categoria && expenseCategories.some(c => c.id === t.categoria)
+      const categoryId = isFirestoreId
+        ? t.categoria
+        : findBestCategory(t.categoria, firestoreCategories, 'expense') || expenseCategories[0]?.id || ''
+      return { ...t, categoryId }
+    })
   }, [data, firestoreCategories, expenseCategories])
 
   const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')
@@ -60,7 +65,7 @@ export default function FaturaResult({
   const selectedTotal = useMemo(() => {
     return editedTransactions
       .filter(t => selectedIds.has(t.id))
-      .reduce((sum, t) => sum + parseFloat(t.valor || 0), 0)
+      .reduce((sum, t) => sum + (t.valor || 0), 0)
   }, [editedTransactions, selectedIds])
 
   const totalFatura = data?.valor_total_fatura || 0
@@ -110,10 +115,12 @@ export default function FaturaResult({
       .map(t => ({
         cardId: selectedCard,
         description: t.descricao,
-        amount: parseFloat(t.valor),
+        amount: t.valor || 0,
         date: faturaDate,
         originalDate: t.data,
         category: t.categoryId,
+        billMonth: month,
+        billYear: year,
       }))
 
     onSave(expenses)
@@ -286,17 +293,11 @@ export default function FaturaResult({
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Valor</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={t.valor}
-                        onChange={(e) => updateTransaction(t.id, 'valor', parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 bg-dark-800 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                      />
-                    </div>
+                    <CurrencyInput
+                      label="Valor"
+                      value={t.valor}
+                      onChange={(val) => updateTransaction(t.id, 'valor', val || 0)}
+                    />
                     <div>
                       <label className="block text-xs text-dark-400 mb-1">Categoria</label>
                       <CategorySelector

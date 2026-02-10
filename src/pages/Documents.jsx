@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Sparkles,
   Loader2,
@@ -56,6 +56,18 @@ export default function Documents({ month, year }) {
     setExtractedData(null)
   }
 
+  // Formata categorias do usuário para enviar ao prompt da IA
+  const getCategoriesForAI = useCallback(() => {
+    if (!allCategories?.length) return null
+
+    const typeFilter = documentType === 'extrato' ? null : 'expense'
+    const mainCats = typeFilter
+      ? getMainCategories(typeFilter)
+      : allCategories.filter(c => !c.parentId && !c.archived)
+
+    return mainCats.length > 0 ? mainCats : null
+  }, [allCategories, documentType, getMainCategories])
+
   const handleProcess = async () => {
     if (!file) return
 
@@ -64,7 +76,8 @@ export default function Documents({ month, year }) {
 
     try {
       const base64 = await fileToBase64(file)
-      const result = await processDocument(base64, file.type, documentType)
+      const categories = getCategoriesForAI()
+      const result = await processDocument(base64, file.type, documentType, categories)
 
       setExtractedData(result)
       setStatus('result')
