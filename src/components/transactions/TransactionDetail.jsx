@@ -161,14 +161,28 @@ export default function TransactionDetail({
 
           <div>
             <p className="text-xs text-dark-500 mb-1">Anexo</p>
-            {transaction.attachments?.length > 0 || transaction.attachment ? (
+            {transaction.attachments?.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                {transaction.attachments.map((att, idx) => (
+                  <a
+                    key={idx}
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-violet-400 hover:text-violet-300 truncate"
+                  >
+                    {att.fileName || `Arquivo ${idx + 1}`}
+                  </a>
+                ))}
+              </div>
+            ) : transaction.attachment ? (
               <a
-                href={(transaction.attachments?.[0] || transaction.attachment)?.url}
+                href={transaction.attachment.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-violet-400 hover:text-violet-300"
               >
-                {transaction.attachments?.length || 1} arquivo(s)
+                {transaction.attachment.fileName || '1 arquivo'}
               </a>
             ) : (
               <p className="text-sm text-white">--</p>
