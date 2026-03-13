@@ -36,8 +36,9 @@ export default function TransactionDetail({
   const [uploadError, setUploadError] = React.useState(null)
 
   const handleFileSelect = async (e) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
+    const files = Array.from(fileList)
     e.target.value = ''
 
     if (!onAddAttachments) return
