@@ -1,3 +1,4 @@
+import * as React from 'react'
 import {
   ThumbsUp,
   ThumbsDown,
@@ -7,7 +8,9 @@ import {
   DollarSign,
   Repeat,
   Calendar,
-  X
+  X,
+  Paperclip,
+  Loader
 } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { usePrivacy } from '../../contexts/PrivacyContext'
@@ -21,12 +24,34 @@ export default function TransactionDetail({
   onCopy,
   onDelete,
   onTogglePaid,
+  onAddAttachments,
   getCategoryName,
   getAccountName,
   getCategoryColor,
   deleting = false
 }) {
   const { formatCurrency } = usePrivacy()
+  const fileInputRef = React.useRef(null)
+  const [uploadingAttachment, setUploadingAttachment] = React.useState(false)
+  const [uploadError, setUploadError] = React.useState(null)
+
+  const handleFileSelect = async (e) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    e.target.value = ''
+
+    if (!onAddAttachments) return
+
+    try {
+      setUploadingAttachment(true)
+      setUploadError(null)
+      await onAddAttachments(files)
+    } catch {
+      setUploadError('Erro ao enviar arquivo')
+    } finally {
+      setUploadingAttachment(false)
+    }
+  }
 
   if (!transaction) return null
 
@@ -160,7 +185,36 @@ export default function TransactionDetail({
           </div>
 
           <div>
-            <p className="text-xs text-dark-500 mb-1">Anexo</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-xs text-dark-500">Anexo</p>
+              {onAddAttachments && (
+                <>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAttachment}
+                    className="flex items-center gap-1 text-xs text-dark-400 hover:text-violet-400 transition-colors disabled:opacity-50"
+                    title="Anexar arquivo"
+                  >
+                    {uploadingAttachment
+                      ? <Loader className="w-3 h-3 animate-spin" />
+                      : <Paperclip className="w-3 h-3" />
+                    }
+                    {uploadingAttachment ? 'Enviando...' : 'Anexar'}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
+                    onChange={handleFileSelect}
+                    multiple
+                    className="hidden"
+                  />
+                </>
+              )}
+            </div>
+            {uploadError && (
+              <p className="text-xs text-red-400 mb-1">{uploadError}</p>
+            )}
             {transaction.attachments?.length > 0 ? (
               <div className="flex flex-col gap-1">
                 {transaction.attachments.map((att, idx) => (

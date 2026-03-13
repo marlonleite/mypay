@@ -758,6 +758,19 @@ export default function Transactions({
     }
   }
 
+  const handleAddAttachmentsToDetail = async (files) => {
+    if (!selectedTransaction) return
+    const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
+    const results = await Promise.all(uploadPromises)
+    const existingAttachments = selectedTransaction.attachments || []
+    const updatedAttachments = [...existingAttachments, ...results]
+    await updateTransaction(selectedTransaction.id, {
+      ...selectedTransaction,
+      attachments: updatedAttachments
+    })
+    setSelectedTransaction({ ...selectedTransaction, attachments: updatedAttachments })
+  }
+
   const togglePaidStatus = async (transaction) => {
     try {
       const newPaidStatus = transaction.paid === false ? true : false
@@ -1736,6 +1749,7 @@ export default function Transactions({
         onCopy={copyTransaction}
         onDelete={(t) => handleDelete(t)}
         onTogglePaid={togglePaidStatus}
+        onAddAttachments={handleAddAttachmentsToDetail}
         getCategoryName={getCategoryName}
         getAccountName={getAccountName}
         getCategoryColor={getCategoryColor}
