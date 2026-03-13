@@ -36,6 +36,9 @@ import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import CategorySelector from '../components/transactions/CategorySelector'
 import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
+import { doc, updateDoc } from 'firebase/firestore'
+import { db } from '../firebase/config'
+import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
@@ -48,6 +51,7 @@ export default function Transactions({
   showFilters, onShowFiltersChange, dateRange, onDateRangeChange
 }) {
   const { formatCurrency } = usePrivacy()
+  const { user } = useAuth()
   const setDateRange = onDateRangeChange
   const setFilters = onFiltersChange
   const setSearchTerm = onSearchTermChange
@@ -759,16 +763,14 @@ export default function Transactions({
   }
 
   const handleAddAttachmentsToDetail = async (files) => {
-    if (!selectedTransaction) return
+    if (!selectedTransaction || !user) return
     const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
     const results = await Promise.all(uploadPromises)
     const existingAttachments = selectedTransaction.attachments || []
     const updatedAttachments = [...existingAttachments, ...results]
-    await updateTransaction(selectedTransaction.id, {
-      ...selectedTransaction,
-      attachments: updatedAttachments
-    })
-    setSelectedTransaction({ ...selectedTransaction, attachments: updatedAttachments })
+    const docRef = doc(db, `users/${user.uid}/transactions`, selectedTransaction.id)
+    await updateDoc(docRef, { attachments: updatedAttachments })
+    setSelectedTransaction(prev => ({ ...prev, attachments: updatedAttachments }))
   }
 
   const togglePaidStatus = async (transaction) => {
