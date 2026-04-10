@@ -21,7 +21,8 @@ import {
   Search,
   Filter,
   AlertTriangle,
-  Lock
+  Lock,
+  Scan
 } from 'lucide-react'
 import {
   collection,
@@ -52,7 +53,7 @@ import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, FIXED_FREQUENCIES, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
-export default function Cards({ month, year, onMonthChange }) {
+export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const { user } = useAuth()
   const { formatCurrency } = usePrivacy()
   const {
@@ -1007,12 +1008,15 @@ export default function Cards({ month, year, onMonthChange }) {
               <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
                 Novo Lançamento
               </Button>
-              {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
-                <Button onClick={openPayBillModal} icon={Check} className="flex-1" variant="success">
-                  Pagar Fatura
-                </Button>
-              )}
+              <Button onClick={() => onNavigate?.('documents')} icon={Scan} className="flex-1" variant="secondary">
+                Importar Fatura
+              </Button>
             </div>
+            {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+              <Button onClick={openPayBillModal} icon={Check} variant="success" fullWidth>
+                Pagar Fatura
+              </Button>
+            )}
           )}
 
           {/* Search and Filter */}

@@ -106,6 +106,7 @@ function AppContent() {
             month={selectedMonth.month}
             year={selectedMonth.year}
             onMonthChange={handleMonthChange}
+            onNavigate={setActiveTab}
           />
         )
       case 'reports':
