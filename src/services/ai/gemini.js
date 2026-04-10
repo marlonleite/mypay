@@ -4,7 +4,6 @@ const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
 ]
 
 function getApiKeys() {
@@ -64,6 +63,7 @@ async function callGemini(apiKey, parts, model) {
 
     const error = new Error(errorMessage)
     error.status = response.status
+    error.isSkippable = response.status === 404 || isRetryableError(response.status, errorMessage)
     error.isRetryable = isRetryableError(response.status, errorMessage)
     throw error
   }
@@ -93,7 +93,7 @@ async function tryAllCombinations(apiKeys, parts) {
       } catch (error) {
         lastError = error
 
-        if (error.isRetryable) {
+        if (error.isSkippable) {
           console.warn(`Gemini: ${model} indisponível, tentando alternativa...`)
           continue
         }
