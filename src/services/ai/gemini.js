@@ -19,10 +19,11 @@ function getApiKeys() {
   return keys
 }
 
-function isOverloadError(status, errorMessage) {
-  return status === 429 || status === 503 ||
-    (errorMessage && errorMessage.toLowerCase().includes('high demand')) ||
-    (errorMessage && errorMessage.toLowerCase().includes('overloaded'))
+function isRetryableError(status, errorMessage) {
+  if (status === 429 || status === 503) return true
+  if (!errorMessage) return false
+  const msg = errorMessage.toLowerCase()
+  return msg.includes('high demand') || msg.includes('overloaded') || msg.includes('quota exceeded')
 }
 
 async function callGemini(apiKey, parts, model) {
@@ -63,15 +64,57 @@ async function callGemini(apiKey, parts, model) {
 
     const error = new Error(errorMessage)
     error.status = response.status
-    error.isOverload = isOverloadError(response.status, errorMessage)
+    error.isRetryable = isRetryableError(response.status, errorMessage)
     throw error
   }
 
   return response.json()
 }
 
+const MAX_RETRIES = 2
+const RETRY_DELAY_MS = 15000
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 /**
- * Processa um documento usando a API do Google Gemini
+ * Tenta todas as combinações de modelo + key.
+ * Retorna o resultado ou lança erro (com flag isRetryable se aplicável).
+ */
+async function tryAllCombinations(apiKeys, parts) {
+  let lastError = null
+
+  for (const model of GEMINI_MODELS) {
+    for (const apiKey of apiKeys) {
+      try {
+        const data = await callGemini(apiKey, parts, model)
+        return parseGeminiResponse(data)
+      } catch (error) {
+        lastError = error
+
+        if (error.isRetryable) {
+          console.warn(`Gemini: ${model} indisponível, tentando alternativa...`)
+          continue
+        }
+
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error('Erro de conexão. Verifique sua internet.')
+        }
+
+        throw error
+      }
+    }
+  }
+
+  const retryableError = new Error(lastError.message)
+  retryableError.isRetryable = true
+  throw retryableError
+}
+
+/**
+ * Processa um documento usando a API do Google Gemini.
+ * Tenta todas as combinações de modelo + key, com retry automático.
  */
 export async function processDocument(base64, mimeType, documentType = 'auto', categories = null, pdfText = null) {
   const apiKeys = getApiKeys()
@@ -87,23 +130,18 @@ export async function processDocument(base64, mimeType, documentType = 'auto', c
 
   let lastError = null
 
-  for (const model of GEMINI_MODELS) {
-    for (const apiKey of apiKeys) {
-      try {
-        const data = await callGemini(apiKey, parts, model)
-        return parseGeminiResponse(data)
-      } catch (error) {
-        lastError = error
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      console.warn(`Gemini: retry ${attempt}/${MAX_RETRIES} após ${RETRY_DELAY_MS / 1000}s...`)
+      await wait(RETRY_DELAY_MS)
+    }
 
-        if (error.isOverload) {
-          console.warn(`Gemini: ${model} sobrecarregado, tentando alternativa...`)
-          continue
-        }
+    try {
+      return await tryAllCombinations(apiKeys, parts)
+    } catch (error) {
+      lastError = error
 
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-          throw new Error('Erro de conexão. Verifique sua internet.')
-        }
-
+      if (!error.isRetryable || attempt === MAX_RETRIES) {
         throw error
       }
     }
