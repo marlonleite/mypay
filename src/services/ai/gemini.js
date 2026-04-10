@@ -1,6 +1,10 @@
 import { getPromptForType } from './prompts'
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+]
 
 function getApiKeys() {
   const keys = [
@@ -17,29 +21,33 @@ function getApiKeys() {
 
 function isOverloadError(status, errorMessage) {
   return status === 429 || status === 503 ||
-    (errorMessage && errorMessage.toLowerCase().includes('high demand'))
+    (errorMessage && errorMessage.toLowerCase().includes('high demand')) ||
+    (errorMessage && errorMessage.toLowerCase().includes('overloaded'))
 }
 
-async function callGemini(apiKey, parts) {
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+async function callGemini(apiKey, parts, model) {
+  const url = `${GEMINI_BASE_URL}/${model}:generateContent`
+  const generationConfig = {
+    temperature: 0.1,
+    topK: 32,
+    topP: 1,
+    maxOutputTokens: 65536,
+    responseMimeType: 'application/json',
+  }
+
+  // thinkingConfig só é suportado em modelos 2.5+
+  if (model.includes('2.5')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 }
+  }
+
+  const response = await fetch(`${url}?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      contents: [{
-        parts
-      }],
-      generationConfig: {
-        temperature: 0.1,
-        topK: 32,
-        topP: 1,
-        maxOutputTokens: 65536,
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingBudget: 0
-        }
-      }
+      contents: [{ parts }],
+      generationConfig
     })
   })
 
@@ -79,23 +87,25 @@ export async function processDocument(base64, mimeType, documentType = 'auto', c
 
   let lastError = null
 
-  for (const apiKey of apiKeys) {
-    try {
-      const data = await callGemini(apiKey, parts)
-      return parseGeminiResponse(data)
-    } catch (error) {
-      lastError = error
+  for (const model of GEMINI_MODELS) {
+    for (const apiKey of apiKeys) {
+      try {
+        const data = await callGemini(apiKey, parts, model)
+        return parseGeminiResponse(data)
+      } catch (error) {
+        lastError = error
 
-      if (error.isOverload && apiKeys.indexOf(apiKey) < apiKeys.length - 1) {
-        console.warn('Gemini: key com alta demanda, tentando próxima key...')
-        continue
+        if (error.isOverload) {
+          console.warn(`Gemini: ${model} sobrecarregado, tentando alternativa...`)
+          continue
+        }
+
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error('Erro de conexão. Verifique sua internet.')
+        }
+
+        throw error
       }
-
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error('Erro de conexão. Verifique sua internet.')
-      }
-
-      throw error
     }
   }
 
