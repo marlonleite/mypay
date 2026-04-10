@@ -54,7 +54,7 @@ export default function FaturaResult({
     })
   }, [data, firestoreCategories, expenseCategories])
 
-  const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')
+  const [selectedCard, setSelectedCard] = useState('')
   const [billMonth, setBillMonth] = useState(() => {
     if (data?.mes_referencia >= 1 && data?.mes_referencia <= 12) return data.mes_referencia - 1
     return month
@@ -209,7 +209,10 @@ export default function FaturaResult({
             label="Cartão"
             value={selectedCard}
             onChange={(e) => setSelectedCard(e.target.value)}
-            options={cards.map(c => ({ value: c.id, label: c.name }))}
+            options={[
+              { value: '', label: 'Selecione o cartão...' },
+              ...cards.map(c => ({ value: c.id, label: c.name }))
+            ]}
           />
         )}
       </div>

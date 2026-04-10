@@ -80,7 +80,7 @@ export default function ProcessingResult({
     categoria: initialCategory,
     tipo: data.tipo_transacao || 'expense'
   })
-  const [selectedCard, setSelectedCard] = useState(cards[0]?.id || '')
+  const [selectedCard, setSelectedCard] = useState('')
   const [selectedAccount, setSelectedAccount] = useState(accounts[0]?.id || '')
   const [showDetails, setShowDetails] = useState(false)
 
@@ -98,12 +98,7 @@ export default function ProcessingResult({
     }
   }, [accounts, selectedAccount])
 
-  // Atualiza o cartão selecionado quando cards mudar
-  useEffect(() => {
-    if (cards.length > 0 && !selectedCard) {
-      setSelectedCard(cards[0].id)
-    }
-  }, [cards, selectedCard])
+  // Não auto-seleciona cartão — usuário deve escolher explicitamente
 
   const confidence = confidenceConfig[data.confianca] || confidenceConfig.media
   const ConfidenceIcon = confidence.icon
@@ -402,7 +397,10 @@ export default function ProcessingResult({
               <Select
                 value={selectedCard}
                 onChange={(e) => setSelectedCard(e.target.value)}
-                options={cards.map(c => ({ value: c.id, label: c.name }))}
+                options={[
+                  { value: '', label: 'Selecione o cartão...' },
+                  ...cards.map(c => ({ value: c.id, label: c.name }))
+                ]}
                 className="flex-1"
               />
               <Button
