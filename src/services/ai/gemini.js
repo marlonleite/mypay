@@ -2,15 +2,71 @@ import { getPromptForType } from './prompts'
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 
+function getApiKeys() {
+  const keys = [
+    import.meta.env.VITE_GOOGLE_AI_KEY,
+    import.meta.env.VITE_GOOGLE_AI_KEY_2
+  ].filter(Boolean)
+
+  if (keys.length === 0) {
+    throw new Error('API key do Google AI não configurada. Adicione VITE_GOOGLE_AI_KEY no arquivo .env')
+  }
+
+  return keys
+}
+
+function isOverloadError(status, errorMessage) {
+  return status === 429 || status === 503 ||
+    (errorMessage && errorMessage.toLowerCase().includes('high demand'))
+}
+
+async function callGemini(apiKey, parts) {
+  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        topK: 32,
+        topP: 1,
+        maxOutputTokens: 65536,
+        responseMimeType: 'application/json',
+        thinkingConfig: {
+          thinkingBudget: 0
+        }
+      }
+    })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    const errorMessage = errorData.error?.message || `Erro na API: ${response.status}`
+
+    console.error('Gemini API Error:', response.status, errorData)
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`API key inválida. ${errorMessage}`)
+    }
+
+    const error = new Error(errorMessage)
+    error.status = response.status
+    error.isOverload = isOverloadError(response.status, errorMessage)
+    throw error
+  }
+
+  return response.json()
+}
+
 /**
  * Processa um documento usando a API do Google Gemini
  */
 export async function processDocument(base64, mimeType, documentType = 'auto', categories = null, pdfText = null) {
-  const apiKey = import.meta.env.VITE_GOOGLE_AI_KEY
-
-  if (!apiKey) {
-    throw new Error('API key do Google AI não configurada. Adicione VITE_GOOGLE_AI_KEY no arquivo .env')
-  }
+  const apiKeys = getApiKeys()
 
   const prompt = getPromptForType(documentType, categories)
 
@@ -21,55 +77,29 @@ export async function processDocument(base64, mimeType, documentType = 'auto', c
         { text: prompt }
       ]
 
-  try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 65536,
-          responseMimeType: 'application/json',
-          thinkingConfig: {
-            thinkingBudget: 0
-          }
-        }
-      })
-    })
+  let lastError = null
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      const errorMessage = errorData.error?.message || `Erro na API: ${response.status}`
+  for (const apiKey of apiKeys) {
+    try {
+      const data = await callGemini(apiKey, parts)
+      return parseGeminiResponse(data)
+    } catch (error) {
+      lastError = error
 
-      console.error('Gemini API Error:', response.status, errorData)
-
-      if (response.status === 429) {
-        throw new Error(`Limite de requisições excedido. ${errorMessage}`)
+      if (error.isOverload && apiKeys.indexOf(apiKey) < apiKeys.length - 1) {
+        console.warn('Gemini: key com alta demanda, tentando próxima key...')
+        continue
       }
 
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(`API key inválida. ${errorMessage}`)
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        throw new Error('Erro de conexão. Verifique sua internet.')
       }
 
-      throw new Error(errorMessage)
+      throw error
     }
-
-    const data = await response.json()
-    return parseGeminiResponse(data)
-
-  } catch (error) {
-    if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error('Erro de conexão. Verifique sua internet.')
-    }
-    throw error
   }
+
+  throw lastError
 }
 
 /**
