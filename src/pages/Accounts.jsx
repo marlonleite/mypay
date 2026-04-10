@@ -4,12 +4,14 @@ import {
   Wallet,
   Building2,
   PiggyBank,
+  CreditCard,
   Trash2,
   Edit2,
   TrendingUp,
   TrendingDown,
   ArrowLeftRight,
   ArrowRight,
+  ChevronRight,
   Settings,
   AlertTriangle
 } from 'lucide-react'
@@ -26,9 +28,10 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
-import { useAccounts, useTransactions, useTransfers } from '../hooks/useFirestore'
+import { useAccounts, useTransactions, useTransfers, useCards, useAllCardExpenses, useBillPayments } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
-import { getCurrentMonthYear } from '../utils/helpers'
+import { getCurrentMonthYear, isDateInMonth } from '../utils/helpers'
+import { CARD_COLORS, TRANSACTION_TYPES } from '../utils/constants'
 
 const ACCOUNT_TYPES = [
   { value: 'wallet', label: 'Carteira', icon: Wallet },
@@ -45,7 +48,7 @@ const ACCOUNT_COLORS = [
   { value: 'slate', label: 'Cinza', class: 'bg-slate-500' }
 ]
 
-export default function Accounts() {
+export default function Accounts({ onNavigate }) {
   const { formatCurrency } = usePrivacy()
   const { user } = useAuth()
 
@@ -62,6 +65,11 @@ export default function Accounts() {
 
   // Buscar todas as transações (sem filtro de mês) para calcular saldo total
   const { transactions } = useTransactions(month, year)
+
+  // Cartões de crédito
+  const { cards } = useCards()
+  const { expenses: allCardExpenses } = useAllCardExpenses()
+  const { getTotalPaid, getPreviousBalance } = useBillPayments(month, year)
 
   // Transferências do mês atual
   const { transfers, addTransfer, deleteTransfer, loading: loadingTransfers } = useTransfers(month, year)
@@ -133,6 +141,39 @@ export default function Accounts() {
 
     return { totalBalance, totalIncome, totalExpenses }
   }, [accountsWithBalance])
+
+  // Cartões com saldo devedor do mês
+  const cardsWithBalance = useMemo(() => {
+    return cards.map(card => {
+      const cardExpenses = allCardExpenses.filter(e => {
+        if (e.cardId !== card.id) return false
+        if (e.billMonth != null && e.billYear != null) {
+          return e.billMonth === month && e.billYear === year
+        }
+        return isDateInMonth(e.date, month, year)
+      })
+
+      const currentBill = cardExpenses.reduce((sum, e) => {
+        const amount = e.amount || 0
+        return e.type === TRANSACTION_TYPES.INCOME ? sum - amount : sum + amount
+      }, 0)
+
+      const previousBalance = getPreviousBalance(card.id)
+      const totalPaid = getTotalPaid(card.id)
+      const balance = currentBill + previousBalance - totalPaid
+
+      return { ...card, currentBill, previousBalance, totalPaid, balance }
+    })
+  }, [cards, allCardExpenses, month, year, getPreviousBalance, getTotalPaid])
+
+  const totalCreditDebt = useMemo(() => {
+    return cardsWithBalance.reduce((sum, c) => sum + Math.max(0, c.balance), 0)
+  }, [cardsWithBalance])
+
+  const getCardColorClass = (colorId) => {
+    const color = CARD_COLORS.find(c => c.id === colorId)
+    return color?.class || 'bg-violet-600'
+  }
 
   const getAccountIcon = (type) => {
     const accountType = ACCOUNT_TYPES.find(t => t.value === type)
@@ -453,6 +494,62 @@ export default function Accounts() {
               </Card>
             )
           })}
+        </div>
+      )}
+
+      {/* Credit Cards Section */}
+      {cardsWithBalance.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-dark-300">Cartões de Crédito</h3>
+            {totalCreditDebt > 0 && (
+              <span className="text-xs text-red-400 font-medium">
+                Fatura: {formatCurrency(totalCreditDebt)}
+              </span>
+            )}
+          </div>
+
+          {cardsWithBalance.map((card) => (
+            <Card
+              key={card.id}
+              className="!p-4"
+              onClick={() => onNavigate?.('cards')}
+            >
+              <div className="flex items-center gap-4">
+                {/* Card Icon */}
+                {card.bankId && card.bankId !== 'generic' ? (
+                  <div className="flex-shrink-0">
+                    <BankIcon bankId={card.bankId} size="md" />
+                  </div>
+                ) : (
+                  <div className={`w-12 h-12 rounded-xl ${getCardColorClass(card.color)} flex items-center justify-center flex-shrink-0`}>
+                    <CreditCard className="w-6 h-6 text-white" />
+                  </div>
+                )}
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-white font-medium truncate">{card.name}</h3>
+                  <p className="text-xs text-dark-400">Cartão de Crédito</p>
+                </div>
+
+                {/* Balance */}
+                <div className="text-right">
+                  <p className={`text-lg font-bold ${card.balance > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {formatCurrency(card.balance > 0 ? -card.balance : 0)}
+                  </p>
+                  {card.currentBill > 0 && (
+                    <p className="text-xs text-dark-500">
+                      Fatura: {formatCurrency(card.currentBill)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Navigate arrow */}
+                <ChevronRight className="w-4 h-4 text-dark-500 flex-shrink-0" />
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 

@@ -136,7 +136,7 @@ function AppContent() {
           />
         )
       case 'accounts':
-        return <Accounts />
+        return <Accounts onNavigate={setActiveTab} />
       case 'goals':
         return <Goals />
       case 'activities':
