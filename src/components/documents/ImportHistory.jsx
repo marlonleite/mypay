@@ -1,9 +1,9 @@
-import { FileImage, FileText, CheckCircle, Clock } from 'lucide-react'
+import { FileImage, FileText, CheckCircle, Clock, RotateCcw } from 'lucide-react'
 import Card from '../ui/Card'
 import { formatDate } from '../../utils/helpers'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 
-export default function ImportHistory({ imports = [] }) {
+export default function ImportHistory({ imports = [], onReview }) {
   const { formatCurrency } = usePrivacy()
 
   if (imports.length === 0) return null
@@ -42,7 +42,10 @@ export default function ImportHistory({ imports = [] }) {
             key={item.id}
             className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
           >
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            <button
+              onClick={() => onReview?.(item)}
+              className="flex items-center gap-3 flex-1 min-w-0 text-left"
+            >
               <div className="p-2 bg-dark-800 rounded-lg">
                 {getFileIcon(item.fileType)}
               </div>
@@ -54,15 +57,26 @@ export default function ImportHistory({ imports = [] }) {
                   {item.documentType || 'Documento'} • {formatDate(item.createdAt?.toDate?.() || item.createdAt)}
                 </p>
               </div>
-            </div>
+            </button>
 
-            <div className="flex flex-col items-end gap-1">
-              {item.extractedData?.valor && (
-                <span className="text-sm font-medium text-white">
-                  {formatCurrency(item.extractedData.valor)}
-                </span>
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-1">
+                {item.extractedData?.valor && (
+                  <span className="text-sm font-medium text-white">
+                    {formatCurrency(item.extractedData.valor)}
+                  </span>
+                )}
+                {getStatusBadge(item.status)}
+              </div>
+              {onReview && (
+                <button
+                  onClick={() => onReview(item)}
+                  className="p-1.5 text-dark-500 hover:text-violet-400 hover:bg-dark-700 rounded-lg transition-colors"
+                  title="Revisar dados extraídos"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
               )}
-              {getStatusBadge(item.status)}
             </div>
           </div>
         ))}

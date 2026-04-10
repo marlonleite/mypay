@@ -17,7 +17,7 @@ import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
 import { useCards, useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
-import { processDocument } from '../services/ai/gemini'
+import { processDocument, normalizeExtractedData } from '../services/ai/gemini'
 import { uploadComprovante } from '../services/storage'
 import { fileToBase64, extractTextFromPDF, getFileType, PDFPasswordError } from '../utils/fileProcessing'
 import { DOCUMENT_TYPES } from '../utils/constants'
@@ -35,6 +35,7 @@ export default function Documents({ month, year }) {
   const [successMessage, setSuccessMessage] = useState(null)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [passwordIncorrect, setPasswordIncorrect] = useState(false)
+  const [reviewImport, setReviewImport] = useState(null)
   const pendingPasswordRef = useRef(null)
 
   // Hooks
@@ -119,13 +120,14 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante
+      // Upload do comprovante (apenas quando há arquivo)
       let comprovanteData = null
-      try {
-        comprovanteData = await uploadComprovante(file)
-      } catch (uploadErr) {
-        console.warn('Upload do comprovante falhou:', uploadErr)
-        // Continua mesmo sem o comprovante
+      if (file) {
+        try {
+          comprovanteData = await uploadComprovante(file)
+        } catch (uploadErr) {
+          console.warn('Upload do comprovante falhou:', uploadErr)
+        }
       }
 
       // Adiciona URL do comprovante à transação como attachment
@@ -144,17 +146,19 @@ export default function Documents({ month, year }) {
 
       await addTransaction(transactionWithComprovante)
 
-      // Salvar no histórico de importações
-      await addImport({
-        fileName: file.name,
-        fileType: file.type,
-        documentType: extractedData.tipo_documento,
-        extractedData: extractedData.dados_completos,
-        status: 'completed',
-        confidence: extractedData.confianca,
-        action: 'transaction',
-        ...(comprovanteData && { comprovante: comprovanteData })
-      })
+      // Salvar no histórico de importações (pula se for re-importação de review)
+      if (file) {
+        await addImport({
+          fileName: file.name,
+          fileType: file.type,
+          documentType: extractedData.tipo_documento,
+          extractedData: extractedData.dados_completos,
+          status: 'completed',
+          confidence: extractedData.confianca,
+          action: 'transaction',
+          ...(comprovanteData && { comprovante: comprovanteData })
+        })
+      }
 
       setStatus('success')
 
@@ -175,13 +179,14 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante
+      // Upload do comprovante (apenas quando há arquivo)
       let comprovanteData = null
-      try {
-        comprovanteData = await uploadComprovante(file)
-      } catch (uploadErr) {
-        console.warn('Upload do comprovante falhou:', uploadErr)
-        // Continua mesmo sem o comprovante
+      if (file) {
+        try {
+          comprovanteData = await uploadComprovante(file)
+        } catch (uploadErr) {
+          console.warn('Upload do comprovante falhou:', uploadErr)
+        }
       }
 
       // Adiciona URL do comprovante à despesa como attachment
@@ -200,17 +205,19 @@ export default function Documents({ month, year }) {
 
       await addCardExpense(expenseWithComprovante)
 
-      // Salvar no histórico de importações
-      await addImport({
-        fileName: file.name,
-        fileType: file.type,
-        documentType: extractedData.tipo_documento,
-        extractedData: extractedData.dados_completos,
-        status: 'completed',
-        confidence: extractedData.confianca,
-        action: 'cardExpense',
-        ...(comprovanteData && { comprovante: comprovanteData })
-      })
+      // Salvar no histórico de importações (pula se for re-importação de review)
+      if (file) {
+        await addImport({
+          fileName: file.name,
+          fileType: file.type,
+          documentType: extractedData.tipo_documento,
+          extractedData: extractedData.dados_completos,
+          status: 'completed',
+          confidence: extractedData.confianca,
+          action: 'cardExpense',
+          ...(comprovanteData && { comprovante: comprovanteData })
+        })
+      }
 
       setStatus('success')
 
@@ -239,16 +246,18 @@ export default function Documents({ month, year }) {
         )
       }
 
-      // Registrar no histórico
-      await addImport({
-        fileName: file.name,
-        fileType: file.type,
-        documentType: 'fatura_batch',
-        extractedData: extractedData.dados_completos,
-        status: 'completed',
-        action: 'batchCardExpense',
-        count: expenses.length,
-      })
+      // Registrar no histórico (pula se for re-importação de review)
+      if (file) {
+        await addImport({
+          fileName: file.name,
+          fileType: file.type,
+          documentType: 'fatura_batch',
+          extractedData: extractedData.dados_completos,
+          status: 'completed',
+          action: 'batchCardExpense',
+          count: expenses.length,
+        })
+      }
 
       setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)
       setStatus('success')
@@ -263,6 +272,20 @@ export default function Documents({ month, year }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleReview = (importItem) => {
+    if (!importItem.extractedData) return
+    const normalized = normalizeExtractedData(importItem.extractedData)
+    setExtractedData(normalized)
+    setReviewImport(importItem)
+    setStatus('result')
+  }
+
+  const handleReprocess = () => {
+    const docType = reviewImport?.documentType || 'auto'
+    handleReset()
+    setDocumentType(docType)
   }
 
   const handlePasswordSubmit = (password) => {
@@ -292,6 +315,7 @@ export default function Documents({ month, year }) {
     setSuccessMessage(null)
     setShowPasswordModal(false)
     setPasswordIncorrect(false)
+    setReviewImport(null)
     pendingPasswordRef.current = null
   }
 
@@ -354,6 +378,21 @@ export default function Documents({ month, year }) {
             </div>
             <p className="text-white font-medium mt-4">Analisando documento...</p>
             <p className="text-sm text-dark-400 mt-1">Isso pode levar alguns segundos</p>
+          </div>
+        </Card>
+      )}
+
+      {/* Review mode banner */}
+      {status === 'result' && reviewImport && (
+        <Card className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-white font-medium truncate">{reviewImport.fileName}</p>
+              <p className="text-xs text-dark-400">Dados extraídos anteriormente</p>
+            </div>
+            <Button onClick={handleReprocess} icon={RotateCcw} variant="secondary" size="sm">
+              Reprocessar
+            </Button>
           </div>
         </Card>
       )}
@@ -428,7 +467,7 @@ export default function Documents({ month, year }) {
 
       {/* Histórico de importações */}
       {status === 'idle' && imports.length > 0 && (
-        <ImportHistory imports={imports} />
+        <ImportHistory imports={imports} onReview={handleReview} />
       )}
 
       {/* Modal de senha para PDFs protegidos */}

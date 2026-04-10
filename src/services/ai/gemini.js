@@ -249,4 +249,5 @@ function normalizeFaturaBatch(data) {
   }
 }
 
+export { normalizeExtractedData }
 export default { processDocument }
