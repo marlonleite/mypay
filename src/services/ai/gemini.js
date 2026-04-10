@@ -8,8 +8,7 @@ const GEMINI_MODELS = [
 
 function getApiKeys() {
   const keys = [
-    import.meta.env.VITE_GOOGLE_AI_KEY,
-    import.meta.env.VITE_GOOGLE_AI_KEY_2
+    import.meta.env.VITE_GOOGLE_AI_KEY
   ].filter(Boolean)
 
   if (keys.length === 0) {
