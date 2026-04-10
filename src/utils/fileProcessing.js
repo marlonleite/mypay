@@ -9,6 +9,19 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 const MIN_TEXT_LENGTH = 50
 
 /**
+ * Erro específico para PDFs protegidos por senha
+ */
+export class PDFPasswordError extends Error {
+  constructor(code) {
+    const isIncorrect = code === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
+    super(isIncorrect ? 'Senha incorreta' : 'PDF protegido por senha')
+    this.name = 'PDFPasswordError'
+    this.needsPassword = !isIncorrect
+    this.isIncorrect = isIncorrect
+  }
+}
+
+/**
  * Converte um arquivo para base64
  */
 export const fileToBase64 = (file) => {
@@ -85,9 +98,25 @@ export const getFilePreviewUrl = (file) => {
  * Extrai texto de um PDF usando pdf.js
  * Retorna null se o PDF não contiver texto suficiente (escaneado/imagem)
  */
-export const extractTextFromPDF = async (file) => {
+export const extractTextFromPDF = async (file, password = null) => {
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+
+  const loadingParams = { data: arrayBuffer }
+  if (password) loadingParams.password = password
+
+  let pdf
+  try {
+    pdf = await pdfjsLib.getDocument(loadingParams).promise
+  } catch (err) {
+    if (
+      err.code === pdfjsLib.PasswordResponses.NEED_PASSWORD ||
+      err.code === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
+    ) {
+      throw new PDFPasswordError(err.code)
+    }
+    throw err
+  }
+
   const pageTexts = []
 
   for (let i = 1; i <= pdf.numPages; i++) {

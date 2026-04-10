@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   Sparkles,
   Loader2,
@@ -11,6 +11,7 @@ import Button from '../components/ui/Button'
 import Select from '../components/ui/Select'
 import FileUpload from '../components/documents/FileUpload'
 import FilePreview from '../components/documents/FilePreview'
+import PasswordModal from '../components/documents/PasswordModal'
 import ProcessingResult from '../components/documents/ProcessingResult'
 import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
@@ -18,7 +19,7 @@ import { useCards, useTransactions, useCategories, useAccounts, useTags } from '
 import { useImportHistory } from '../hooks/useDocumentImport'
 import { processDocument } from '../services/ai/gemini'
 import { uploadComprovante } from '../services/storage'
-import { fileToBase64, extractTextFromPDF, getFileType } from '../utils/fileProcessing'
+import { fileToBase64, extractTextFromPDF, getFileType, PDFPasswordError } from '../utils/fileProcessing'
 import { DOCUMENT_TYPES } from '../utils/constants'
 
 const BATCH_CHUNK_SIZE = 20
@@ -32,6 +33,9 @@ export default function Documents({ month, year }) {
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [successMessage, setSuccessMessage] = useState(null)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordIncorrect, setPasswordIncorrect] = useState(false)
+  const pendingPasswordRef = useRef(null)
 
   // Hooks
   const { cards } = useCards()
@@ -81,8 +85,14 @@ export default function Documents({ month, year }) {
 
       if (isPDF) {
         try {
-          pdfText = await extractTextFromPDF(file)
+          pdfText = await extractTextFromPDF(file, pendingPasswordRef.current)
         } catch (extractErr) {
+          if (extractErr instanceof PDFPasswordError) {
+            setPasswordIncorrect(extractErr.isIncorrect)
+            setShowPasswordModal(true)
+            setStatus('preview')
+            return
+          }
           console.warn('Extração de texto do PDF falhou, usando fallback de imagem:', extractErr)
         }
       }
@@ -96,6 +106,7 @@ export default function Documents({ month, year }) {
 
       setExtractedData(result)
       setStatus('result')
+      pendingPasswordRef.current = null
 
     } catch (err) {
       console.error('Erro ao processar documento:', err)
@@ -254,6 +265,19 @@ export default function Documents({ month, year }) {
     }
   }
 
+  const handlePasswordSubmit = (password) => {
+    pendingPasswordRef.current = password
+    setShowPasswordModal(false)
+    setPasswordIncorrect(false)
+    handleProcess()
+  }
+
+  const handlePasswordCancel = () => {
+    setShowPasswordModal(false)
+    setPasswordIncorrect(false)
+    pendingPasswordRef.current = null
+  }
+
   const handleDiscard = () => {
     handleReset()
   }
@@ -266,6 +290,9 @@ export default function Documents({ month, year }) {
     setError(null)
     setSaving(false)
     setSuccessMessage(null)
+    setShowPasswordModal(false)
+    setPasswordIncorrect(false)
+    pendingPasswordRef.current = null
   }
 
   const handleRetry = () => {
@@ -403,6 +430,15 @@ export default function Documents({ month, year }) {
       {status === 'idle' && imports.length > 0 && (
         <ImportHistory imports={imports} />
       )}
+
+      {/* Modal de senha para PDFs protegidos */}
+      <PasswordModal
+        isOpen={showPasswordModal}
+        onSubmit={handlePasswordSubmit}
+        onCancel={handlePasswordCancel}
+        isIncorrect={passwordIncorrect}
+        loading={status === 'processing'}
+      />
     </div>
   )
 }
