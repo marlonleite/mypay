@@ -1004,19 +1004,21 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
               <span className="text-xs text-dark-400">Fatura paga — lançamentos bloqueados. Estorne para editar.</span>
             </div>
           ) : (
-            <div className="flex gap-2">
-              <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
-                Novo Lançamento
-              </Button>
-              <Button onClick={() => onNavigate?.('documents')} icon={Scan} className="flex-1" variant="secondary">
-                Importar Fatura
-              </Button>
-            </div>
-            {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
-              <Button onClick={openPayBillModal} icon={Check} variant="success" fullWidth>
-                Pagar Fatura
-              </Button>
-            )}
+            <>
+              <div className="flex gap-2">
+                <Button onClick={openNewExpenseModal} icon={Plus} className="flex-1" variant="secondary">
+                  Novo Lançamento
+                </Button>
+                <Button onClick={() => onNavigate?.('documents')} icon={Scan} className="flex-1" variant="secondary">
+                  Importar Fatura
+                </Button>
+              </div>
+              {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+                <Button onClick={openPayBillModal} icon={Check} variant="success" fullWidth>
+                  Pagar Fatura
+                </Button>
+              )}
+            </>
           )}
 
           {/* Search and Filter */}
