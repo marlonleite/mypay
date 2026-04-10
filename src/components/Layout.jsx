@@ -28,6 +28,9 @@ const moreMenuItems = [
   { id: 'settings', label: 'Configurações', icon: Settings }
 ]
 
+// Todos os itens de navegação para sidebar desktop
+const allTabs = [...mainTabs, ...moreMenuItems]
+
 export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
   const { user, logout } = useAuth()
   const { showValues, toggleShowValues } = usePrivacy()
@@ -64,10 +67,88 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex lg:flex-col fixed left-0 top-0 bottom-0 w-64 bg-dark-950 border-r border-dark-700/50 z-30">
+        {/* Logo */}
+        <div className="h-14 flex items-center px-6">
+          <h1 className="text-2xl font-bold text-white">myPay</h1>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
+          {allTabs.map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => onTabChange(tab.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  isActive
+                    ? 'text-violet-400 bg-violet-500/10'
+                    : 'text-dark-400 hover:text-white hover:bg-dark-800'
+                }`}
+              >
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Add New Button */}
+        <div className="px-3 py-2">
+          <button
+            onClick={onAddNew}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-2xl transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Novo Lançamento
+          </button>
+        </div>
+
+        {/* User Section */}
+        <div className="px-3 py-4 border-t border-dark-700/50">
+          <div className="flex items-center gap-3">
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName}
+                className="w-9 h-9 rounded-full flex-shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center flex-shrink-0">
+                <User className="w-5 h-5 text-dark-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-white font-medium truncate">
+                {user?.displayName || 'Usuário'}
+              </p>
+              <p className="text-xs text-dark-500 truncate">
+                {user?.email}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-dark-400 hover:text-white hover:bg-dark-800 rounded-lg transition-colors flex-shrink-0"
+              title="Sair"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
       {/* Header */}
       <header className="sticky top-0 z-40 bg-dark-950">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">myPay</h1>
+        <div className="max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 px-4 lg:px-8 h-14 flex items-center justify-between">
+          {/* Logo — mobile only */}
+          <h1 className="text-2xl font-bold text-white lg:hidden">myPay</h1>
+
+          {/* Spacer for desktop */}
+          <div className="hidden lg:block" />
 
           <div className="flex items-center gap-2">
             {/* Search Button */}
@@ -104,23 +185,25 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
               />
             </div>
 
-            {/* User Avatar */}
-            {user?.photoURL ? (
-              <img
-                src={user.photoURL}
-                alt={user.displayName}
-                className="w-9 h-9 rounded-full"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center">
-                <User className="w-5 h-5 text-dark-400" />
-              </div>
-            )}
+            {/* User Avatar — mobile only */}
+            <div className="lg:hidden">
+              {user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName}
+                  className="w-9 h-9 rounded-full"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center">
+                  <User className="w-5 h-5 text-dark-400" />
+                </div>
+              )}
+            </div>
 
-            {/* Logout Button */}
+            {/* Logout Button — mobile only */}
             <button
               onClick={handleLogout}
-              className="p-2 text-dark-400 hover:text-white rounded-full hover:bg-dark-800 transition-colors"
+              className="p-2 text-dark-400 hover:text-white rounded-full hover:bg-dark-800 transition-colors lg:hidden"
               title="Sair"
             >
               <LogOut className="w-5 h-5" />
@@ -130,12 +213,12 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-lg mx-auto w-full px-4 py-4 pb-28">
+      <main className="flex-1 max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 w-full lg:w-auto px-4 lg:px-8 py-4 pb-28 lg:pb-4">
         {children}
       </main>
 
-      {/* Bottom Navigation with FAB */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-dark-950 safe-area-pb">
+      {/* Bottom Navigation with FAB — mobile only */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-dark-950 safe-area-pb lg:hidden">
         <div className="max-w-lg mx-auto px-4">
           <div className="flex items-center justify-between h-20">
             {/* Left tabs */}
