@@ -1,0 +1,927 @@
+# Plano de Migração: myPay Backend (Firebase → FastAPI + PostgreSQL)
+
+## Contexto
+
+O myPay é um app de finanças pessoais (single-user) com frontend React + Vite e backend 100% Firebase (Firestore, Auth, Storage, FCM). Um incidente de perda de dados expôs fragilidades: sem transações ACID, sem soft delete, sem migrations versionadas, credenciais S3 expostas no bundle do frontend, e zero controle sobre o banco de dados.
+
+**Objetivo:** migrar o backend para FastAPI + PostgreSQL 17 na VPS existente (OVH VPS-3, 8 vCores, 24GB RAM, 200GB SSD), mantendo Firebase Auth e FCM. Frontend permanece React + Vite na Vercel.
+
+**Resultado esperado:** dados financeiros protegidos por ACID, soft delete, audit trail completo, credenciais seguras no servidor, pipeline de IA robusta em Python, backups testados automaticamente.
+
+---
+
+## 1. Decisões Arquiteturais (Consolidado)
+
+### Stack final
+
+| Camada | Tecnologia |
+|---|---|
+| Frontend | React 18 + Vite (mantido, Vercel) |
+| Auth | Firebase Auth (mantido — Google Sign-In, verify token no backend) |
+| Backend | FastAPI + Pydantic v2 + SQLAlchemy 2.0 async |
+| Database | PostgreSQL 17 (dedicated container, Easypanel) |
+| Migrations | Alembic |
+| Storage | Cloudflare R2 via `boto3` (backend) |
+| Push | FCM via `firebase-admin` (backend) |
+| IA | `pypdfium2` + `pdfplumber` + `instructor` + Gemini |
+| Scheduler | APScheduler in-process |
+| Logs | `structlog` |
+| Testes | `pytest` + `testcontainers` |
+| Deps | uv (lock file, builds ~30x mais rápido que Poetry) |
+| Deploy | Docker → Easypanel (VPS OVH) |
+
+### Padrões adotados
+
+- **UseCase + DTO** (não Command/Handler — CRUD dominante, menos boilerplate)
+- **Repository pattern** leve (abstrai queries, facilita testes)
+- **Unit of Work** via SQLAlchemy `AsyncSession` context manager
+- **Soft delete** (`deleted_at`) em tabelas financeiras
+- **Audit trail** com `old_data`/`new_data` JSONB
+- **SSE + Postgres LISTEN/NOTIFY** para real-time (substitui `onSnapshot`)
+- **Domain exceptions** mapeadas para HTTP em middleware
+
+### Padrões rejeitados (e motivo)
+
+- **Celery** — overkill para 2-3 tasks/dia; APScheduler resolve
+- **Redis** — sem cache, sessão, rate limit ou fila que justifique
+- **CQRS** — volume equilibrado de reads/writes, dataset pequeno
+- **SAGA** — 1 Postgres, transações ACID nativas
+- **Command/Handler** — pode migrar no futuro se necessário; hoje UseCase é suficiente
+
+---
+
+## 2. Infraestrutura
+
+### Topologia de deploy
+
+```
+Vercel (CDN global)
+└── mypay.palmadigital.com.br        ← Frontend React
+
+Easypanel (VPS OVH — 158.69.204.96)
+├── mypay-api                         ← FastAPI (Docker)
+│   └── api.mypay.palmadigital.com.br
+├── mypay-postgres                    ← PostgreSQL 17 (dedicado)
+└── backup-dbs                        ← Já existente, adicionar env vars myPay
+```
+
+### DNS (palmadigital.com.br)
+
+```
+mypay       CNAME   cname.vercel-dns.com.
+api.mypay   A       158.69.204.96
+api.mypay   AAAA    2607:5300:205:200::c3c
+```
+
+### Variáveis de ambiente — mypay-api
+
+```
+# Database
+DATABASE_URL=postgresql+asyncpg://mypay:***@mypay-postgres:5432/mypay
+
+# Firebase Admin (verify tokens + FCM)
+FIREBASE_PROJECT_ID=...
+FIREBASE_SERVICE_ACCOUNT_JSON=...   # ou path para credentials.json
+
+# Gemini AI
+GOOGLE_AI_KEY=...                   # sai do frontend, vai pro backend
+
+# Cloudflare R2 (sai do frontend, vai pro backend)
+S3_ENDPOINT_URL=...
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+S3_BUCKET_NAME=...
+S3_PUBLIC_URL=...
+
+# App
+CORS_ORIGINS=https://mypay.palmadigital.com.br
+SECRET_KEY=...                      # para assinatura interna se necessário
+ENVIRONMENT=production
+```
+
+### Variáveis de ambiente — backup-dbs (adicionar)
+
+```
+MYPAY_DB_TYPE=postgres
+MYPAY_DB_HOST=mypay-postgres
+MYPAY_DB_PORT=5432
+MYPAY_DB_NAME=mypay
+MYPAY_DB_USER=mypay
+MYPAY_DB_PASS=...
+MYPAY_GDRIVE_PATH=mypay/daily
+MYPAY_MONTHLY_GDRIVE_PATH=mypay/monthly
+MYPAY_RETENTION=14
+MYPAY_SCHEDULE=0 3 * * *
+MYPAY_PG_VERSION=17
+```
+
+### Checklist de infra (pré-desenvolvimento)
+
+- [ ] Ativar snapshot semanal OVH
+- [ ] Configurar DNS `api.mypay.palmadigital.com.br` → IP da VPS
+- [ ] Configurar DNS `mypay.palmadigital.com.br` → Vercel
+- [ ] Criar serviço `mypay-postgres` no Easypanel (postgres:17-alpine)
+- [ ] Criar serviço `mypay-api` no Easypanel (GitHub auto-build)
+- [ ] Adicionar env vars do myPay no `backup-dbs`
+- [ ] Atualizar `test-restore.sh` para versão dinâmica do PG (`${DB_PREFIX}_PG_VERSION`)
+- [ ] Confirmar firewall: 5432 fechada externamente
+
+---
+
+## 3. Modelagem de Dados (PostgreSQL)
+
+### Mapeamento Firestore → Postgres
+
+```
+Firestore                        Postgres
+────────────────────────────────────────────
+(Firebase Auth)              →   users
+users/{uid}/transactions     →   transactions
+users/{uid}/cards            →   cards
+users/{uid}/cardExpenses     →   card_expenses
+users/{uid}/accounts         →   accounts
+users/{uid}/categories       →   categories
+users/{uid}/tags             →   tags + transaction_tags (N:N)
+users/{uid}/transfers        →   transfers
+users/{uid}/budgets          →   budgets
+users/{uid}/billPayments     →   bill_payments
+users/{uid}/goals            →   goals
+users/{uid}/imports          →   imports
+users/{uid}/activities       →   activities
+users/{uid}/settings/*       →   user_settings
+```
+
+**Total: 15 tabelas** (13 collections + `users` + `transaction_tags`)
+
+### Schema das tabelas principais
+
+```sql
+-- Base: todos os IDs são UUID v7 (ordenáveis por tempo)
+-- Timestamps: created_at, updated_at padrão em todas as tabelas
+
+CREATE TABLE users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    firebase_uid    TEXT UNIQUE NOT NULL,
+    email           TEXT NOT NULL,
+    display_name    TEXT,
+    photo_url       TEXT,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE accounts (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id),
+    name        TEXT NOT NULL,
+    type        TEXT DEFAULT 'checking',  -- checking, savings, investment, cash
+    icon        TEXT DEFAULT 'Wallet',
+    color       TEXT DEFAULT 'blue',
+    balance     NUMERIC(12,2) DEFAULT 0,
+    archived    BOOLEAN DEFAULT false,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ
+);
+
+CREATE TABLE categories (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id),
+    parent_id   UUID REFERENCES categories(id) ON DELETE SET NULL,
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    icon        TEXT DEFAULT 'Tag',
+    color       TEXT DEFAULT 'violet',
+    archived    BOOLEAN DEFAULT false,
+    is_default  BOOLEAN DEFAULT false,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ
+);
+
+CREATE TABLE cards (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    name            TEXT NOT NULL,
+    last_digits     TEXT,
+    brand           TEXT,
+    credit_limit    NUMERIC(12,2),
+    closing_day     SMALLINT,
+    due_day         SMALLINT,
+    color           TEXT DEFAULT 'violet',
+    icon            TEXT DEFAULT 'CreditCard',
+    archived        BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE tags (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id),
+    name        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, name)
+);
+
+CREATE TABLE transactions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    account_id      UUID REFERENCES accounts(id),
+    category_id     UUID REFERENCES categories(id),
+    description     TEXT NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,
+    type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    date            DATE NOT NULL,
+    notes           TEXT,
+    is_paid         BOOLEAN DEFAULT true,
+    is_transfer     BOOLEAN DEFAULT false,
+    opposite_transaction_id UUID REFERENCES transactions(id),
+    recurrence_group TEXT,
+    deleted_at      TIMESTAMPTZ,       -- soft delete
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE transaction_tags (
+    transaction_id  UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    tag_id          UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (transaction_id, tag_id)
+);
+
+CREATE TABLE card_expenses (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL REFERENCES users(id),
+    card_id             UUID NOT NULL REFERENCES cards(id),
+    category_id         UUID REFERENCES categories(id),
+    description         TEXT NOT NULL,
+    amount              NUMERIC(12,2) NOT NULL,
+    date                DATE NOT NULL,
+    bill_month          SMALLINT NOT NULL,
+    bill_year           SMALLINT NOT NULL,
+    installment         SMALLINT DEFAULT 1,
+    total_installments  SMALLINT DEFAULT 1,
+    installment_group_id UUID,          -- agrupa parcelas da mesma compra
+    deleted_at          TIMESTAMPTZ,    -- soft delete
+    created_at          TIMESTAMPTZ DEFAULT now(),
+    updated_at          TIMESTAMPTZ
+);
+
+CREATE TABLE transfers (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL REFERENCES users(id),
+    from_account_id     UUID NOT NULL REFERENCES accounts(id),
+    to_account_id       UUID NOT NULL REFERENCES accounts(id),
+    out_transaction_id  UUID REFERENCES transactions(id),
+    in_transaction_id   UUID REFERENCES transactions(id),
+    amount              NUMERIC(12,2) NOT NULL,
+    date                DATE NOT NULL,
+    description         TEXT,
+    deleted_at          TIMESTAMPTZ,    -- soft delete
+    created_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE budgets (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    category_id     UUID NOT NULL REFERENCES categories(id),
+    amount          NUMERIC(12,2) NOT NULL,
+    month           SMALLINT NOT NULL,
+    year            SMALLINT NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ,
+    UNIQUE(user_id, category_id, month, year)
+);
+
+CREATE TABLE bill_payments (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL REFERENCES users(id),
+    card_id             UUID NOT NULL REFERENCES cards(id),
+    account_id          UUID REFERENCES accounts(id),
+    transaction_id      UUID REFERENCES transactions(id),
+    month               SMALLINT NOT NULL,
+    year                SMALLINT NOT NULL,
+    amount              NUMERIC(12,2) NOT NULL,
+    total_bill          NUMERIC(12,2),
+    carry_over_balance  NUMERIC(12,2) DEFAULT 0,
+    is_partial          BOOLEAN DEFAULT false,
+    paid_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at          TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE goals (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    category_id     UUID REFERENCES categories(id),
+    name            TEXT NOT NULL,
+    type            TEXT DEFAULT 'saving',  -- saving, reduction, payment
+    target_amount   NUMERIC(12,2) NOT NULL,
+    current_amount  NUMERIC(12,2) DEFAULT 0,
+    deadline        DATE,
+    icon            TEXT DEFAULT 'Target',
+    color           TEXT DEFAULT 'violet',
+    status          TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
+    completed_at    TIMESTAMPTZ,
+    deleted_at      TIMESTAMPTZ,    -- soft delete
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE imports (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    card_id         UUID REFERENCES cards(id),
+    document_type   TEXT,
+    file_name       TEXT,
+    file_url        TEXT,
+    status          TEXT DEFAULT 'completed',
+    items_imported  INTEGER DEFAULT 0,
+    total_amount    NUMERIC(12,2),
+    ai_model        TEXT,
+    metadata        JSONB,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE activities (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    action          TEXT NOT NULL,      -- create, update, delete, restore
+    entity_type     TEXT NOT NULL,      -- transaction, card_expense, etc.
+    entity_id       UUID NOT NULL,
+    entity_name     TEXT,
+    entity_subtype  TEXT,               -- income/expense para transactions
+    old_data        JSONB,              -- snapshot ANTES (null em create)
+    new_data        JSONB,              -- snapshot DEPOIS (null em delete)
+    metadata        JSONB,              -- info extra (source: web/import/api)
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE user_settings (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID UNIQUE NOT NULL REFERENCES users(id),
+    theme       TEXT DEFAULT 'dark',
+    show_values BOOLEAN DEFAULT true,
+    push_enabled BOOLEAN DEFAULT false,
+    onboarding_completed BOOLEAN DEFAULT false,
+    onboarding_step INTEGER DEFAULT 0,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ
+);
+```
+
+### Índices
+
+```sql
+CREATE INDEX idx_transactions_user_date ON transactions(user_id, date DESC);
+CREATE INDEX idx_transactions_user_account ON transactions(user_id, account_id);
+CREATE INDEX idx_transactions_active ON transactions(user_id, date) WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_card_expenses_user_bill ON card_expenses(user_id, card_id, bill_year, bill_month);
+CREATE INDEX idx_card_expenses_active ON card_expenses(user_id, card_id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_card_expenses_group ON card_expenses(installment_group_id) WHERE installment_group_id IS NOT NULL;
+
+CREATE INDEX idx_budgets_user_period ON budgets(user_id, month, year);
+CREATE INDEX idx_bill_payments_user_period ON bill_payments(user_id, month, year);
+CREATE INDEX idx_activities_user_date ON activities(user_id, created_at DESC);
+CREATE INDEX idx_transfers_user_date ON transfers(user_id, date DESC);
+CREATE INDEX idx_goals_user_status ON goals(user_id, status);
+CREATE INDEX idx_imports_user_date ON imports(user_id, created_at DESC);
+```
+
+---
+
+## 4. Estrutura do Backend (FastAPI)
+
+### Estrutura de pastas
+
+```
+mypay-api/
+├── Dockerfile
+├── pyproject.toml
+├── alembic.ini
+├── alembic/
+│   └── versions/           # migrations versionadas
+├── src/
+│   ├── main.py             # FastAPI app factory
+│   ├── api/                # Routers (HTTP thin layer)
+│   │   ├── __init__.py
+│   │   ├── auth.py
+│   │   ├── transactions.py
+│   │   ├── cards.py
+│   │   ├── card_expenses.py
+│   │   ├── accounts.py
+│   │   ├── categories.py
+│   │   ├── tags.py
+│   │   ├── transfers.py
+│   │   ├── budgets.py
+│   │   ├── bill_payments.py
+│   │   ├── goals.py
+│   │   ├── imports.py
+│   │   ├── documents.py    # upload + processamento IA
+│   │   ├── events.py       # SSE endpoint
+│   │   └── settings.py
+│   ├── schemas/            # Pydantic v2 DTOs (request/response)
+│   │   ├── __init__.py
+│   │   ├── transactions.py
+│   │   ├── cards.py
+│   │   ├── card_expenses.py
+│   │   └── ...
+│   ├── usecases/           # Regras de negócio + orquestração
+│   │   ├── __init__.py
+│   │   ├── transactions.py
+│   │   ├── cards.py
+│   │   ├── card_expenses.py
+│   │   ├── transfers.py
+│   │   └── ...
+│   ├── repositories/       # Acesso a dados (SQLAlchemy queries)
+│   │   ├── __init__.py
+│   │   ├── base.py         # CRUD genérico + SoftDeleteMixin
+│   │   ├── transactions.py
+│   │   └── ...
+│   ├── models/             # SQLAlchemy ORM (tabelas)
+│   │   ├── __init__.py
+│   │   ├── base.py         # declarative base, mixins
+│   │   ├── user.py
+│   │   ├── transaction.py
+│   │   └── ...
+│   ├── core/               # Config, auth, deps, exceptions
+│   │   ├── __init__.py
+│   │   ├── config.py       # Pydantic Settings
+│   │   ├── auth.py         # Firebase token verification
+│   │   ├── database.py     # async engine, session factory
+│   │   ├── deps.py         # Depends() factories
+│   │   └── exceptions.py   # Domain exceptions → HTTP mapping
+│   └── services/           # Integrações externas
+│       ├── __init__.py
+│       ├── ai/
+│       │   ├── pipeline.py     # Orquestrador da pipeline
+│       │   ├── extractor.py    # pdfplumber/pypdfium2
+│       │   ├── parsers/        # Parsers determinísticos por emissor
+│       │   │   ├── base.py
+│       │   │   ├── nubank.py
+│       │   │   └── c6.py
+│       │   ├── llm.py          # instructor + Gemini
+│       │   └── validator.py    # Regras de validação pós-extração
+│       ├── push.py         # FCM via firebase-admin
+│       ├── storage.py      # Cloudflare R2 via boto3
+│       └── events.py       # Postgres LISTEN/NOTIFY helper
+└── tests/
+    ├── conftest.py         # fixtures (testcontainers Postgres)
+    ├── test_transactions.py
+    └── ...
+```
+
+### Fluxo de uma request
+
+```
+HTTP Request
+    ↓
+Router (api/transactions.py)     ← Validação HTTP, auth via Depends
+    ↓
+DTO (schemas/transactions.py)    ← Pydantic valida input
+    ↓
+UseCase (usecases/transactions.py) ← Regra de negócio, orquestração
+    ↓
+Repository (repositories/transactions.py) ← Query SQL via SQLAlchemy
+    ↓
+Model (models/transaction.py)    ← ORM mapping
+    ↓
+PostgreSQL
+```
+
+### Auth: Firebase token → FastAPI
+
+```python
+# core/auth.py
+from firebase_admin import auth as fb_auth
+
+async def get_current_user(authorization: str = Header(...)) -> User:
+    token = authorization.removeprefix("Bearer ").strip()
+    decoded = fb_auth.verify_id_token(token)
+    return await user_repo.get_or_create_by_firebase_uid(
+        decoded["uid"], decoded.get("email"), decoded.get("name")
+    )
+```
+
+### Real-time: SSE + LISTEN/NOTIFY
+
+```python
+# api/events.py
+@router.get("/events")
+async def stream(user: User = Depends(get_current_user)):
+    async def event_generator():
+        async with db_listen(f"user_{user.id}") as listener:
+            async for payload in listener:
+                yield {"event": payload["entity"], "data": payload["json"]}
+    return EventSourceResponse(event_generator())
+```
+
+Frontend escuta via `EventSource` e invalida queries afetadas.
+
+---
+
+## 5. Pipeline de IA (Backend Python)
+
+### Arquitetura
+
+```
+PDF upload → Detecção de tipo → Extração de texto → Detecção de emissor
+                                                          ↓
+                                              ┌───────────┴───────────┐
+                                              ↓                       ↓
+                                    Parser determinístico       LLM (fallback)
+                                    (Nubank, C6, etc.)     instructor + Gemini
+                                              ↓                       ↓
+                                              └───────────┬───────────┘
+                                                          ↓
+                                              Validação por regras
+                                              (soma, datas, dedup)
+                                                          ↓
+                                              Resultado validado (Pydantic model)
+```
+
+### Bibliotecas
+
+| Etapa | Biblioteca |
+|---|---|
+| Render/texto PDF | `pypdfium2` ou `PyMuPDF` |
+| Extração de tabelas | `pdfplumber` |
+| OCR fallback (scans) | `paddleocr` (fase 2) |
+| LLM structured output | `instructor` + `pydantic` v2 |
+| Cliente Gemini | `google-genai` |
+| Hashing/dedup | `hashlib` (stdlib) |
+
+### Validação com instructor + Pydantic
+
+```python
+class CardInvoice(BaseModel):
+    issuer: str
+    billing_month: int
+    billing_year: int
+    total_amount: Decimal
+    transactions: list[Transaction]
+
+    @model_validator(mode="after")
+    def transactions_sum_matches_total(self):
+        soma = sum(t.amount for t in self.transactions)
+        if abs(soma - self.total_amount) > Decimal("0.02"):
+            raise ValueError(f"Soma {soma} != total {self.total_amount}")
+        return self
+```
+
+`instructor` reenvia automaticamente ao LLM com a mensagem de erro se a validação falhar (até 3 tentativas).
+
+### Fases de implementação da IA
+
+- **Fase 1:** `pypdfium2` + `pdfplumber` + `instructor` + Gemini structured output
+- **Fase 2:** Parsers determinísticos para emissores mais usados (Nubank, C6, Bradesco)
+- **Fase 3:** `paddleocr` para PDFs scaneados, multi-modelo fallback
+
+---
+
+## 6. Soft Delete + Audit Trail
+
+### Soft delete
+
+**Tabelas com `deleted_at`:** transactions, card_expenses, transfers, bill_payments, goals
+
+**Comportamento:**
+- Toda query padrão filtra `WHERE deleted_at IS NULL`
+- `DELETE` no endpoint → `UPDATE SET deleted_at = now()`
+- `POST /{id}/restore` → `UPDATE SET deleted_at = NULL`
+- Frontend: toast "Removido. [Desfazer]" por 8 segundos (UndoContext já existe)
+- Purge automático: não implementar no v1 (disco barato)
+
+### Audit trail (activities)
+
+**Toda escrita** (create/update/delete/restore) registra em `activities`:
+- `old_data` JSONB: snapshot completo ANTES da mudança (null em create)
+- `new_data` JSONB: snapshot completo DEPOIS da mudança (null em delete)
+- Permite reconstruir qualquer registro deletado
+
+---
+
+## 7. Migração de Dados
+
+### Estratégia: Big-bang (ETL one-shot)
+
+Escolhida por: single-user, volume pequeno (~milhares de docs), todas as collections interconectadas.
+
+### Script ETL (`migrate_firestore_to_postgres.py`)
+
+```
+1. Exporta tudo do Firestore via firebase-admin (Python)
+2. Transforma:
+   - Firestore Timestamps → datetime
+   - Float amounts → Decimal
+   - String IDs → UUID (mapeamento old_id → new_uuid)
+   - Tags array → transaction_tags junction
+   - Settings sub-docs → user_settings row
+3. Insere no Postgres em ordem de dependência:
+   users → accounts → categories → tags → cards
+   → transactions → transaction_tags → card_expenses
+   → transfers → budgets → bill_payments → goals
+   → imports → activities → user_settings
+4. Valida contagens: Firestore docs == Postgres rows por tabela
+5. Tudo em 1 transação: falha = rollback total
+```
+
+### Dia do cutover
+
+```
+09:00  Modo manutenção (ou simplesmente não usa)
+09:01  Roda script ETL
+09:05  Valida contagens e integridade
+09:10  Push frontend apontando pra nova API (Vercel)
+09:15  Testa fluxos principais
+09:20  Volta a usar normalmente
+       Firestore intocado como backup por 30 dias
+```
+
+---
+
+## 8. Adaptação do Frontend
+
+### O que muda
+
+| De (Firestore) | Para (REST API) |
+|---|---|
+| `onSnapshot()` listeners (13 hooks) | `fetch()` + SSE invalidation |
+| `addDoc()` / `updateDoc()` / `deleteDoc()` | `POST` / `PUT` / `DELETE` endpoints |
+| Firebase SDK direto no browser | `fetch('/api/v1/...')` com Bearer token |
+| Credenciais S3 no bundle | Upload via backend (seguro) |
+| Gemini API key no bundle | Processamento IA no backend |
+
+### O que NÃO muda
+
+- Firebase Auth (login com Google permanece idêntico)
+- FCM push notifications (service worker mantido)
+- React Router, Context API, Tailwind CSS, Recharts, Lucide
+- Todas as pages e componentes visuais (UI intocada)
+
+### Hooks: de Firestore para API
+
+Cada hook em `useFirestore.js` vira um hook que chama a API REST:
+
+```javascript
+// ANTES: useFirestore.js
+const unsubscribe = onSnapshot(query(...), (snapshot) => {
+  setTransactions(snapshot.docs.map(...))
+})
+
+// DEPOIS: useTransactions.js
+const fetchTransactions = async () => {
+  const res = await fetch(`/api/v1/transactions?month=${month}&year=${year}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  setTransactions(await res.json())
+}
+
+// SSE para invalidação
+useEffect(() => {
+  const es = new EventSource('/api/v1/events')
+  es.addEventListener('transaction', () => fetchTransactions())
+  return () => es.close()
+}, [])
+```
+
+### Variáveis de ambiente do frontend (simplificado)
+
+```
+# Mantém (Firebase Auth + FCM)
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_VAPID_KEY=...
+
+# NOVO (API backend)
+VITE_API_URL=https://api.mypay.palmadigital.com.br
+
+# REMOVIDOS (migram pro backend)
+# VITE_GOOGLE_AI_KEY        → backend
+# VITE_S3_*                 → backend
+# VITE_FIREBASE_STORAGE_BUCKET → não mais necessário
+```
+
+---
+
+## 9. API Endpoints
+
+### Estrutura: `/api/v1/{resource}`
+
+```
+Auth
+  POST   /api/v1/auth/me                    # get/create user from Firebase token
+
+Transactions
+  GET    /api/v1/transactions               # ?month=&year=&account_id=&category_id=
+  POST   /api/v1/transactions
+  PUT    /api/v1/transactions/{id}
+  DELETE /api/v1/transactions/{id}          # soft delete
+  POST   /api/v1/transactions/{id}/restore
+
+Cards
+  GET    /api/v1/cards
+  POST   /api/v1/cards
+  PUT    /api/v1/cards/{id}
+  DELETE /api/v1/cards/{id}
+
+Card Expenses
+  GET    /api/v1/card-expenses              # ?card_id=&month=&year=
+  POST   /api/v1/card-expenses
+  PUT    /api/v1/card-expenses/{id}
+  DELETE /api/v1/card-expenses/{id}         # soft delete
+  POST   /api/v1/card-expenses/{id}/restore
+
+Accounts
+  GET    /api/v1/accounts
+  POST   /api/v1/accounts
+  PUT    /api/v1/accounts/{id}
+  DELETE /api/v1/accounts/{id}
+
+Categories
+  GET    /api/v1/categories
+  POST   /api/v1/categories
+  PUT    /api/v1/categories/{id}
+  DELETE /api/v1/categories/{id}
+  POST   /api/v1/categories/initialize      # default categories
+
+Tags
+  GET    /api/v1/tags
+  POST   /api/v1/tags
+  PUT    /api/v1/tags/{id}
+  DELETE /api/v1/tags/{id}
+
+Transfers
+  GET    /api/v1/transfers                  # ?month=&year=
+  POST   /api/v1/transfers                  # cria 2 transactions + transfer
+  DELETE /api/v1/transfers/{id}             # soft delete (+ transactions vinculadas)
+
+Budgets
+  GET    /api/v1/budgets                    # ?month=&year=
+  POST   /api/v1/budgets
+  PUT    /api/v1/budgets/{id}
+  DELETE /api/v1/budgets/{id}
+  POST   /api/v1/budgets/copy-previous      # copia do mês anterior
+
+Bill Payments
+  GET    /api/v1/bill-payments              # ?month=&year=
+  POST   /api/v1/bill-payments
+  DELETE /api/v1/bill-payments/{id}
+
+Goals
+  GET    /api/v1/goals
+  POST   /api/v1/goals
+  PUT    /api/v1/goals/{id}
+  PATCH  /api/v1/goals/{id}/progress
+  DELETE /api/v1/goals/{id}                 # soft delete
+
+Documents (IA)
+  POST   /api/v1/documents/process          # upload + pipeline IA
+  GET    /api/v1/documents/imports           # histórico
+
+Settings
+  GET    /api/v1/settings
+  PUT    /api/v1/settings
+
+Events (SSE)
+  GET    /api/v1/events                     # Server-Sent Events stream
+
+Export
+  GET    /api/v1/export/csv                 # ?type=transactions|card_expenses|full
+  GET    /api/v1/export/json
+
+Push Notifications
+  POST   /api/v1/push/register              # salvar FCM token
+  DELETE /api/v1/push/unregister
+```
+
+---
+
+## 10. Fases de Desenvolvimento
+
+### Fase A — Fundação (1-2 semanas)
+
+**Objetivo:** projeto FastAPI funcional com auth e infraestrutura base.
+
+- [ ] Criar repositório `mypay-api`
+- [ ] Scaffold FastAPI + pyproject.toml + Dockerfile
+- [ ] Config: Pydantic Settings, structlog
+- [ ] Database: SQLAlchemy 2.0 async engine + session factory
+- [ ] Alembic: setup + migration inicial (todas as 15 tabelas)
+- [ ] Auth: Firebase token verification via `Depends`
+- [ ] Middleware: CORS, error handler (domain exceptions → HTTP), request ID
+- [ ] Repository base: CRUD genérico + SoftDeleteMixin
+- [ ] Testes: conftest com testcontainers (Postgres real)
+- [ ] CI: lint (ruff) + testes
+- [ ] Deploy: Docker → Easypanel (health check endpoint)
+
+### Fase B — Core financeiro (2-3 semanas)
+
+**Objetivo:** todos os endpoints CRUD para as entidades financeiras.
+
+- [ ] `accounts` — CRUD + archive + defaults
+- [ ] `categories` — CRUD + hierarquia (parent_id) + archive + defaults
+- [ ] `tags` — CRUD + junction table
+- [ ] `transactions` — CRUD + soft delete + restore + filtros (mês, conta, categoria)
+- [ ] `transfers` — create (2 transactions vinculadas) + delete
+- [ ] `cards` — CRUD
+- [ ] `card_expenses` — CRUD + parcelas + installment_group_id + soft delete
+- [ ] `bill_payments` — CRUD + cálculo parcial + carry over
+- [ ] `budgets` — CRUD + copy from previous month
+- [ ] `activities` — audit trail automático em todo usecase
+- [ ] `settings` — CRUD (tema, privacidade, onboarding)
+
+### Fase C — IA + Importação (1-2 semanas)
+
+**Objetivo:** pipeline de processamento de documentos.
+
+- [ ] Upload de PDF/imagem via endpoint
+- [ ] Extração de texto com `pypdfium2`/`pdfplumber`
+- [ ] Structured output com `instructor` + Gemini
+- [ ] Validação por regras (soma, datas, dedup)
+- [ ] Endpoint de processamento + histórico de imports
+- [ ] Testes com faturas reais (Nubank, C6, Bradesco)
+- [ ] Storage: upload para R2 via backend (remove credenciais do frontend)
+
+### Fase D — Complementos (1 semana)
+
+**Objetivo:** features restantes + real-time.
+
+- [ ] `goals` — CRUD + progresso + archive
+- [ ] SSE: endpoint `/events` + Postgres LISTEN/NOTIFY
+- [ ] Push: registrar FCM token + enviar via `firebase-admin`
+- [ ] Export: CSV/JSON via backend
+- [ ] Insights: mover `insightService.js` para backend
+- [ ] Parsers determinísticos por emissor (Nubank, C6) — fase 2 da IA
+
+### Fase E — Frontend + Cutover (1-2 semanas)
+
+**Objetivo:** adaptar frontend e migrar dados.
+
+- [ ] Criar `src/api/client.js` — fetch wrapper com auth token
+- [ ] Migrar hooks: `useFirestore.js` → hooks individuais chamando API
+- [ ] Integrar SSE para invalidação de queries
+- [ ] Remover dependências Firebase Firestore do frontend
+- [ ] Remover variáveis VITE_S3_* e VITE_GOOGLE_AI_KEY
+- [ ] Script ETL: `migrate_firestore_to_postgres.py`
+- [ ] Testar ETL em staging (múltiplas vezes)
+- [ ] Cutover big-bang (ver seção 7)
+- [ ] Smoke test em produção
+- [ ] Monitorar 1 semana
+- [ ] Decomissionar Firestore após 30 dias
+
+---
+
+## 11. Segurança (melhorias vs. estado atual)
+
+| Risco atual | Mitigação |
+|---|---|
+| Credenciais S3 expostas no bundle JS | Movem para backend (env vars do servidor) |
+| API key Gemini exposta no bundle JS | Move para backend |
+| Sem rate limiting | FastAPI middleware (slowapi ou custom) |
+| Sem validação server-side | Pydantic v2 em todo input |
+| Delete permanente | Soft delete + audit trail |
+| Sem HTTPS no backend | Let's Encrypt automático via Easypanel/Traefik |
+| Firestore rules como única proteção | Auth + validação no backend + FKs no Postgres |
+
+---
+
+## 12. Verificação
+
+### Por fase
+
+**Fase A:**
+- [ ] `GET /health` retorna 200
+- [ ] `GET /api/v1/auth/me` com Firebase token válido retorna user
+- [ ] Alembic migration roda sem erro
+- [ ] pytest com testcontainers passa
+
+**Fase B:**
+- [ ] CRUD completo de cada entidade via Swagger UI (`/docs`)
+- [ ] Soft delete + restore funciona
+- [ ] Activities registram create/update/delete com old_data/new_data
+- [ ] FKs impedem dados inconsistentes (ex: transaction com account_id inexistente)
+- [ ] `NUMERIC(12,2)` sem erros de arredondamento
+
+**Fase C:**
+- [ ] Upload de fatura PDF → JSON estruturado com transações
+- [ ] Validação pega soma incorreta e reenvia ao LLM
+- [ ] Faturas reais dos 3 emissores principais processam corretamente
+
+**Fase D:**
+- [ ] SSE endpoint envia eventos quando dados mudam
+- [ ] Push notification chega no browser via FCM
+
+**Fase E:**
+- [ ] Script ETL migra todos os dados com contagens corretas
+- [ ] Frontend funciona 100% apontando para nova API
+- [ ] Todos os fluxos testados: criar transação, importar fatura, pagar fatura, transferir, criar meta, ver relatórios
+- [ ] `npm run lint` sem erros no frontend
+- [ ] Backup do myPay-postgres aparece no Google Drive
+- [ ] test-restore.sh valida o backup com sucesso
+
+### Critérios de rollback
+
+Se algum problema crítico for detectado após cutover:
+1. Reverter deploy do frontend na Vercel (1 clique — volta pra versão Firestore)
+2. Firestore permanece intocado por 30 dias como rede de segurança
+3. Nenhum dado é perdido em nenhum cenário
