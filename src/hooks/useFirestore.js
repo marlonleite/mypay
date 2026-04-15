@@ -293,134 +293,130 @@ export function useCards() {
   }
 }
 
-// Hook para despesas do cartão
+// Transform: API response (snake_case, 1-indexed month) → frontend shape (camelCase, 0-indexed)
+function mapCardExpense(e) {
+  return {
+    id: e.id,
+    cardId: e.card_id,
+    category: e.category_id, // mantém nome legado `category` na UI; valor é UUID
+    description: e.description,
+    amount: parseFloat(e.amount),
+    type: e.type, // 'income' | 'expense'
+    // "T12:00:00" garante interpretação local (evita UTC shift)
+    date: e.date ? new Date(e.date + 'T12:00:00') : null,
+    billMonth: typeof e.bill_month === 'number' ? e.bill_month - 1 : null, // 1-indexed (API) → 0-indexed (JS)
+    billYear: e.bill_year,
+    installment: e.installment,
+    totalInstallments: e.total_installments,
+    installmentGroupId: e.installment_group_id ?? null,
+    tags: e.tags ? e.tags.map(t => t.name) : [],
+    createdAt: e.created_at ? new Date(e.created_at) : null,
+    updatedAt: e.updated_at ? new Date(e.updated_at) : null,
+  }
+}
+
+// camelCase (frontend) → snake_case (API). Resolve tag names → UUIDs e billMonth 0→1.
+async function buildCardExpensePayload(data, apiClient) {
+  const tag_ids = data.tags !== undefined
+    ? await resolveTagIds(data.tags, apiClient)
+    : undefined
+
+  const payload = {}
+
+  if (data.cardId !== undefined) payload.card_id = data.cardId
+  if (data.category !== undefined) payload.category_id = data.category || null
+  if (data.categoryId !== undefined) payload.category_id = data.categoryId || null
+  if (data.description !== undefined) payload.description = data.description
+  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.type !== undefined) payload.type = data.type
+  if (data.date !== undefined) {
+    payload.date = data.date instanceof Date
+      ? data.date.toISOString().slice(0, 10)
+      : data.date
+  }
+  // billMonth: 0-indexed (JS) → 1-indexed (API)
+  if (data.billMonth !== undefined && data.billMonth !== null) {
+    payload.bill_month = data.billMonth + 1
+  }
+  if (data.billYear !== undefined) payload.bill_year = data.billYear
+  // installments: backend gera N parcelas server-side via total_installments
+  if (data.installments !== undefined) payload.total_installments = data.installments
+  if (data.totalInstallments !== undefined) payload.total_installments = data.totalInstallments
+  if (tag_ids !== undefined) payload.tag_ids = tag_ids
+
+  return payload
+}
+
+// Hook para despesas do cartão — migrado para REST API (GET /api/v1/card-expenses)
+// month/year são 0-indexed na chamada (JS); o mapping converte pra 1-indexed na URL.
 export function useCardExpenses(cardId, month, year) {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  const fetchExpenses = useCallback(async () => {
     if (!user) {
       setExpenses([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-    setError(null)
-
-    let q
-
-    if (cardId) {
-      q = query(
-        collection(db, `users/${user.uid}/cardExpenses`),
-        where('cardId', '==', cardId),
-        orderBy('date', 'desc')
-      )
-    } else {
-      q = query(
-        collection(db, `users/${user.uid}/cardExpenses`),
-        orderBy('date', 'desc')
-      )
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      const params = new URLSearchParams()
+      if (cardId) params.set('card_id', cardId)
+      if (typeof month === 'number') params.set('month', String(month + 1))
+      if (typeof year === 'number') params.set('year', String(year))
+      const qs = params.toString()
+      const data = await apiClient.get(`/api/v1/card-expenses${qs ? `?${qs}` : ''}`)
+      setExpenses(data.map(mapCardExpense))
+    } catch (err) {
+      console.error('Error fetching card expenses:', err)
+      setError('Erro ao carregar despesas do cartão')
+    } finally {
+      setLoading(false)
     }
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          date: doc.data().date?.toDate()
-        }))
-        setExpenses(data)
-        setLoading(false)
-      },
-      (err) => {
-        console.error('Error fetching card expenses:', err)
-        setError('Erro ao carregar despesas do cartão')
-        setLoading(false)
-      }
-    )
-
-    return () => unsubscribe()
   }, [user, cardId, month, year])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchExpenses()
+  }, [fetchExpenses])
 
   const addCardExpense = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    // Se tem parcelamento, criar múltiplas despesas
-    if (data.installments && data.installments > 1) {
-      const expenses = []
-      const baseDate = parseLocalDate(data.date)
-      const installmentValue = data.amount / data.installments
-      const baseBillMonth = data.billMonth ?? baseDate.getMonth()
-      const baseBillYear = data.billYear ?? baseDate.getFullYear()
-
-      for (let i = 0; i < data.installments; i++) {
-        const installmentDate = new Date(baseDate)
-        installmentDate.setMonth(installmentDate.getMonth() + i)
-
-        // Avançar billMonth/billYear para cada parcela
-        let instBillMonth = baseBillMonth + i
-        let instBillYear = baseBillYear
-        while (instBillMonth > 11) {
-          instBillMonth -= 12
-          instBillYear++
-        }
-
-        expenses.push(
-          addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
-            ...data,
-            amount: installmentValue,
-            date: installmentDate,
-            billMonth: instBillMonth,
-            billYear: instBillYear,
-            installment: i + 1,
-            totalInstallments: data.installments,
-            createdAt: serverTimestamp()
-          })
-        )
-      }
-
-      return await Promise.all(expenses)
+    const { apiClient } = await import('../services/apiClient')
+    const payload = await buildCardExpensePayload(data, apiClient)
+    // Defaults obrigatórios pelo backend caso o caller não passe billMonth/billYear:
+    if (payload.bill_month === undefined && data.date) {
+      const parsed = parseLocalDate(data.date)
+      payload.bill_month = parsed.getMonth() + 1
     }
-
-    const parsedDate = parseLocalDate(data.date)
-
-    return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
-      ...data,
-      date: parsedDate,
-      billMonth: data.billMonth ?? parsedDate.getMonth(),
-      billYear: data.billYear ?? parsedDate.getFullYear(),
-      installment: 1,
-      totalInstallments: 1,
-      createdAt: serverTimestamp()
-    })
+    if (payload.bill_year === undefined && data.date) {
+      const parsed = parseLocalDate(data.date)
+      payload.bill_year = parsed.getFullYear()
+    }
+    if (payload.type === undefined) payload.type = 'expense'
+    const created = await apiClient.post('/api/v1/card-expenses', payload)
+    await fetchExpenses()
+    return mapCardExpense(created)
   }
 
   const updateCardExpense = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    const updateData = {
-      ...data,
-      date: parseLocalDate(data.date),
-      updatedAt: serverTimestamp()
-    }
-
-    // Preservar billMonth/billYear se fornecidos (trava na fatura atual)
-    if (data.billMonth != null) updateData.billMonth = data.billMonth
-    if (data.billYear != null) updateData.billYear = data.billYear
-
-    return await updateDoc(docRef, updateData)
+    const { apiClient } = await import('../services/apiClient')
+    const payload = await buildCardExpensePayload(data, apiClient)
+    const updated = await apiClient.put(`/api/v1/card-expenses/${id}`, payload)
+    await fetchExpenses()
+    return mapCardExpense(updated)
   }
 
   const deleteCardExpense = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    return await deleteDoc(docRef)
+    const { apiClient } = await import('../services/apiClient')
+    await apiClient.delete(`/api/v1/card-expenses/${id}`)
+    await fetchExpenses()
   }
 
   return {
@@ -433,44 +429,34 @@ export function useCardExpenses(cardId, month, year) {
   }
 }
 
-// Hook para pegar todas as despesas de cartão de um mês
+// Hook para pegar todas as despesas de cartão (sem filtros) — migrado.
 export function useAllCardExpenses() {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchAll = useCallback(async () => {
     if (!user) {
       setExpenses([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-
-    const q = query(
-      collection(db, `users/${user.uid}/cardExpenses`),
-      orderBy('date', 'desc')
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          date: doc.data().date?.toDate()
-        }))
-        setExpenses(data)
-        setLoading(false)
-      },
-      () => {
-        setLoading(false)
-      }
-    )
-
-    return () => unsubscribe()
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      const data = await apiClient.get('/api/v1/card-expenses')
+      setExpenses(data.map(mapCardExpense))
+    } catch (err) {
+      console.error('Error fetching all card expenses:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [user])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchAll()
+  }, [fetchAll])
 
   return { expenses, loading }
 }
@@ -811,124 +797,89 @@ export function useTags() {
 }
 
 // Hook para transferências entre contas
+// Transform: API response (snake_case) → frontend shape (camelCase legado)
+function mapTransfer(t) {
+  return {
+    id: t.id,
+    fromAccountId: t.from_account_id,
+    toAccountId: t.to_account_id,
+    fromAccountName: t.from_account_name ?? null,
+    toAccountName: t.to_account_name ?? null,
+    outTransactionId: t.out_transaction_id ?? null,
+    inTransactionId: t.in_transaction_id ?? null,
+    amount: parseFloat(t.amount),
+    // "T12:00:00" garante interpretação local (evita UTC shift)
+    date: t.date ? new Date(t.date + 'T12:00:00') : null,
+    description: t.description ?? null,
+    createdAt: t.created_at ? new Date(t.created_at) : null,
+  }
+}
+
+// Hook para transferências — migrado para REST API (GET /api/v1/transfers)
+// month é 0-indexed (JS); backend espera 1-indexed.
+// Backend cria as 2 transactions + transfer record atomicamente; frontend não orquestra mais.
 export function useTransfers(month, year) {
   const { user } = useAuth()
   const [transfers, setTransfers] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchTransfers = useCallback(async () => {
     if (!user) {
       setTransfers([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-
-    const startDate = new Date(year, month, 1)
-    const endDate = new Date(year, month + 1, 0, 23, 59, 59)
-
-    const q = query(
-      collection(db, `users/${user.uid}/transfers`),
-      where('date', '>=', startDate),
-      where('date', '<=', endDate),
-      orderBy('date', 'desc')
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          date: doc.data().date?.toDate()
-        }))
-        setTransfers(data)
-        setLoading(false)
-      },
-      () => {
-        setLoading(false)
-      }
-    )
-
-    return () => unsubscribe()
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      // month 0-indexed (JS) → 1-indexed (backend)
+      const params = `month=${month + 1}&year=${year}`
+      const data = await apiClient.get(`/api/v1/transfers?${params}`)
+      setTransfers(data.map(mapTransfer))
+    } catch (err) {
+      console.error('Error fetching transfers:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [user, month, year])
 
-  // Criar transferência (cria 2 transações vinculadas + registro de transferência)
+  useEffect(() => {
+    setLoading(true)
+    fetchTransfers()
+  }, [fetchTransfers])
+
+  // Criar transferência — backend cria as 2 transactions + transfer record em 1 chamada atômica.
+  // Aceita `fromAccountName`/`toAccountName` no input para compatibilidade com chamadores
+  // existentes (Accounts.jsx), mas ignora — o backend resolve via JOIN.
   const addTransfer = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
 
-    const parseLocalDate = (dateStr) => {
-      if (dateStr instanceof Date) return dateStr
-      const [year, month, day] = dateStr.split('-').map(Number)
-      return new Date(year, month - 1, day, 12, 0, 0)
+    const payload = {
+      from_account_id: data.fromAccountId,
+      to_account_id: data.toAccountId,
+      amount: data.amount,
+      // date pode chegar como Date ou string 'YYYY-MM-DD'
+      date: data.date instanceof Date
+        ? data.date.toISOString().slice(0, 10)
+        : data.date,
+      description: data.description || null,
     }
 
-    const transferDate = parseLocalDate(data.date)
-
-    // 1. Criar transação de saída (despesa na conta origem)
-    const outTransaction = await addDoc(collection(db, `users/${user.uid}/transactions`), {
-      description: `Transferência para ${data.toAccountName}`,
-      amount: data.amount,
-      type: 'expense',
-      category: 'transfer_out',
-      accountId: data.fromAccountId,
-      date: transferDate,
-      isTransfer: true,
-      createdAt: serverTimestamp()
-    })
-
-    // 2. Criar transação de entrada (receita na conta destino)
-    const inTransaction = await addDoc(collection(db, `users/${user.uid}/transactions`), {
-      description: `Transferência de ${data.fromAccountName}`,
-      amount: data.amount,
-      type: 'income',
-      category: 'transfer_in',
-      accountId: data.toAccountId,
-      date: transferDate,
-      isTransfer: true,
-      createdAt: serverTimestamp()
-    })
-
-    // 3. Vincular as transações
-    await updateDoc(doc(db, `users/${user.uid}/transactions`, outTransaction.id), {
-      oppositeTransactionId: inTransaction.id
-    })
-    await updateDoc(doc(db, `users/${user.uid}/transactions`, inTransaction.id), {
-      oppositeTransactionId: outTransaction.id
-    })
-
-    // 4. Criar registro de transferência
-    const transfer = await addDoc(collection(db, `users/${user.uid}/transfers`), {
-      fromAccountId: data.fromAccountId,
-      fromAccountName: data.fromAccountName,
-      toAccountId: data.toAccountId,
-      toAccountName: data.toAccountName,
-      amount: data.amount,
-      date: transferDate,
-      description: data.description || null,
-      outTransactionId: outTransaction.id,
-      inTransactionId: inTransaction.id,
-      createdAt: serverTimestamp()
-    })
-
-    return transfer
+    const created = await apiClient.post('/api/v1/transfers', payload)
+    await fetchTransfers()
+    return mapTransfer(created)
   }
 
-  // Excluir transferência (exclui as 2 transações vinculadas)
-  const deleteTransfer = async (transfer) => {
+  // Excluir transferência — backend faz cascade soft delete nas 2 transactions vinculadas.
+  // Aceita o objeto transfer inteiro (compat com Accounts.jsx) ou um id direto.
+  const deleteTransfer = async (transferOrId) => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    // Excluir transações vinculadas
-    if (transfer.outTransactionId) {
-      await deleteDoc(doc(db, `users/${user.uid}/transactions`, transfer.outTransactionId))
-    }
-    if (transfer.inTransactionId) {
-      await deleteDoc(doc(db, `users/${user.uid}/transactions`, transfer.inTransactionId))
-    }
-
-    // Excluir registro de transferência
-    await deleteDoc(doc(db, `users/${user.uid}/transfers`, transfer.id))
+    const id = typeof transferOrId === 'string' ? transferOrId : transferOrId?.id
+    if (!id) throw new Error('Transfer id ausente')
+    const { apiClient } = await import('../services/apiClient')
+    await apiClient.delete(`/api/v1/transfers/${id}`)
+    await fetchTransfers()
   }
 
   return {
