@@ -267,15 +267,24 @@ CREATE TABLE card_expenses (
     category_id         UUID REFERENCES categories(id),
     description         TEXT NOT NULL,
     amount              NUMERIC(12,2) NOT NULL,
+    type                TEXT NOT NULL DEFAULT 'expense'
+        CHECK (type IN ('income', 'expense')),  -- estorno = 'income'
     date                DATE NOT NULL,
-    bill_month          SMALLINT NOT NULL,
+    bill_month          SMALLINT NOT NULL,      -- 1-12 (Postgres convention; JS é 0-11)
     bill_year           SMALLINT NOT NULL,
     installment         SMALLINT DEFAULT 1,
     total_installments  SMALLINT DEFAULT 1,
-    installment_group_id UUID,          -- agrupa parcelas da mesma compra
-    deleted_at          TIMESTAMPTZ,    -- soft delete
+    installment_group_id UUID,                  -- agrupa parcelas da mesma compra
+    deleted_at          TIMESTAMPTZ,            -- soft delete
     created_at          TIMESTAMPTZ DEFAULT now(),
     updated_at          TIMESTAMPTZ
+);
+
+-- Junction: tags de card_expenses (mesmo padrão de transaction_tags)
+CREATE TABLE card_expense_tags (
+    card_expense_id UUID NOT NULL REFERENCES card_expenses(id) ON DELETE CASCADE,
+    tag_id          UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (card_expense_id, tag_id)
 );
 
 CREATE TABLE transfers (
@@ -720,6 +729,11 @@ Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar o
 | `attachment singular → attachments[]` | Docs legado com campo `attachment` único | Normaliza pra array de 1 item antes do achatamento |
 | `limit → credit_limit` | `cards.limit` (Firestore) | Rename: campo em Firestore é `limit`, Postgres é `credit_limit` (evita shadow de keyword SQL) |
 | `bankId → bank_id` | `cards`, `accounts` | Adicionado em 2026-04-15; default `'generic'`; controla `<BankIcon />` no frontend |
+| `card_expenses.tags[] → card_expense_tags` | `card_expenses` | Mesmo padrão de transactions: junction; resolve nome→tag.id (cria tag user-scope se não existir) |
+| `card_expenses sem type → 'expense'` | `card_expenses` | Docs Firestore antigos sem `type` recebem 'expense'. Estorno = `'income'` |
+| **Drop em card_expenses:** `notes`, `attachments`, `isFixed`, `fixedFrequency`, `recurrenceGroup` | `card_expenses` | Decisão 2026-04-15: dead-code do Firestore schemaless. ETL DEVE ignorar esses campos — não tentar mapear (anexos vivem em `bill_payment`; recorrência só em `transactions`) |
+| `transfers.fromAccountName/toAccountName` → drop (denormalizado) | `transfers` | Backend resolve via JOIN em accounts; ETL não precisa migrar esses campos |
+| `transfers` cria 2 transactions vinculadas + transfer atomicamente | `transfers` | ETL: para cada doc Firestore `transfers/*`, gera 2 rows em `transactions` (out=expense, in=income, ambos `is_transfer=true`) com `opposite_transaction_id` cruzado, + 1 row em `transfers` com FKs `out_transaction_id`/`in_transaction_id`. Não copiar `category` antigo (`transfer_out`/`transfer_in`) — backend não usa |
 
 ### 7.6 Garantias operacionais
 
@@ -1083,3 +1097,65 @@ Se algum problema crítico for detectado após cutover:
 1. Reverter deploy do frontend na Vercel (1 clique — volta pra versão Firestore)
 2. Firestore permanece intocado por 30 dias como rede de segurança
 3. Nenhum dado é perdido em nenhum cenário
+
+---
+
+## 13. Roadmap pós-cutover (débito técnico identificado)
+
+> Itens **fora do escopo da migração** mas registrados para tratamento depois que a Fase E estabilizar.
+
+### 13.1 Refatorar recorrência de `transactions` — modelo "template indeterminado"
+
+**Problema atual:**
+Recorrência fixa em `transactions` (ex.: condomínio, salário, mensalidade) é implementada como **"expansão eager em 12 ocorrências"** — ao criar a despesa fixa, o frontend gera 12 rows em `transactions` com `recurrence_group` em comum (`Transactions.jsx:658-678`). Isso tem dois problemas:
+
+1. **Limite arbitrário de 12.** Despesas verdadeiramente indeterminadas (aluguel sem prazo, condomínio enquanto morar lá, salário enquanto trabalhar) acabam após 12 meses e o usuário precisa recriar manualmente.
+2. **Edição em massa sofre.** Mudou o valor do condomínio? Tem que editar via `updateRecurrenceGroup` que percorre todas as 12 ocorrências; mudou só pra frente? Precisa lógica complexa de quais ainda não passaram.
+
+**Modelo proposto: template + ocorrências on-demand.**
+
+```sql
+-- Nova tabela: padrão da recorrência
+CREATE TABLE recurrence_templates (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    description     TEXT NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,
+    type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    account_id      UUID REFERENCES accounts(id),
+    category_id     UUID REFERENCES categories(id),
+    frequency       TEXT NOT NULL,           -- daily/weekly/monthly/...
+    day_of_period   SMALLINT,                -- ex.: dia 5 do mês
+    start_date      DATE NOT NULL,
+    end_date        DATE,                    -- NULL = indeterminado
+    last_generated  DATE,                    -- até que data já existem rows em transactions
+    archived        BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
+-- Transactions ganha FK opcional pro template (em vez de só recurrence_group string)
+ALTER TABLE transactions ADD COLUMN recurrence_template_id UUID REFERENCES recurrence_templates(id);
+```
+
+**Geração on-demand:**
+- Quando o usuário navega pra um mês, o backend (ou um job) garante que `transactions` tem rows pra esse mês baseado nos templates ativos do usuário.
+- `last_generated` evita re-geração; só preenche o gap entre `last_generated` e o mês visualizado.
+- Ocorrências individuais ficam em `transactions` normais — podem ser editadas individualmente sem afetar template.
+
+**Edição:**
+- Mudar template (ex.: novo valor do condomínio) → afeta só ocorrências futuras (geradas após a edição).
+- Mudar uma ocorrência específica → não toca o template; vira "exceção" pontual.
+- "Editar todas" → propaga template change + atualiza ocorrências passadas se usuário pedir.
+
+**Trade-offs:**
+- ✅ Indeterminado de fato (não tem limite de 12).
+- ✅ Edição mais previsível (template vs. ocorrência).
+- ✅ Menos rows no Postgres (só gera quando necessário).
+- ⚠️ Complica leitura: ao listar transactions de um mês, precisa "garantir geração" antes — latência adicional.
+- ⚠️ Migração de dados existentes: `recurrence_group` virar template virtual? Ou só novos lançamentos usam o modelo novo?
+- ⚠️ Card_expenses NÃO precisa disso (workflow de fatura PDF é diferente — confirmado em 2026-04-15).
+
+**Quando atacar:** após Fase E concluída e cutover estabilizado por ~2 semanas. Antes disso o foco é não regredir features, não adicionar arquitetura nova.
+
+**Origem:** mencionado pelo usuário em 2026-04-15 durante migração de `card_expenses` ("não curto muito o expande em 12 transactions, poderia ficar indeterminado o prazo").
