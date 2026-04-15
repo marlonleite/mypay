@@ -9,10 +9,8 @@ import {
   Receipt,
   Check,
   Wallet,
-  MessageSquare,
   Paperclip,
   Tag,
-  Repeat,
   X,
   FileText,
   Image as ImageIcon,
@@ -24,11 +22,11 @@ import {
   Lock,
   Scan
 } from 'lucide-react'
+// Firestore direto ainda usado por bill_payments (linhas ~599/635); remover quando bill_payments migrar.
 import {
   collection,
   addDoc,
   deleteDoc,
-  updateDoc,
   doc,
   serverTimestamp
 } from 'firebase/firestore'
@@ -47,10 +45,10 @@ import LimitProgressBar from '../components/ui/LimitProgressBar'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
-import { useCards, useAllCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
+import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
-import { CARD_COLORS, MONTHS, FIXED_FREQUENCIES, TRANSACTION_TYPES } from '../utils/constants'
+import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
 export default function Cards({ month, year, onMonthChange, onNavigate }) {
@@ -89,8 +87,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return accounts.filter(a => !a.archived)
   }, [accounts])
 
-  const fileInputRef = useRef(null)
-
   const [modalType, setModalType] = useState(null) // 'card', 'expense', 'details', 'pay_bill'
   const [selectedCard, setSelectedCard] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
@@ -100,9 +96,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const [bankSelectorOpen, setBankSelectorOpen] = useState(false)
 
   // Toggles para seções do formulário
-  const [showNotes, setShowNotes] = useState(false)
   const [showTags, setShowTags] = useState(false)
-  const [showRecurrence, setShowRecurrence] = useState(false)
 
   // Tags
   const [tagInput, setTagInput] = useState('')
@@ -134,11 +128,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     category: '',
     date: new Date().toISOString().split('T')[0],
     installments: '1',
-    notes: '',
     tags: [],
-    attachments: [],
-    isFixed: false,
-    fixedFrequency: 'monthly'
   })
 
   // Categorias do Firestore agrupadas (principais + subcategorias como optgroup)
@@ -296,15 +286,9 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       category: expenseCats[0]?.id || '',
       date: new Date().toISOString().split('T')[0],
       installments: '1',
-      notes: '',
       tags: [],
-      attachments: [],
-      isFixed: false,
-      fixedFrequency: 'monthly'
     })
-    setShowNotes(false)
     setShowTags(false)
-    setShowRecurrence(false)
     setTagInput('')
     setUploadError(null)
     setModalType('expense')
@@ -324,17 +308,11 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       category: expense.category || '',
       date: formatDateForInput(expenseDate),
       installments: '1',
-      notes: expense.notes || '',
       tags: expense.tags || [],
       billMonth: expense.billMonth ?? month,
       billYear: expense.billYear ?? year,
-      attachments: expense.attachments || [],
-      isFixed: expense.isFixed || false,
-      fixedFrequency: expense.fixedFrequency || 'monthly'
     })
-    setShowNotes(!!expense.notes)
     setShowTags(expense.tags?.length > 0)
-    setShowRecurrence(expense.isFixed)
     setTagInput('')
     setUploadError(null)
     setModalType('expense')
@@ -397,42 +375,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     }
   }
 
-  // Hook para despesas do cartão
-  const { addCardExpense, updateCardExpense, deleteCardExpense } = useCardExpensesActions()
-
-  // Upload de arquivos
-  const handleFileSelect = async (e) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    try {
-      setUploading(true)
-      setUploadError(null)
-
-      const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
-      const results = await Promise.all(uploadPromises)
-
-      setExpenseForm(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...results]
-      }))
-    } catch (error) {
-      console.error('Error uploading file:', error)
-      setUploadError(error.message || 'Erro ao enviar arquivo')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    }
-  }
-
-  const removeAttachment = (index) => {
-    setExpenseForm(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index)
-    }))
-  }
+  // Hook para despesas do cartão (REST API)
+  const { addCardExpense, updateCardExpense, deleteCardExpense } = useCardExpenses()
 
   // Upload de comprovante de pagamento
   const handlePaymentFileSelect = async (e) => {
@@ -523,14 +467,13 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
           amount: expenseForm.amount,
           category: expenseForm.category,
           date: expenseForm.date,
-          notes: expenseForm.notes || null,
-          tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
-          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
+          tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: expenseForm.billMonth,
           billYear: expenseForm.billYear
         })
       } else {
-        // Criar novo lançamento — vincula à fatura sendo visualizada
+        // Criar novo lançamento — vincula à fatura sendo visualizada.
+        // Backend gera N parcelas server-side via total_installments.
         await addCardExpense({
           cardId: selectedCard.id,
           type: expenseForm.type,
@@ -539,11 +482,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
           category: expenseForm.category,
           date: expenseForm.date,
           installments: parseInt(expenseForm.installments) || 1,
-          notes: expenseForm.notes || null,
-          tags: expenseForm.tags.length > 0 ? expenseForm.tags : null,
-          attachments: expenseForm.attachments.length > 0 ? expenseForm.attachments : null,
-          isFixed: expenseForm.isFixed,
-          fixedFrequency: expenseForm.isFixed ? expenseForm.fixedFrequency : null,
+          tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: month,
           billYear: year
         })
@@ -1101,12 +1040,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                         >
                           {expense.description}
                         </span>
-                        {expense.isFixed && (
-                          <Repeat className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                        )}
-                        {expense.attachments?.length > 0 && (
-                          <Paperclip className="w-3 h-3 text-dark-400 flex-shrink-0" />
-                        )}
                       </div>
                       <p
                         className="text-xs text-dark-400"
@@ -1301,22 +1234,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             </p>
           )}
 
-          {/* Observação */}
-          {showNotes && (
-            <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                Observação
-              </label>
-              <textarea
-                value={expenseForm.notes}
-                onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                placeholder="Adicione uma observação..."
-                className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-xl text-white placeholder-dark-500 focus:outline-none focus:border-violet-500 resize-none"
-                rows={3}
-              />
-            </div>
-          )}
-
           {/* Tags */}
           {showTags && (
             <div>
@@ -1406,126 +1323,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             </div>
           )}
 
-          {/* Anexos */}
-          {expenseForm.attachments.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                Anexos
-              </label>
-              <div className="space-y-2">
-                {expenseForm.attachments.map((attachment, index) => {
-                  const FileIcon = getFileIcon(attachment)
-                  return (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-dark-800 rounded-xl">
-                      <FileIcon className={`w-5 h-5 ${getFileIconColor(attachment)}`} />
-                      <a
-                        href={attachment.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={attachment.fileName}
-                        className="text-sm text-dark-300 flex-1 truncate hover:text-white transition-colors"
-                      >
-                        {attachment.fileName}
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(index)}
-                        className="p-1 text-dark-400 hover:text-red-400"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Recorrência (Despesa Fixa) - só para novos lançamentos */}
-          {showRecurrence && !editingItem && (
-            <div className="p-3 bg-dark-800 rounded-xl">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={expenseForm.isFixed}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, isFixed: e.target.checked })}
-                  className="w-4 h-4 text-violet-500 bg-dark-700 border-dark-600 rounded focus:ring-violet-500"
-                />
-                <span className="text-sm text-white">É uma despesa fixa (recorrente)</span>
-              </label>
-
-              {expenseForm.isFixed && (
-                <div className="mt-3 ml-7">
-                  <select
-                    value={expenseForm.fixedFrequency}
-                    onChange={(e) => setExpenseForm({ ...expenseForm, fixedFrequency: e.target.value })}
-                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
-                  >
-                    {FIXED_FREQUENCIES.map(freq => (
-                      <option key={freq.id} value={freq.id}>{freq.name}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-dark-400 mt-2">
-                    Serão criadas 12 despesas automaticamente.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Botões de ação rápida */}
+          {/* Botões de ação rápida — só Tags sobrou após decisão de drop em 2026-04-15 */}
           <div className="flex justify-center gap-6 py-2 border-t border-dark-700">
-            {!editingItem && (
-              <button
-                type="button"
-                onClick={() => setShowRecurrence(!showRecurrence)}
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                  showRecurrence ? 'text-violet-400' : 'text-dark-400 hover:text-white'
-                }`}
-              >
-                <Repeat className="w-5 h-5" />
-                <span className="text-xs">Repetir</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setShowNotes(!showNotes)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                showNotes ? 'text-violet-400' : 'text-dark-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              <span className="text-xs">Observação</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                expenseForm.attachments.length > 0 ? 'text-violet-400' : 'text-dark-400 hover:text-white'
-              } ${uploading ? 'opacity-50' : ''}`}
-            >
-              <div className="relative">
-                <Paperclip className="w-5 h-5" />
-                {expenseForm.attachments.length > 0 && (
-                  <span className="absolute -top-1 -right-2 text-[10px] bg-violet-500 text-white rounded-full w-4 h-4 flex items-center justify-center">
-                    {expenseForm.attachments.length}
-                  </span>
-                )}
-              </div>
-              <span className="text-xs">{uploading ? 'Enviando...' : 'Anexo'}</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
-              onChange={handleFileSelect}
-              multiple
-              className="hidden"
-            />
-
             <button
               type="button"
               onClick={() => setShowTags(!showTags)}
@@ -1796,127 +1595,3 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   )
 }
 
-// Hook auxiliar para ações de despesas do cartão
-function useCardExpensesActions() {
-  const { user } = useAuth()
-
-  const addCardExpense = async (data) => {
-    if (!user) throw new Error('Usuário não autenticado')
-
-    const baseData = {
-      cardId: data.cardId,
-      type: data.type || TRANSACTION_TYPES.EXPENSE,
-      description: data.description,
-      category: data.category,
-      notes: data.notes,
-      tags: data.tags,
-      attachments: data.attachments,
-      isFixed: data.isFixed || false,
-      fixedFrequency: data.fixedFrequency,
-      createdAt: serverTimestamp()
-    }
-
-    const baseBillMonth = data.billMonth ?? new Date(data.date).getMonth()
-    const baseBillYear = data.billYear ?? new Date(data.date).getFullYear()
-
-    // Se é despesa fixa, criar 12 meses
-    if (data.isFixed) {
-      const expenses = []
-      const baseDate = new Date(data.date)
-
-      for (let i = 0; i < 12; i++) {
-        const expenseDate = new Date(baseDate)
-        expenseDate.setMonth(expenseDate.getMonth() + i)
-
-        let m = baseBillMonth + i
-        let y = baseBillYear
-        while (m > 11) { m -= 12; y++ }
-
-        expenses.push(
-          addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
-            ...baseData,
-            amount: data.amount,
-            date: expenseDate,
-            billMonth: m,
-            billYear: y,
-            installment: i + 1,
-            totalInstallments: 12,
-            recurrenceGroup: `fixed_${Date.now()}`
-          })
-        )
-      }
-
-      return await Promise.all(expenses)
-    }
-
-    // Se tem parcelamento, criar múltiplas despesas
-    if (data.installments && data.installments > 1) {
-      const expenses = []
-      const baseDate = new Date(data.date)
-      const installmentValue = data.amount / data.installments
-
-      for (let i = 0; i < data.installments; i++) {
-        const installmentDate = new Date(baseDate)
-        installmentDate.setMonth(installmentDate.getMonth() + i)
-
-        let m = baseBillMonth + i
-        let y = baseBillYear
-        while (m > 11) { m -= 12; y++ }
-
-        expenses.push(
-          addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
-            ...baseData,
-            amount: installmentValue,
-            date: installmentDate,
-            billMonth: m,
-            billYear: y,
-            installment: i + 1,
-            totalInstallments: data.installments
-          })
-        )
-      }
-
-      return await Promise.all(expenses)
-    }
-
-    // Despesa única
-    return await addDoc(collection(db, `users/${user.uid}/cardExpenses`), {
-      ...baseData,
-      amount: data.amount,
-      date: new Date(data.date),
-      billMonth: baseBillMonth,
-      billYear: baseBillYear,
-      installment: 1,
-      totalInstallments: 1
-    })
-  }
-
-  const updateCardExpense = async (id, data) => {
-    if (!user) throw new Error('Usuário não autenticado')
-    const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    const updateData = {
-      type: data.type,
-      description: data.description,
-      amount: data.amount,
-      category: data.category,
-      date: new Date(data.date),
-      notes: data.notes,
-      tags: data.tags,
-      attachments: data.attachments,
-      updatedAt: serverTimestamp()
-    }
-
-    if (data.billMonth != null) updateData.billMonth = data.billMonth
-    if (data.billYear != null) updateData.billYear = data.billYear
-
-    return await updateDoc(docRef, updateData)
-  }
-
-  const deleteCardExpense = async (id) => {
-    if (!user) throw new Error('Usuário não autenticado')
-    const docRef = doc(db, `users/${user.uid}/cardExpenses`, id)
-    return await deleteDoc(docRef)
-  }
-
-  return { addCardExpense, updateCardExpense, deleteCardExpense }
-}

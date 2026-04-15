@@ -179,7 +179,8 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante (apenas quando há arquivo)
+      // Upload do comprovante (apenas para registro no histórico de imports;
+      // a despesa em si NÃO recebe attachment — anexos vivem em bill_payment).
       let comprovanteData = null
       if (file) {
         try {
@@ -189,17 +190,9 @@ export default function Documents({ month, year }) {
         }
       }
 
-      // Adiciona URL do comprovante à despesa como attachment
-      const expenseWithComprovante = {
-        ...expenseData,
-        ...(comprovanteData && {
-          attachments: [{
-            url: comprovanteData.url,
-            fileName: comprovanteData.fileName || file.name,
-            fileType: comprovanteData.type || file.type
-          }]
-        })
-      }
+      // Card_expense não persiste attachments (decisão 2026-04-15);
+      // PDF original permanece linkado ao addImport abaixo.
+      const expenseWithComprovante = expenseData
 
       console.log('Criando despesa de cartão:', expenseWithComprovante)
 
