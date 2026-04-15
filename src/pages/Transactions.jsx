@@ -36,14 +36,12 @@ import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import CategorySelector from '../components/transactions/CategorySelector'
 import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
-import { uploadComprovante } from '../services/storage'
+import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
 
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
@@ -457,9 +455,21 @@ export default function Transactions({
     setModalOpen(true)
   }
 
-  const openDetailModal = (transaction) => {
+  const openDetailModal = async (transaction) => {
     setSelectedTransaction(transaction)
     setDetailModalOpen(true)
+
+    // Backend retorna transaction sem attachments embutidos — busca sob demanda.
+    // Back-compat: se a transação já tiver attachments (legado Firestore embutido), preserva até a busca concluir.
+    try {
+      const remoteAttachments = await listAttachments(transaction.id)
+      setSelectedTransaction(prev => {
+        if (!prev || prev.id !== transaction.id) return prev
+        return { ...prev, attachments: remoteAttachments }
+      })
+    } catch (error) {
+      console.error('Error loading attachments:', error)
+    }
   }
 
   const openEditModal = (transaction) => {
@@ -527,21 +537,40 @@ export default function Transactions({
   }
 
   const handleFileSelect = async (e) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
+    const files = Array.from(fileList)
 
     try {
       setUploading(true)
       setUploadError(null)
 
-      // Upload de todos os arquivos selecionados
-      const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
-      const results = await Promise.all(uploadPromises)
-
-      setFormData(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...results]
-      }))
+      if (editingTransaction?.id) {
+        // Edição de transação existente: upload imediato (temos o id).
+        const uploaded = []
+        for (const file of files) {
+          uploaded.push(await uploadAttachment(editingTransaction.id, file))
+        }
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, ...uploaded]
+        }))
+      } else {
+        // Nova transação: só temos o id após o POST /transactions.
+        // Armazena Files localmente com preview blob URL; upload real ocorre no handleSubmit.
+        const pending = files.map(file => ({
+          _pending: true,
+          file,
+          url: URL.createObjectURL(file),
+          fileName: file.name,
+          type: file.type,
+          size: file.size,
+        }))
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, ...pending]
+        }))
+      }
     } catch (error) {
       console.error('Error uploading file:', error)
       setUploadError(error.message || 'Erro ao enviar arquivo')
@@ -554,7 +583,23 @@ export default function Transactions({
     }
   }
 
-  const removeAttachment = (index) => {
+  const removeAttachment = async (index) => {
+    const attachment = formData.attachments[index]
+
+    // Anexo já persistido no backend → DELETE via API.
+    if (attachment?.id && editingTransaction?.id) {
+      try {
+        await deleteAttachment(editingTransaction.id, attachment.id)
+      } catch (error) {
+        console.error('Error deleting attachment:', error)
+        setUploadError(error.message || 'Erro ao remover anexo')
+        return
+      }
+    } else if (attachment?._pending && attachment.url) {
+      // Libera a blob URL do preview local.
+      URL.revokeObjectURL(attachment.url)
+    }
+
     setFormData(prev => ({
       ...prev,
       attachments: prev.attachments.filter((_, i) => i !== index)
@@ -710,6 +755,19 @@ export default function Transactions({
           // Registrar atividade
           if (result?.id) {
             logTransactionCreate({ id: result.id, ...data })
+
+            // Nova transação: faz upload dos anexos pendentes agora que temos o id.
+            const pending = formData.attachments.filter(a => a?._pending && a.file)
+            for (const att of pending) {
+              try {
+                await uploadAttachment(result.id, att.file)
+              } catch (err) {
+                console.error('Error uploading attachment after save:', err)
+                setUploadError(err.message || 'Erro ao enviar anexo')
+              } finally {
+                if (att.url) URL.revokeObjectURL(att.url)
+              }
+            }
           }
         }
       }
@@ -764,13 +822,19 @@ export default function Transactions({
 
   const handleAddAttachmentsToDetail = async (files) => {
     if (!selectedTransaction || !user) return
-    const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
-    const results = await Promise.all(uploadPromises)
-    const existingAttachments = selectedTransaction.attachments || []
-    const updatedAttachments = [...existingAttachments, ...results]
-    const docRef = doc(db, `users/${user.uid}/transactions`, selectedTransaction.id)
-    await updateDoc(docRef, { attachments: updatedAttachments })
-    setSelectedTransaction(prev => ({ ...prev, attachments: updatedAttachments }))
+    const txId = selectedTransaction.id
+    const uploaded = []
+    for (const file of Array.from(files)) {
+      uploaded.push(await uploadAttachment(txId, file))
+    }
+    // POST já persistiu no backend; apenas atualiza estado local com o retorno.
+    setSelectedTransaction(prev => {
+      if (!prev || prev.id !== txId) return prev
+      return {
+        ...prev,
+        attachments: [...(prev.attachments || []), ...uploaded]
+      }
+    })
   }
 
   const togglePaidStatus = async (transaction) => {
