@@ -1043,17 +1043,162 @@ Push Notifications
 
 ---
 
-## 11. Segurança (melhorias vs. estado atual)
+## 11. Segurança
 
-| Risco atual | Mitigação |
-|---|---|
-| Credenciais S3 expostas no bundle JS | Movem para backend (env vars do servidor) |
-| API key Gemini exposta no bundle JS | Move para backend |
-| Sem rate limiting | FastAPI middleware (slowapi ou custom) |
-| Sem validação server-side | Pydantic v2 em todo input |
-| Delete permanente | Soft delete + audit trail |
-| Sem HTTPS no backend | Let's Encrypt automático via Easypanel/Traefik |
-| Firestore rules como única proteção | Auth + validação no backend + FKs no Postgres |
+> Modelo em camadas (defense in depth). Cada camada é independente — se uma falha, a próxima ainda protege. Status real refletido em ✅ (implementado), 🟡 (parcial), 🔴 (gap aberto).
+
+### 11.1 Modelo em camadas
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  L1 — TRANSPORTE        HTTPS + CORS whitelist           │
+│  L2 — AUTENTICAÇÃO      Firebase JWT (firebase-admin)    │
+│  L3 — AUTORIZAÇÃO       user_id em todas as queries      │
+│  L4 — VALIDAÇÃO         Pydantic + CHECK constraint + FK │
+│  L5 — SECRETS           Env do servidor (nunca bundle)   │
+│  L6 — RATE LIMITING     Por IP + por user                │
+│  L7 — AUDITORIA         @audited → activities (JSONB)    │
+│  L8 — BACKUP / RECOVERY Backup diário + soft delete      │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 11.2 Estado por camada
+
+#### L1 — Transporte
+| Item | Status | Notas |
+|---|:-:|---|
+| HTTPS no backend (Let's Encrypt via Traefik/Easypanel) | ✅ | Cert renova automaticamente |
+| HTTPS no frontend (Vercel managed cert) | ✅ | — |
+| CORS whitelist explícita (sem `*`) | ✅ | Lista origens permitidas em settings |
+| **CSP header** (`Content-Security-Policy`) | 🔴 | Vercel headers config — `default-src 'self'`; restringe origens de scripts/styles |
+| **WAF / Cloudflare proxied** | 🔴 | DDoS, scanners, SQL injection automatizada |
+
+#### L2 — Autenticação
+| Item | Status | Notas |
+|---|:-:|---|
+| Firebase Auth no frontend (login Google) | ✅ | Mantido pós-cutover |
+| `firebase-admin` valida JWT no backend (`Depends(get_current_db_user)`) | ✅ | Aplicado em todo endpoint exceto `/health` |
+| Token expiração padrão (~1h) + refresh automático no SDK | ✅ | Firebase SDK gerencia |
+| Endpoint admin "logout all devices" (`revokeRefreshTokens`) | 🔴 | Útil em compromise de conta — Firebase admin já suporta |
+| **2FA opcional (TOTP)** | 🔴 | Firebase suporta — habilitar em Settings da conta |
+
+#### L3 — Autorização
+| Item | Status | Notas |
+|---|:-:|---|
+| Todo usecase recebe `user_id` do token (não do request) | ✅ | Padrão consistente |
+| Queries filtram por `WHERE user_id = ?` | ✅ | Sem vazamento cross-user |
+| Ownership check em get/update/delete | ✅ | Retorna 404 (não 403) pra evitar enumeration |
+| Frontend nunca decide autorização (só esconde botão) | ✅ | Backend é a fonte de verdade |
+
+#### L4 — Validação
+| Item | Status | Notas |
+|---|:-:|---|
+| Pydantic v2 em todo Create/Update | ✅ | `Field(min, max, ge, le, pattern)` |
+| CHECK constraints no Postgres | ✅ | `type IN ('income', 'expense')`, dates válidas, etc. |
+| Foreign Keys com integridade referencial | ✅ | Sem orphan records |
+| Soft delete (`deleted_at`) | ✅ | Em transactions, card_expenses, transfers, goals, billpayments |
+| MIME validation em uploads (PDF/JPG/PNG, 10MB) | ✅ | Backend rejeita antes de mandar pro R2 |
+| **Antivírus em uploads (ClamAV)** | 🔴 | Considerar se escala — hoje é single-user, baixo risco |
+| Validação UX no frontend (não confiar) | ✅ | Apenas pra feedback rápido |
+
+#### L5 — Secrets
+| Item | Status | Notas |
+|---|:-:|---|
+| `.env` no `.gitignore` | ✅ | Confirmado |
+| Secrets via env do container (Easypanel) | ✅ | Nunca em código |
+| Service account Firebase (admin) via env base64 | ✅ | Não commitado |
+| Credenciais R2 + Gemini só no backend | ✅ (após cutover) | Hoje frontend ainda usa R2/Gemini direto até migração concluir |
+| `pydantic-settings` carrega/valida envs | ✅ | Falha rápido se faltar var crítica |
+| **Rotação periódica de chaves** | 🔴 | Sem processo definido — manual hoje |
+
+#### L6 — Rate limiting
+| Item | Status | Notas |
+|---|:-:|---|
+| **Rate limit global por IP** | 🔴 | `slowapi` middleware: 60 req/min default |
+| **Rate limit em `/auth/me`** | 🔴 | Brute force em login: 10 req/min por IP |
+| **Rate limit em `/documents/process`** (IA pesada) | 🔴 | 10 req/min por user — protege custo Gemini |
+| **Rate limit em uploads** (`/attachments`) | 🔴 | 30 req/min por user |
+| Limite de tamanho de body (1MB padrão) | ✅ | FastAPI default + override em endpoints multipart (10MB) |
+
+#### L7 — Auditoria
+| Item | Status | Notas |
+|---|:-:|---|
+| Decorator `@audited` em todo usecase mutação | ✅ | Captura action, entity_type, entity_id, old_data, new_data |
+| Tabela `activities` (JSONB) | ✅ | Permite query histórica + diff |
+| Logs estruturados (`structlog` JSON) | ✅ | Stack + request_id + user_id |
+| Logs **não vazam** token, password, body com PII | ✅ | Convenção: nunca logar `Authorization` header |
+| **Retenção de logs definida** (30d quente / 90d frio / purge) | 🔴 | Hoje retém indefinido — definir política |
+| **Alerta em spike de 401/403** (>100/min) | 🔴 | Grafana + webhook Slack |
+| **Alerta em erros 500** (>10/min) | 🔴 | Mesmo |
+| Activities pra forense pós-incidente | ✅ | Query SQL direto resolve |
+
+#### L8 — Backup / Recovery
+| Item | Status | Notas |
+|---|:-:|---|
+| Backup diário Postgres → Google Drive | ✅ | Configurado, rodando |
+| `test-restore.sh` valida que backup é restaurável | ✅ | Roda periodicamente |
+| Soft delete (recuperação de erro humano) | ✅ | Com endpoint `/restore` em transactions e card_expenses |
+| Firestore intocado por 30d pós-cutover (rollback de emergência) | ✅ | Documentado em seção 7 |
+| **RTO/RPO documentados** | 🔴 | Definir: aceitamos perder X horas de dados? Quanto tempo voltar online? |
+
+### 11.3 Gaps abertos (priorizados)
+
+#### 🔴 Bloqueia cutover (resolver antes do go-live)
+
+| # | Gap | Mitigação | Critério de aceite |
+|---|---|---|---|
+| 1 | Sem rate limiting | `slowapi` configurado em endpoints sensíveis | `pytest` que valida 11º request em 1 min retorna 429 |
+| 2 | CORS whitelist final | Lista de origens de produção em `settings.py` | Request de origem não-listada retorna preflight 403 |
+| 3 | CSP header no frontend | `vercel.json` com `Content-Security-Policy` | Browser DevTools não reporta CSP violations no fluxo principal |
+
+#### 🟡 Importante (resolver em ≤ 2 semanas pós-cutover)
+
+| # | Gap | Mitigação | Critério de aceite |
+|---|---|---|---|
+| 4 | Alertas em 401/403/500 spike | Grafana + Prometheus + webhook Slack | Receber alerta em <2 min após 100 401/min sintético |
+| 5 | Retenção de logs definida | Política escrita: 30d/90d/purge | Job de purge rodando + documentado em runbook |
+| 6 | RTO/RPO documentados | Discussão + número aceito + simulação | Documento `docs/recovery.md` com simulação em staging |
+
+#### 🟢 Nice to have (avaliar conforme necessidade)
+
+| # | Gap | Mitigação | Quando atacar |
+|---|---|---|---|
+| 7 | 2FA opcional (TOTP) | Habilitar em Firebase Auth + UI em Settings | Se entrar mais usuários ou risco de phishing aumentar |
+| 8 | WAF / Cloudflare proxied | DNS aponta pra CF; CF proxia pro Easypanel | Se receber tráfego anômalo / scanners |
+| 9 | "Logout all devices" admin | Endpoint protegido + UI em Settings | Em compromise de conta — pode ser feito manual via Firebase Console enquanto não tem |
+| 10 | Rotação periódica de chaves | Runbook trimestral: R2 keys, Gemini key, Firebase service account | Após 1 ano de operação |
+| 11 | ClamAV em uploads | Container ClamAV + integração no usecase de upload | Se base de users crescer e upload externo virar attack vector |
+
+### 11.4 Checklist pré-cutover de segurança
+
+Antes do `git push` que aponta o frontend pra API nova em produção, **TODOS** abaixo devem estar ✅:
+
+- [ ] Rate limiting ativo em `/auth/me`, `/documents/process`, `/attachments`, e default global
+- [ ] Teste de rate limiting passando (`pytest tests/test_rate_limit.py`)
+- [ ] CORS whitelist com APENAS origens de produção (sem `localhost`, sem `*`)
+- [ ] CSP header configurado em `vercel.json` e validado em browser
+- [ ] `DEBUG=False` confirmado em prod (`/docs` retorna 404)
+- [ ] `.env` de produção sem keys de dev/staging
+- [ ] Service account Firebase de prod (separado de dev)
+- [ ] Backup automático rodou nas últimas 24h e `test-restore.sh` passou
+- [ ] Health check (`GET /health`) responde 200 sem auth
+- [ ] Endpoint não-`/health` sem token retorna 401 (não 500)
+- [ ] Endpoint com token de outro user retorna 404 em recursos alheios
+- [ ] Body inválido retorna 422 (não 500) com mensagem útil
+- [ ] Upload de arquivo >10MB retorna 413
+- [ ] Upload de MIME não-permitido retorna 422
+- [ ] Logs de prod NÃO contêm: tokens, senhas, body de requests com PII
+- [ ] Firestore continua escrevendo (rede de segurança) — desligar só após 30d
+
+### 11.5 Princípios operacionais
+
+1. **Backend é a única fonte de verdade de autorização.** Frontend pode esconder botão pra UX, mas request sempre passa pela validação server-side.
+2. **Zero trust no input.** Todo body/query/header passa por Pydantic. Se Pydantic aceita, vai pro usecase. Se não, 422 antes de chegar no domain layer.
+3. **Princípio do menor privilégio.** Frontend tem só credenciais Firebase Auth/FCM. Backend tem credenciais R2/Gemini/Postgres — todas em env do servidor. DB user da aplicação não é superuser.
+4. **Falhas seguras.** Erro de auth → nega. Erro de validação → rejeita. Falha de upload R2 → rollback da metadata.
+5. **Auditabilidade.** Toda mutação passa por `@audited` → activities table.
+6. **Defense in depth.** Validação em 4 camadas (UX → Pydantic → CHECK constraint → FK). Se uma falha, próxima pega.
+7. **Logs nunca vazam segredos.** Se em dúvida sobre logar, não loga. Use `request_id` pra correlacionar sem expor PII.
 
 ---
 
