@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
+// Firestore direto ainda necessário pra useBillPayments (próxima entidade na fila Fase E).
+// Remover quando bill_payments migrar.
 import {
   collection,
   query,
@@ -6,10 +8,8 @@ import {
   orderBy,
   onSnapshot,
   addDoc,
-  updateDoc,
   deleteDoc,
   doc,
-  getDocs,
   serverTimestamp
 } from 'firebase/firestore'
 import { db } from '../firebase/config'
@@ -890,132 +890,111 @@ export function useTransfers(month, year) {
   }
 }
 
-// Hook para orçamentos/metas por categoria
+// Transform: API response (snake_case, 1-indexed month) → frontend shape (camelCase, 0-indexed).
+function mapBudget(b) {
+  return {
+    id: b.id,
+    categoryId: b.category_id,
+    amount: parseFloat(b.amount),
+    month: typeof b.month === 'number' ? b.month - 1 : null, // 1-indexed (API) → 0-indexed (JS)
+    year: b.year,
+    createdAt: b.created_at ? new Date(b.created_at) : null,
+    updatedAt: b.updated_at ? new Date(b.updated_at) : null,
+  }
+}
+
+// camelCase (frontend) → snake_case (API). month 0→1.
+function buildBudgetPayload(data) {
+  const payload = {}
+  if (data.categoryId !== undefined) payload.category_id = data.categoryId
+  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.month !== undefined && data.month !== null) payload.month = data.month + 1
+  if (data.year !== undefined) payload.year = data.year
+  return payload
+}
+
+// Hook para orçamentos/metas por categoria — migrado para REST API (GET /api/v1/budgets)
+// month é 0-indexed (JS); backend espera 1-indexed.
 export function useBudgets(month, year) {
   const { user } = useAuth()
   const [budgets, setBudgets] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  const fetchBudgets = useCallback(async () => {
     if (!user) {
       setBudgets([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-    setError(null)
-
-    // Buscar orçamentos do mês/ano específico
-    const q = query(
-      collection(db, `users/${user.uid}/budgets`),
-      where('month', '==', month),
-      where('year', '==', year)
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setBudgets(data)
-        setLoading(false)
-      },
-      (err) => {
-        console.error('Error fetching budgets:', err)
-        setError('Erro ao carregar orçamentos')
-        setLoading(false)
-      }
-    )
-
-    return () => unsubscribe()
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      // month JS (0-indexed) → API (1-indexed)
+      const params = `month=${month + 1}&year=${year}`
+      const data = await apiClient.get(`/api/v1/budgets?${params}`)
+      setBudgets(data.map(mapBudget))
+    } catch (err) {
+      console.error('Error fetching budgets:', err)
+      setError('Erro ao carregar orçamentos')
+    } finally {
+      setLoading(false)
+    }
   }, [user, month, year])
 
-  // Adicionar orçamento
+  useEffect(() => {
+    setLoading(true)
+    fetchBudgets()
+  }, [fetchBudgets])
+
+  // Adicionar orçamento (backend valida UNIQUE; pré-check defensivo pra mensagem amigável)
   const addBudget = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
 
-    // Verificar se já existe orçamento para essa categoria no mês
     const existing = budgets.find(b => b.categoryId === data.categoryId)
     if (existing) {
       throw new Error('Já existe um orçamento para esta categoria neste mês')
     }
 
-    return await addDoc(collection(db, `users/${user.uid}/budgets`), {
-      categoryId: data.categoryId,
-      amount: data.amount,
-      month: month,
-      year: year,
-      createdAt: serverTimestamp()
-    })
+    const { apiClient } = await import('../services/apiClient')
+    const payload = buildBudgetPayload({ ...data, month, year })
+    const created = await apiClient.post('/api/v1/budgets', payload)
+    await fetchBudgets()
+    return mapBudget(created)
   }
 
-  // Atualizar orçamento
+  // Atualizar orçamento — só envia campos passados
   const updateBudget = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    const docRef = doc(db, `users/${user.uid}/budgets`, id)
-    return await updateDoc(docRef, {
-      amount: data.amount,
-      updatedAt: serverTimestamp()
-    })
+    const { apiClient } = await import('../services/apiClient')
+    const updated = await apiClient.put(`/api/v1/budgets/${id}`, buildBudgetPayload(data))
+    await fetchBudgets()
+    return mapBudget(updated)
   }
 
-  // Excluir orçamento
+  // Excluir orçamento (hard delete — sem soft delete em budgets)
   const deleteBudget = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
-    const docRef = doc(db, `users/${user.uid}/budgets`, id)
-    return await deleteDoc(docRef)
+    const { apiClient } = await import('../services/apiClient')
+    await apiClient.delete(`/api/v1/budgets/${id}`)
+    await fetchBudgets()
   }
 
-  // Copiar orçamentos do mês anterior
+  // Copiar orçamentos do mês anterior — backend faz tudo atômico (Jan→Dec rollback,
+  // skip de categorias já com budget no mês destino). Retorna lista dos criados.
   const copyFromPreviousMonth = async () => {
     if (!user) throw new Error('Usuário não autenticado')
-
-    // Calcular mês anterior
-    let prevMonth = month - 1
-    let prevYear = year
-    if (prevMonth < 0) {
-      prevMonth = 11
-      prevYear = year - 1
-    }
-
-    // Buscar orçamentos do mês anterior
-    const q = query(
-      collection(db, `users/${user.uid}/budgets`),
-      where('month', '==', prevMonth),
-      where('year', '==', prevYear)
-    )
-    const snapshot = await getDocs(q)
-
-    if (snapshot.empty) {
-      throw new Error('Nenhum orçamento encontrado no mês anterior')
-    }
-
-    // Criar cópias para o mês atual
-    const promises = snapshot.docs.map(docSnap => {
-      const data = docSnap.data()
-      // Verificar se já existe
-      const exists = budgets.find(b => b.categoryId === data.categoryId)
-      if (exists) return Promise.resolve()
-
-      return addDoc(collection(db, `users/${user.uid}/budgets`), {
-        categoryId: data.categoryId,
-        amount: data.amount,
-        month: month,
-        year: year,
-        createdAt: serverTimestamp()
-      })
+    const { apiClient } = await import('../services/apiClient')
+    // backend espera month 1-indexed
+    const created = await apiClient.post('/api/v1/budgets/copy-previous', {
+      month: month + 1,
+      year,
     })
-
-    await Promise.all(promises)
-    return snapshot.docs.length
+    await fetchBudgets()
+    return Array.isArray(created) ? created.length : 0
   }
 
-  // Obter orçamento de uma categoria específica
+  // Obter orçamento de uma categoria específica (lookup local)
   const getBudget = (categoryId) => {
     return budgets.find(b => b.categoryId === categoryId)
   }

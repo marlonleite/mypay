@@ -734,6 +734,8 @@ Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar o
 | **Drop em card_expenses:** `notes`, `attachments`, `isFixed`, `fixedFrequency`, `recurrenceGroup` | `card_expenses` | Decisão 2026-04-15: dead-code do Firestore schemaless. ETL DEVE ignorar esses campos — não tentar mapear (anexos vivem em `bill_payment`; recorrência só em `transactions`) |
 | `transfers.fromAccountName/toAccountName` → drop (denormalizado) | `transfers` | Backend resolve via JOIN em accounts; ETL não precisa migrar esses campos |
 | `transfers` cria 2 transactions vinculadas + transfer atomicamente | `transfers` | ETL: para cada doc Firestore `transfers/*`, gera 2 rows em `transactions` (out=expense, in=income, ambos `is_transfer=true`) com `opposite_transaction_id` cruzado, + 1 row em `transfers` com FKs `out_transaction_id`/`in_transaction_id`. Não copiar `category` antigo (`transfer_out`/`transfer_in`) — backend não usa |
+| `budgets.month 0→1-indexed` | `budgets` | Mesmo padrão de `card_expenses.bill_month` — JS 0=Jan, Postgres 1=Jan; **UNIQUE constraint** (user_id, category_id, month, year) impede duplicata por categoria/mês |
+| `copy-previous` server-side | `budgets` | Backend handles Jan→Dec rollback e skip de duplicatas. Frontend chama 1 POST `/budgets/copy-previous` em vez de orquestrar busca + N inserts |
 
 ### 7.6 Garantias operacionais
 
