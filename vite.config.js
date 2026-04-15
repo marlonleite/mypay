@@ -17,6 +17,10 @@ export default defineConfig({
       '/api/organizze-proxy': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+      },
+      '/api/v1': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       }
     }
   },
