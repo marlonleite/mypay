@@ -176,6 +176,7 @@ CREATE TABLE accounts (
     type        TEXT DEFAULT 'checking',  -- checking, savings, investment, cash
     icon        TEXT DEFAULT 'Wallet',
     color       TEXT DEFAULT 'blue',
+    bank_id     TEXT DEFAULT 'generic',   -- banco BR (nubank/itau/etc.) — BankIcon no frontend
     balance     NUMERIC(12,2) DEFAULT 0,
     archived    BOOLEAN DEFAULT false,
     created_at  TIMESTAMPTZ DEFAULT now(),
@@ -201,12 +202,13 @@ CREATE TABLE cards (
     user_id         UUID NOT NULL REFERENCES users(id),
     name            TEXT NOT NULL,
     last_digits     TEXT,
-    brand           TEXT,
-    credit_limit    NUMERIC(12,2),
+    brand           TEXT,                  -- Visa/Mastercard/Elo (bandeira)
+    credit_limit    NUMERIC(12,2),         -- Firestore: `limit` (legado) → `credit_limit`
     closing_day     SMALLINT,
     due_day         SMALLINT,
     color           TEXT DEFAULT 'violet',
     icon            TEXT DEFAULT 'CreditCard',
+    bank_id         TEXT DEFAULT 'generic',-- banco BR (nubank/itau/etc.) — BankIcon no frontend
     archived        BOOLEAN DEFAULT false,
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ
@@ -244,6 +246,19 @@ CREATE TABLE transaction_tags (
     tag_id          UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (transaction_id, tag_id)
 );
+
+CREATE TABLE transaction_attachments (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id  UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    user_id         UUID NOT NULL REFERENCES users(id),
+    url             TEXT NOT NULL,       -- public R2 URL
+    storage_key     TEXT NOT NULL,       -- R2 object key (para DELETE no bucket)
+    name            TEXT NOT NULL,       -- filename original
+    content_type    TEXT NOT NULL,       -- MIME type
+    size_bytes      BIGINT,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_transaction_attachments_tx ON transaction_attachments(transaction_id);
 
 CREATE TABLE card_expenses (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -603,31 +618,169 @@ class CardInvoice(BaseModel):
 
 Escolhida por: single-user, volume pequeno (~milhares de docs), todas as collections interconectadas.
 
-### Script ETL (`migrate_firestore_to_postgres.py`)
+### 7.1 Onde vive o código do ETL (e por quê)
+
+**Localização:** `mypay-api/scripts/migrate_firestore_to_postgres/` (dentro do repo do backend, isolado do código de aplicação em `src/`).
+
+**Motivação:**
+
+| Alternativa | Decisão |
+|---|---|
+| Repo separado só pro ETL | **Rejeitado** — duplica schema, mappers, validações; qualquer mudança no backend quebra sincronização. |
+| Dentro de `mypay-api/src/` como usecase/endpoint | **Rejeitado** — ETL é one-shot, não deve expor superfície HTTP nem poluir o domain layer. |
+| `mypay-api/scripts/` fora de `src/` | **Adotado** — reusa models SQLAlchemy, mappers, `DATABASE_URL` e credenciais Firebase (já necessárias pra Auth/FCM); permanece isolado da API de runtime. |
+
+**Ganhos concretos:**
+
+- Reusa `src/infra/database/models/` — se uma coluna muda, o ETL acompanha automaticamente.
+- Reusa `src/infra/database/mappers.py` e validações Pydantic — transforms consistentes com a API.
+- Mesma infra de testes (pytest + testcontainers) serve pra dry-run com dump Firestore fake.
+- `firebase-admin` já é dep do backend (Auth + FCM), sem custo adicional.
+
+### 7.2 Estrutura do script ETL
 
 ```
-1. Exporta tudo do Firestore via firebase-admin (Python)
-2. Transforma:
-   - Firestore Timestamps → datetime
-   - Float amounts → Decimal
-   - String IDs → UUID (mapeamento old_id → new_uuid)
-   - Tags array → transaction_tags junction
-   - Settings sub-docs → user_settings row
-3. Insere no Postgres em ordem de dependência:
-   users → accounts → categories → tags → cards
-   → transactions → transaction_tags → card_expenses
-   → transfers → budgets → bill_payments → goals
-   → imports → activities → user_settings
-4. Valida contagens: Firestore docs == Postgres rows por tabela
-5. Tudo em 1 transação: falha = rollback total
+mypay-api/
+└── scripts/
+    └── migrate_firestore_to_postgres/
+        ├── __init__.py
+        ├── __main__.py                     # entry point: python -m scripts.migrate_firestore_to_postgres
+        ├── config.py                       # load env: FIREBASE_CREDENTIALS, DATABASE_URL, R2 (read-only)
+        ├── export.py                       # leitura do Firestore via firebase-admin
+        ├── id_map.py                       # cache in-memory: Firestore doc_id (str) → UUID novo
+        ├── transform/                      # uma transform por entidade
+        │   ├── __init__.py
+        │   ├── users.py
+        │   ├── accounts.py
+        │   ├── categories.py
+        │   ├── tags.py
+        │   ├── cards.py
+        │   ├── transactions.py
+        │   ├── transaction_tags.py         # junction derivada de transactions.tags[]
+        │   ├── transaction_attachments.py  # achata attachments[] embutidos; deriva storage_key da URL R2
+        │   ├── card_expenses.py
+        │   ├── transfers.py
+        │   ├── budgets.py
+        │   ├── bill_payments.py
+        │   ├── goals.py
+        │   ├── imports.py
+        │   ├── activities.py
+        │   └── user_settings.py
+        ├── load.py                         # insert no Postgres reusando models SQLAlchemy
+        ├── validate.py                     # contagens pós-carga (Firestore docs == Postgres rows)
+        └── README.md                       # como rodar (dry-run, cutover)
 ```
+
+### 7.3 Contrato: transforms lêem os entity maps
+
+**Fonte canônica das transformações por entidade:** `mypay-api/.claude/map/entities/<entidade>.md`.
+
+Cada arquivo `transform/<entidade>.py` implementa **exatamente** o mapeamento declarado no entity map correspondente:
+- Renomes de campo (camelCase → snake_case)
+- Transformações de tipo (float → Decimal, Timestamp → datetime, string id → UUID, 0-indexed month → 1-indexed, etc.)
+- Derivações (storage_key extraído de URL, junction tables de arrays, sub-docs → rows)
+- Defaults e nullability
+
+Se um transform divergir do entity map, é **o map que governa** — ajuste o código, não o map. Se o map estiver errado, corrija o map primeiro, depois o código.
+
+### 7.4 Ordem de dependências (canônica)
+
+Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar os entity maps:
+
+```
+1.  users
+2.  accounts          (FK: users)
+3.  categories        (FK: users, self-ref parent)
+4.  tags              (FK: users)
+5.  cards             (FK: users)
+6.  transactions      (FK: users, accounts, categories)
+7.  transaction_tags  (FK: transactions, tags)
+8.  transaction_attachments  (FK: transactions, users)
+9.  card_expenses     (FK: users, cards, categories)
+10. transfers         (FK: users, accounts × 2, transactions × 2)
+11. budgets           (FK: users, categories)
+12. bill_payments     (FK: users, cards)
+13. goals             (FK: users)
+14. imports           (FK: users)
+15. activities        (FK: users; audit trail)
+16. user_settings     (FK: users; 1:1)
+```
+
+### 7.5 Transforms críticos (resumo — detalhes nos entity maps)
+
+| Transform | Escopo | Detalhe |
+|---|---|---|
+| `Timestamp → datetime` | Todas as entidades com `createdAt`/`updatedAt` | `firebase_admin.firestore.SERVER_TIMESTAMP` → `datetime` tz-aware (UTC) |
+| `float → Decimal` | `transactions.amount`, `card_expenses.amount`, `transfers.amount`, `budgets.amount`, `bill_payments.*` | `Decimal(str(v))` — NUNCA `Decimal(v)` direto (perde precisão) |
+| `string id → UUID` | Todas as FKs | `uuid.uuid4()` novo por doc; cache em `id_map.py` resolve FKs |
+| `month 0-indexed → 1-indexed` | `budgets.month`, `card_expenses.bill_month`, qualquer campo de mês | JS usa 0=Jan, Postgres usa 1=Jan |
+| `tags array → junction` | `transactions.tags[]` → `transaction_tags` | Resolve nome → UUID via tags já carregadas |
+| `attachments[] embutido → rows` | `transactions.attachments[]` → `transaction_attachments` | Achata array; `storage_key` extraído da URL R2 via regex (`comprovantes/{uid}/{ts}_{file}`) |
+| `settings sub-docs → row` | Múltiplos sub-docs em `users/{uid}/settings/*` | Consolida em 1 row `user_settings` |
+| `attachment singular → attachments[]` | Docs legado com campo `attachment` único | Normaliza pra array de 1 item antes do achatamento |
+| `limit → credit_limit` | `cards.limit` (Firestore) | Rename: campo em Firestore é `limit`, Postgres é `credit_limit` (evita shadow de keyword SQL) |
+| `bankId → bank_id` | `cards`, `accounts` | Adicionado em 2026-04-15; default `'generic'`; controla `<BankIcon />` no frontend |
+
+### 7.6 Garantias operacionais
+
+- **Transação única.** Todo o load envelopado em `async with session.begin()`. Falha em qualquer etapa = rollback total. Sem estado parcial no Postgres.
+- **Idempotência em staging.** Antes de rodar: `alembic downgrade base && alembic upgrade head` para drop + recreate. Em **produção, nunca** — a única ação idempotente em prod é "nunca rodar duas vezes".
+- **Validação pós-carga.** `validate.py` compara:
+  - Contagem de docs Firestore vs. rows Postgres por entidade
+  - Soma de `amount` em transactions (Firestore) vs. soma em Postgres
+  - Integridade referencial (FKs não-órfãs)
+  - Presença de `user_settings` para cada user
+- **Anexos (R2) não movem.** Objetos permanecem no bucket atual; só metadados migram. `storage_key` é derivado da URL pública; se regex falhar pra algum item, ETL aborta com erro claro.
+- **Auditoria desativada durante ETL.** O decorator `@audited` não roda no load (usa models diretamente, não usecases). Activities históricas migram do Firestore como dados; futuras serão escritas pela API normalmente.
+
+### 7.7 Como rodar
+
+**Dry-run local (contra Postgres de staging):**
+
+```bash
+cd mypay-api
+
+# Staging: drop + recreate
+DATABASE_URL=postgresql+asyncpg://.../mypay_staging \
+  uv run alembic downgrade base && uv run alembic upgrade head
+
+# ETL
+FIREBASE_CREDENTIALS=/path/to/service-account.json \
+DATABASE_URL=postgresql+asyncpg://.../mypay_staging \
+  uv run python -m scripts.migrate_firestore_to_postgres --dry-run
+
+# Sem --dry-run: commita de fato
+FIREBASE_CREDENTIALS=/path/to/service-account.json \
+DATABASE_URL=postgresql+asyncpg://.../mypay_staging \
+  uv run python -m scripts.migrate_firestore_to_postgres
+```
+
+**Cutover em produção:**
+
+```bash
+# Opção 1: da máquina do dev, apontando pra Postgres de prod via túnel/IP permitido
+FIREBASE_CREDENTIALS=/path/to/service-account.json \
+DATABASE_URL=postgresql+asyncpg://.../mypay_prod \
+  uv run python -m scripts.migrate_firestore_to_postgres
+
+# Opção 2: exec no container do backend em prod
+docker exec -it mypay-api python -m scripts.migrate_firestore_to_postgres
+```
+
+### 7.8 Testes do ETL
+
+- `mypay-api/tests/etl/` com testcontainers:
+  - Fixture injeta dump Firestore fake (dict de collections)
+  - Roda ETL completo contra Postgres ephemeral
+  - Asserta contagens, transforms críticos e integridade referencial
+- Pelo menos 1 teste por entity map: valida que cada transform respeita o contrato declarado.
 
 ### Dia do cutover
 
 ```
 09:00  Modo manutenção (ou simplesmente não usa)
-09:01  Roda script ETL
-09:05  Valida contagens e integridade
+09:01  Roda script ETL (seção 7.7)
+09:05  Valida contagens e integridade (validate.py)
 09:10  Push frontend apontando pra nova API (Vercel)
 09:15  Testa fluxos principais
 09:20  Volta a usar normalmente
@@ -717,6 +870,9 @@ Transactions
   PUT    /api/v1/transactions/{id}
   DELETE /api/v1/transactions/{id}          # soft delete
   POST   /api/v1/transactions/{id}/restore
+  GET    /api/v1/transactions/{id}/attachments
+  POST   /api/v1/transactions/{id}/attachments        # multipart upload (file)
+  DELETE /api/v1/transactions/{id}/attachments/{attachment_id}
 
 Cards
   GET    /api/v1/cards
@@ -822,6 +978,7 @@ Push Notifications
 - [ ] `categories` — CRUD + hierarquia (parent_id) + archive + defaults
 - [ ] `tags` — CRUD + junction table
 - [ ] `transactions` — CRUD + soft delete + restore + filtros (mês, conta, categoria)
+- [ ] `transaction_attachments` — upload/list/delete de comprovantes (R2 + metadata)
 - [ ] `transfers` — create (2 transactions vinculadas) + delete
 - [ ] `cards` — CRUD
 - [ ] `card_expenses` — CRUD + parcelas + installment_group_id + soft delete
@@ -862,9 +1019,10 @@ Push Notifications
 - [ ] Integrar SSE para invalidação de queries
 - [ ] Remover dependências Firebase Firestore do frontend
 - [ ] Remover variáveis VITE_S3_* e VITE_GOOGLE_AI_KEY
-- [ ] Script ETL: `migrate_firestore_to_postgres.py`
-- [ ] Testar ETL em staging (múltiplas vezes)
-- [ ] Cutover big-bang (ver seção 7)
+- [ ] Script ETL em `mypay-api/scripts/migrate_firestore_to_postgres/` (ver seção 7.1–7.8)
+- [ ] Testes do ETL em `mypay-api/tests/etl/` com testcontainers
+- [ ] Dry-run do ETL em staging (múltiplas vezes)
+- [ ] Cutover big-bang (ver seção 7 e 7.7)
 - [ ] Smoke test em produção
 - [ ] Monitorar 1 semana
 - [ ] Decomissionar Firestore após 30 dias
