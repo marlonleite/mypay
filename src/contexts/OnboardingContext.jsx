@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
+import { fetchSettings, updateSettings } from '../services/settingsService'
 
 const OnboardingContext = createContext()
 
@@ -48,7 +47,7 @@ export function OnboardingProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
-  // Carregar estado do onboarding do Firestore
+  // Carregar estado do onboarding do backend
   useEffect(() => {
     if (!user) {
       setLoading(false)
@@ -56,44 +55,36 @@ export function OnboardingProvider({ children }) {
       return
     }
 
+    let cancelled = false
+
     const loadOnboardingState = async () => {
       try {
-        const docRef = doc(db, `users/${user.uid}/settings/onboarding`)
-        const docSnap = await getDoc(docRef)
-
-        if (docSnap.exists()) {
-          const data = docSnap.data()
-          setCompleted(data.completed || false)
-          setCurrentStep(data.currentStep || 0)
-          setShowOnboarding(!data.completed)
-        } else {
-          // Novo usuário - mostrar onboarding
-          setShowOnboarding(true)
-          setCompleted(false)
-          setCurrentStep(0)
-        }
+        const settings = await fetchSettings()
+        if (cancelled || !settings) return
+        const isCompleted = !!settings.onboardingCompleted
+        setCompleted(isCompleted)
+        setCurrentStep(settings.onboardingStep || 0)
+        setShowOnboarding(!isCompleted)
       } catch (error) {
         console.error('Erro ao carregar onboarding:', error)
         setShowOnboarding(false)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     loadOnboardingState()
+    return () => { cancelled = true }
   }, [user])
 
-  // Salvar progresso no Firestore
+  // Salvar progresso via PUT /settings (parcial)
   const saveProgress = useCallback(async (step, isCompleted = false) => {
     if (!user) return
-
     try {
-      const docRef = doc(db, `users/${user.uid}/settings/onboarding`)
-      await setDoc(docRef, {
-        currentStep: step,
-        completed: isCompleted,
-        updatedAt: serverTimestamp()
-      }, { merge: true })
+      await updateSettings({
+        onboardingStep: step,
+        onboardingCompleted: isCompleted,
+      })
     } catch (error) {
       console.error('Erro ao salvar progresso do onboarding:', error)
     }

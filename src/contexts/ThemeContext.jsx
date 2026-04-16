@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
+import { fetchSettings, updateSettings, subscribeSettings } from '../services/settingsService'
 
 const ThemeContext = createContext()
 
@@ -57,8 +56,10 @@ export function ThemeProvider({ children }) {
   // Loading state para evitar flash enquanto carrega do Firestore
   const [loading, setLoading] = useState(true)
 
-  // Carregar preferências do Firestore quando usuário logar
+  // Carregar preferências do backend quando usuário logar (settingsService dedupes).
   useEffect(() => {
+    let cancelled = false
+
     const loadUserPreferences = async () => {
       if (!user) {
         setLoading(false)
@@ -66,28 +67,32 @@ export function ThemeProvider({ children }) {
       }
 
       try {
-        const userPrefsRef = doc(db, `users/${user.uid}/settings/preferences`)
-        const userPrefsDoc = await getDoc(userPrefsRef)
-
-        if (userPrefsDoc.exists()) {
-          const prefs = userPrefsDoc.data()
-          if (prefs.theme) {
-            setThemeState(prefs.theme)
-            localStorage.setItem('theme', prefs.theme)
-          }
-        } else {
-          // Se não existe documento, criar com a preferência atual
-          const currentTheme = localStorage.getItem('theme') || 'auto'
-          await setDoc(userPrefsRef, { theme: currentTheme })
+        const settings = await fetchSettings()
+        if (cancelled) return
+        if (settings && settings.theme) {
+          setThemeState(settings.theme)
+          localStorage.setItem('theme', settings.theme)
         }
       } catch (error) {
         console.error('Erro ao carregar preferências:', error)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     loadUserPreferences()
+
+    const unsubscribe = subscribeSettings((settings) => {
+      if (!cancelled && settings && settings.theme) {
+        setThemeState(settings.theme)
+        localStorage.setItem('theme', settings.theme)
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [user])
 
   // Detectar preferência do sistema
@@ -114,19 +119,14 @@ export function ThemeProvider({ children }) {
     applyTheme(effectiveTheme)
   }, [effectiveTheme])
 
-  // Função para alterar o tema
+  // Função para alterar o tema (otimista local + persiste no backend)
   const setTheme = async (newTheme) => {
     setThemeState(newTheme)
     localStorage.setItem('theme', newTheme)
 
-    // Salvar no Firestore se usuário estiver logado
     if (user) {
       try {
-        const userPrefsRef = doc(db, `users/${user.uid}/settings/preferences`)
-        await updateDoc(userPrefsRef, { theme: newTheme }).catch(async () => {
-          // Se o documento não existir, criar
-          await setDoc(userPrefsRef, { theme: newTheme })
-        })
+        await updateSettings({ theme: newTheme })
       } catch (error) {
         console.error('Erro ao salvar preferência de tema:', error)
       }

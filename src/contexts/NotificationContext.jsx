@@ -1,10 +1,9 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
 import { useTransactions, useAllCardExpenses, useCards, useBudgets } from '../hooks/useFirestore'
 import { getCurrentMonthYear } from '../utils/helpers'
 import { showLocalNotification, isPushSupported, getNotificationPermission } from '../services/pushNotifications'
+import { fetchSettings, subscribeSettings } from '../services/settingsService'
 
 const NotificationContext = createContext()
 
@@ -32,23 +31,30 @@ export function NotificationProvider({ children }) {
   // Push notification state
   const [pushEnabled, setPushEnabled] = useState(false)
 
-  // Listen to push settings from Firestore
+  // Lê push_enabled do backend (settingsService cacheia + dedupes).
+  // Real-time updates virão via SSE quando wirearmos; por ora, settingsService
+  // notifica subscribers após PUTs feitos pelo próprio frontend.
   useEffect(() => {
     if (!user) {
       setPushEnabled(false)
       return
     }
 
-    const pushSettingsRef = doc(db, `users/${user.uid}/settings/push`)
-    const unsubscribe = onSnapshot(pushSettingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setPushEnabled(docSnap.data().enabled || false)
-      } else {
-        setPushEnabled(false)
-      }
+    let cancelled = false
+    fetchSettings()
+      .then((settings) => {
+        if (!cancelled) setPushEnabled(!!settings?.pushEnabled)
+      })
+      .catch((err) => console.error('Erro ao carregar push settings:', err))
+
+    const unsubscribe = subscribeSettings((settings) => {
+      if (!cancelled) setPushEnabled(!!settings?.pushEnabled)
     })
 
-    return () => unsubscribe()
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [user])
 
   // Calculate notifications

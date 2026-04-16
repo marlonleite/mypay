@@ -1,7 +1,8 @@
 // Push Notifications Service using Firebase Cloud Messaging
 import { getToken, onMessage } from 'firebase/messaging'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { db, getMessagingInstance, firebaseConfig } from '../firebase/config'
+import { getMessagingInstance, firebaseConfig } from '../firebase/config'
+import { apiClient } from './apiClient'
+import { fetchSettings } from './settingsService'
 
 // VAPID key for web push (optional - can be configured in Firebase Console)
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || null
@@ -115,25 +116,24 @@ export async function getFCMToken() {
 }
 
 /**
- * Save FCM token to Firestore for the user
+ * Save FCM token via backend POST /api/v1/push/register.
+ *
+ * Backend grava em `user_settings.push_token` + seta `push_enabled = true`.
+ * `userId` é mantido no parâmetro pra preservar o callsite, mas não é mais
+ * necessário (backend resolve via JWT). Platform/browser metadata foram
+ * dropados pra não inflar a tabela — backend não usava esses campos.
  */
-export async function saveFCMToken(userId, token) {
-  if (!userId || !token) {
-    console.warn('Missing userId or token')
+export async function saveFCMToken(_userId, token) {
+  if (!token) {
+    console.warn('Missing token')
     return false
   }
 
   try {
-    const pushSettingsRef = doc(db, `users/${userId}/settings/push`)
-    await setDoc(pushSettingsRef, {
-      enabled: true,
-      token: token,
-      updatedAt: serverTimestamp(),
-      platform: navigator.userAgent.includes('Mobile') ? 'mobile' : 'web',
-      browser: getBrowserInfo()
-    }, { merge: true })
-
-    console.log('FCM token saved to Firestore')
+    await apiClient.post('/api/v1/push/register', { token })
+    // Refresh cache do settingsService pra que NotificationContext reaja.
+    await fetchSettings({ force: true })
+    console.log('FCM token saved (backend)')
     return true
   } catch (error) {
     console.error('Failed to save FCM token:', error)
@@ -142,21 +142,12 @@ export async function saveFCMToken(userId, token) {
 }
 
 /**
- * Disable push notifications for the user
+ * Disable push notifications via backend DELETE /api/v1/push/unregister.
  */
-export async function disablePushNotifications(userId) {
-  if (!userId) {
-    return false
-  }
-
+export async function disablePushNotifications(_userId) {
   try {
-    const pushSettingsRef = doc(db, `users/${userId}/settings/push`)
-    await setDoc(pushSettingsRef, {
-      enabled: false,
-      token: null,
-      updatedAt: serverTimestamp()
-    }, { merge: true })
-
+    await apiClient.delete('/api/v1/push/unregister')
+    await fetchSettings({ force: true })
     console.log('Push notifications disabled')
     return true
   } catch (error) {
@@ -216,18 +207,6 @@ export function showLocalNotification(title, options = {}) {
     console.error('Error creating notification:', error)
     return null
   }
-}
-
-/**
- * Get browser info for debugging
- */
-function getBrowserInfo() {
-  const ua = navigator.userAgent
-  if (ua.includes('Chrome')) return 'Chrome'
-  if (ua.includes('Firefox')) return 'Firefox'
-  if (ua.includes('Safari')) return 'Safari'
-  if (ua.includes('Edge')) return 'Edge'
-  return 'Unknown'
 }
 
 /**

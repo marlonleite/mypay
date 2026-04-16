@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from './AuthContext'
+import { fetchSettings, updateSettings, subscribeSettings } from '../services/settingsService'
 
 const PrivacyContext = createContext()
 
@@ -26,8 +25,10 @@ export function PrivacyProvider({ children }) {
 
   const [loading, setLoading] = useState(true)
 
-  // Load user preferences from Firestore when logged in
+  // Load user preferences from backend (settingsService cacheia + dedupes).
   useEffect(() => {
+    let cancelled = false
+
     const loadUserPreferences = async () => {
       if (!user) {
         setLoading(false)
@@ -35,39 +36,44 @@ export function PrivacyProvider({ children }) {
       }
 
       try {
-        const userPrefsRef = doc(db, `users/${user.uid}/settings/preferences`)
-        const userPrefsDoc = await getDoc(userPrefsRef)
-
-        if (userPrefsDoc.exists()) {
-          const prefs = userPrefsDoc.data()
-          if (prefs.showValues !== undefined) {
-            setShowValuesState(prefs.showValues)
-            localStorage.setItem('showValues', String(prefs.showValues))
-          }
+        const settings = await fetchSettings()
+        if (cancelled) return
+        if (settings && typeof settings.showValues === 'boolean') {
+          setShowValuesState(settings.showValues)
+          localStorage.setItem('showValues', String(settings.showValues))
         }
       } catch (error) {
         console.error('Erro ao carregar preferências de privacidade:', error)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     loadUserPreferences()
+
+    // Reage a mudanças de outros contexts (ex.: settings reset).
+    const unsubscribe = subscribeSettings((settings) => {
+      if (!cancelled && settings && typeof settings.showValues === 'boolean') {
+        setShowValuesState(settings.showValues)
+        localStorage.setItem('showValues', String(settings.showValues))
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [user])
 
-  // Toggle visibility
+  // Toggle visibility (otimista local + persiste no backend)
   const toggleShowValues = async () => {
     const newValue = !showValues
     setShowValuesState(newValue)
     localStorage.setItem('showValues', String(newValue))
 
-    // Save to Firestore if user is logged in
     if (user) {
       try {
-        const userPrefsRef = doc(db, `users/${user.uid}/settings/preferences`)
-        await updateDoc(userPrefsRef, { showValues: newValue }).catch(async () => {
-          await setDoc(userPrefsRef, { showValues: newValue }, { merge: true })
-        })
+        await updateSettings({ showValues: newValue })
       } catch (error) {
         console.error('Erro ao salvar preferência de privacidade:', error)
       }
