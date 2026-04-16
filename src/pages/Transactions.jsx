@@ -61,8 +61,6 @@ export default function Transactions({
     addTransaction,
     updateTransaction,
     deleteTransaction,
-    updateRecurrenceGroup,
-    deleteRecurrenceGroup
   } = useTransactions(month, year, dateRange)
 
   const {
@@ -475,8 +473,10 @@ export default function Transactions({
   const openEditModal = (transaction) => {
     setDetailModalOpen(false)
 
-    // Se faz parte de um grupo, pergunta qual modo de edição
-    if (transaction.recurrenceGroup) {
+    // Se faz parte de um grupo (parcelamento ou ocorrência de template),
+    // pergunta qual modo de edição. installmentGroupId / recurrenceId substituem
+    // o antigo recurrenceGroup string (Ondas 1+7 do refactor).
+    if (transaction.installmentGroupId || transaction.recurrenceId) {
       setEditingTransaction(transaction)
       setTransactionType(transaction.type)
       setEditModeModalOpen(true)
@@ -648,16 +648,28 @@ export default function Transactions({
       }
 
       if (editingTransaction) {
-        if (editMode === 'all' && editingTransaction.recurrenceGroup) {
-          // Editar todos do grupo - aplica as alterações comuns (exceto data, amount e paid)
-          await updateRecurrenceGroup(editingTransaction.recurrenceGroup, {
+        // Endpoint batch /transactions/recurrence/{group} foi removido na Onda 7
+        // do refactor backend. Edição em massa agora itera client-side pelo grupo
+        // (installmentGroupId pra parcelas, recurrenceId pra ocorrências de template).
+        const groupKey = editingTransaction.installmentGroupId
+          ? { field: 'installmentGroupId', value: editingTransaction.installmentGroupId }
+          : editingTransaction.recurrenceId
+            ? { field: 'recurrenceId', value: editingTransaction.recurrenceId }
+            : null
+
+        if (editMode === 'all' && groupKey) {
+          // Editar todos do grupo — aplica alterações comuns (exceto date, amount, paid)
+          const commonUpdates = {
             description: data.description,
             category: data.category,
             accountId: data.accountId,
             notes: data.notes,
             tags: data.tags
-            // Não altera: date, amount (pode ser diferente em parcelas), paid
-          })
+          }
+          const groupTransactions = transactions.filter(t => t[groupKey.field] === groupKey.value)
+          for (const txn of groupTransactions) {
+            await updateTransaction(txn.id, commonUpdates)
+          }
         } else {
           // Editar apenas este
           await updateTransaction(editingTransaction.id, data)
@@ -700,10 +712,14 @@ export default function Transactions({
         }
 
         // Verificar tipo de recorrência
+        // Pós-refactor backend (Ondas 1+7): `recurrence_group` (string) foi removido;
+        // grupos agora usam `installment_group_id` (UUID). Recurrência template real
+        // (recurrences entity) será adicionada em F6 — por ora, "fixed" cria N transactions
+        // explícitas com o mesmo installment_group_id, equivalente ao comportamento antigo.
         if (formData.recurrenceType === 'fixed') {
           // Despesa fixa - criar 12 lançamentos com frequência selecionada
           const baseDate = new Date(formData.date)
-          const recurrenceGroup = Date.now().toString()
+          const installmentGroupId = crypto.randomUUID()
 
           for (let i = 0; i < 12; i++) {
             const transactionDate = addDateInterval(baseDate, formData.fixedFrequency, i)
@@ -714,11 +730,9 @@ export default function Transactions({
               ...data,
               date: formatDateForInput(transactionDate),
               paid: isPaid,
-              isFixed: true,
-              fixedFrequency: formData.fixedFrequency,
-              recurrenceGroup,
-              recurrenceIndex: i + 1,
-              recurrenceTotal: 12
+              installmentGroupId,
+              installment: i + 1,
+              totalInstallments: 12,
             })
           }
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
@@ -728,7 +742,7 @@ export default function Transactions({
           const baseInstallmentAmount = Math.floor((total / numInstallments) * 100) / 100
           const remainder = Math.round((total - (baseInstallmentAmount * numInstallments)) * 100) / 100
           const baseDate = new Date(formData.date)
-          const recurrenceGroup = Date.now().toString()
+          const installmentGroupId = crypto.randomUUID()
 
           for (let i = 0; i < numInstallments; i++) {
             const transactionDate = addDateInterval(baseDate, formData.installmentPeriod, i)
@@ -742,12 +756,9 @@ export default function Transactions({
               amount: installmentAmount,
               date: formatDateForInput(transactionDate),
               paid: isPaid,
-              isInstallment: true,
-              installmentPeriod: formData.installmentPeriod,
-              recurrenceGroup,
-              recurrenceIndex: i + 1,
-              recurrenceTotal: numInstallments,
-              originalAmount: total
+              installmentGroupId,
+              installment: i + 1,
+              totalInstallments: numInstallments,
             })
           }
         } else {
@@ -781,8 +792,10 @@ export default function Transactions({
   }
 
   const handleDelete = (transaction) => {
-    // Se é parte de um grupo de recorrência, mostra modal de confirmação
-    if (transaction.recurrenceGroup) {
+    // Se é parte de um grupo (parcelamento ou recorrência materializada), mostra modal
+    // de confirmação. installment_group_id agrupa parcelas; recurrence_id agrupa
+    // ocorrências geradas por template (Onda 3 do refactor backend).
+    if (transaction.installmentGroupId || transaction.recurrenceId) {
       setTransactionToDelete(transaction)
       setDeleteModalOpen(true)
     } else {
@@ -798,9 +811,17 @@ export default function Transactions({
       // Encontrar transação para log
       const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
 
-      if (deleteAll && transactionToDelete?.recurrenceGroup) {
-        // Exclui todas do grupo (busca no Firestore)
-        await deleteRecurrenceGroup(transactionToDelete.recurrenceGroup)
+      if (deleteAll && transactionToDelete) {
+        // Endpoint batch foi removido na Onda 7 do refactor; deleta cada ocorrência
+        // do grupo client-side. Encontra pela mesma chave (installment_group_id ou
+        // recurrence_id) que abriu o modal.
+        const groupKey = transactionToDelete.installmentGroupId
+          ? { field: 'installmentGroupId', value: transactionToDelete.installmentGroupId }
+          : { field: 'recurrenceId', value: transactionToDelete.recurrenceId }
+        const groupTransactions = transactions.filter(t => t[groupKey.field] === groupKey.value)
+        for (const txn of groupTransactions) {
+          await deleteTransaction(txn.id)
+        }
       } else {
         await deleteTransaction(id)
         // Registrar atividade de exclusão
@@ -1169,9 +1190,9 @@ export default function Transactions({
                         >
                           {transaction.description}
                         </span>
-                        {transaction.recurrenceTotal > 1 && (
+                        {transaction.totalInstallments > 1 && (
                           <span className="text-[9px] text-dark-500 bg-dark-800 px-1 rounded flex-shrink-0">
-                            {transaction.recurrenceIndex}/{transaction.recurrenceTotal}
+                            {transaction.installment}/{transaction.totalInstallments}
                           </span>
                         )}
                         {transaction.isFixed && (
@@ -1850,7 +1871,10 @@ export default function Transactions({
               variant="primary"
               fullWidth
             >
-              Editar todos do grupo ({transactions.filter(t => t.recurrenceGroup === editingTransaction?.recurrenceGroup).length} lançamentos)
+              Editar todos do grupo ({transactions.filter(t =>
+                (editingTransaction?.installmentGroupId && t.installmentGroupId === editingTransaction.installmentGroupId) ||
+                (editingTransaction?.recurrenceId && t.recurrenceId === editingTransaction.recurrenceId)
+              ).length} lançamentos)
             </Button>
 
             <Button
@@ -1900,7 +1924,10 @@ export default function Transactions({
               fullWidth
               loading={deleting === transactionToDelete?.id}
             >
-              Excluir todos do grupo ({transactions.filter(t => t.recurrenceGroup === transactionToDelete?.recurrenceGroup).length} lançamentos)
+              Excluir todos do grupo ({transactions.filter(t =>
+                (transactionToDelete?.installmentGroupId && t.installmentGroupId === transactionToDelete.installmentGroupId) ||
+                (transactionToDelete?.recurrenceId && t.recurrenceId === transactionToDelete.recurrenceId)
+              ).length} lançamentos)
             </Button>
 
             <Button
