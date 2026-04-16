@@ -1,8 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { subscribeMany } from '../services/eventStream'
 // 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
 // pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
 // de dados (firestore) saiu deste arquivo após F4 da Fase E pós-refactor.
+
+/**
+ * Helper compartilhado: subscribe a eventos SSE de uma ou mais entidades e
+ * dispara o callback (tipicamente re-fetch). Conexão SSE em si é gerenciada
+ * em AuthContext (connect/disconnect no login/logout).
+ */
+function useEventInvalidation(entities, callback) {
+  useEffect(() => {
+    if (!entities || entities.length === 0) return
+    const unsub = subscribeMany(entities, callback)
+    return unsub
+  }, [callback, ...entities]) // eslint-disable-line react-hooks/exhaustive-deps
+}
 
 // Transform: API response → frontend shape
 // Nota: campo "paid" (não "isPaid") — Firestore sempre usou "paid"
@@ -145,6 +159,9 @@ export function useTransactions(month, year, dateRange) {
     fetchTransactions()
   }, [fetchTransactions])
 
+  // SSE: re-fetch quando qualquer transaction muda em outra aba/dispositivo.
+  useEventInvalidation(['transaction', 'transfer'], fetchTransactions)
+
   const addTransaction = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
@@ -266,6 +283,8 @@ export function useCards() {
     fetchCards()
   }, [fetchCards])
 
+  useEventInvalidation(['card'], fetchCards)
+
   const addCard = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
@@ -364,6 +383,10 @@ export function useCreditCardInvoices(cardId) {
     setLoading(true)
     fetchInvoices()
   }, [fetchInvoices])
+
+  // Backend não @audita credit_card_invoice (auto-criado), mas balance/payment_amount
+  // são derivados de transactions — re-fetch quando uma transaction muda.
+  useEventInvalidation(['transaction', 'card'], fetchInvoices)
 
   // month: 0-indexed (JS); year: 4 dígitos.
   const findInvoiceByDueMonth = (month, year) => {
@@ -501,6 +524,10 @@ export function useRecurrences({ includeArchived = false } = {}) {
     setLoading(true)
     fetchRecurrences()
   }, [fetchRecurrences])
+
+  // Backend não @audita recurrence diretamente, mas a entidade existe — wirea por
+  // garantia (no-op se backend nunca dispara).
+  useEventInvalidation(['recurrence'], fetchRecurrences)
 
   const addRecurrence = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
@@ -663,6 +690,9 @@ export function useCardExpenses(cardId, month, year) {
     fetchExpenses()
   }, [fetchExpenses])
 
+  // Filter view sobre /transactions — invalida com qualquer transaction.
+  useEventInvalidation(['transaction'], fetchExpenses)
+
   const addCardExpense = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
@@ -739,6 +769,9 @@ export function useAllCardExpenses() {
     fetchAll()
   }, [fetchAll])
 
+  // Filter view sobre /transactions
+  useEventInvalidation(['transaction'], fetchAll)
+
   return { expenses, loading }
 }
 
@@ -792,6 +825,8 @@ export function useCategories() {
     setLoading(true)
     fetchCategories()
   }, [fetchCategories])
+
+  useEventInvalidation(['category'], fetchCategories)
 
   const initializeDefaultCategories = async () => {
     if (!user) throw new Error('Usuário não autenticado')
@@ -957,6 +992,8 @@ export function useAccounts() {
     fetchAccounts()
   }, [fetchAccounts])
 
+  useEventInvalidation(['account'], fetchAccounts)
+
   const initializeDefaultAccounts = async () => {
     if (!user) throw new Error('Usuário não autenticado')
     if (accounts.length > 0) return
@@ -1048,6 +1085,8 @@ export function useTags() {
     fetchTags()
   }, [fetchTags])
 
+  useEventInvalidation(['tag'], fetchTags)
+
   // Interface pública: array de strings (backward compat com consumidores)
   const tags = tagObjects.map(t => t.name)
 
@@ -1132,6 +1171,9 @@ export function useTransfers(month, year) {
     setLoading(true)
     fetchTransfers()
   }, [fetchTransfers])
+
+  // Transfers vivem como par de transactions internamente — invalida com transaction também.
+  useEventInvalidation(['transfer', 'transaction'], fetchTransfers)
 
   // Criar transferência — backend cria as 2 transactions + transfer record em 1 chamada atômica.
   // Aceita `fromAccountName`/`toAccountName` no input para compatibilidade com chamadores
@@ -1231,6 +1273,8 @@ export function useBudgets(month, year) {
     setLoading(true)
     fetchBudgets()
   }, [fetchBudgets])
+
+  useEventInvalidation(['budget'], fetchBudgets)
 
   // Adicionar orçamento (backend valida UNIQUE; pré-check defensivo pra mensagem amigável)
   const addBudget = async (data) => {
@@ -1370,6 +1414,9 @@ export function useBillPayments(month, year) {
     setLoading(true)
     fetchPayments()
   }, [fetchPayments])
+
+  // Pagamentos são transactions com paid_credit_card_id — invalida com qualquer transaction.
+  useEventInvalidation(['transaction'], fetchPayments)
 
   // Verificar se uma fatura específica foi paga (total ou parcialmente)
   const isBillPaid = (cardId) => {

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useAuth } from './AuthContext'
+import { subscribe as subscribeEventStream } from '../services/eventStream'
 
 const GoalsContext = createContext()
 
@@ -101,6 +102,11 @@ export function GoalsProvider({ children }) {
   useEffect(() => {
     setLoading(true)
     fetchGoals()
+  }, [fetchGoals])
+
+  // SSE: re-fetch quando uma goal muda em outra aba/dispositivo.
+  useEffect(() => {
+    return subscribeEventStream('goal', fetchGoals)
   }, [fetchGoals])
 
   // Adicionar meta

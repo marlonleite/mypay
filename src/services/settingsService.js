@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient'
+import { subscribe as subscribeEventStream } from './eventStream'
 
 /**
  * Service centralizado pra `/api/v1/settings`.
@@ -83,3 +84,15 @@ export function clearSettingsCache() {
   cached = null
   inflightFetch = null
 }
+
+// SSE: quando user_settings muda em outra aba/dispositivo, force-fetch + notifica.
+// Subscribe é setado uma vez no carregamento do módulo — eventStream singleton
+// dedupes por usuário; em logout o stream desconecta e events param.
+subscribeEventStream('user_settings', async () => {
+  try {
+    const fresh = await fetchSettings({ force: true })
+    notify(fresh)
+  } catch (err) {
+    console.warn('settingsService: refresh on SSE event failed:', err)
+  }
+})

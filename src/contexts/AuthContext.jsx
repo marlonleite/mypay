@@ -5,6 +5,8 @@ import {
   onAuthStateChanged
 } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase/config'
+import { connect as connectEventStream, disconnect as disconnectEventStream } from '../services/eventStream'
+import { clearSettingsCache } from '../services/settingsService'
 
 const AuthContext = createContext()
 
@@ -25,6 +27,13 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user)
       setLoading(false)
+      // SSE: conecta no login, desconecta no logout. connect() é idempotente.
+      if (user) {
+        connectEventStream()
+      } else {
+        disconnectEventStream()
+        clearSettingsCache()
+      }
     })
 
     return () => unsubscribe()
