@@ -40,7 +40,9 @@ import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPaym
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
-import { uploadComprovante } from '../services/storage'
+// uploadComprovante removido pós F-Cards-attachments — comprovantes vão via
+// attachmentService.uploadAttachment (em handlePayBill) após backend retornar
+// o id da transaction.
 
 export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const { formatCurrency } = usePrivacy()
@@ -375,38 +377,44 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   // Hook para despesas do cartão (REST API)
   const { addCardExpense, updateCardExpense, deleteCardExpense } = useCardExpenses()
 
-  // Upload de comprovante de pagamento
-  const handlePaymentFileSelect = async (e) => {
+  // Selecionar arquivos de comprovante de pagamento (DEFERRED upload).
+  // Pós F-Cards-attachments: arquivos ficam locais como `File` objects;
+  // upload real acontece em `handlePayBill` via `attachmentService.uploadAttachment`
+  // depois que o backend retorna o id da transaction (substituiu o upload
+  // direto ao R2 via uploadComprovante — credenciais R2 saem do bundle).
+  const handlePaymentFileSelect = (e) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    try {
-      setUploading(true)
-      setUploadError(null)
+    setUploadError(null)
+    const pending = Array.from(files).map(file => ({
+      file,
+      fileName: file.name,
+      fileType: file.type,
+      // URL preview local pra exibir na lista (revogada após upload).
+      url: URL.createObjectURL(file),
+    }))
 
-      const uploadPromises = Array.from(files).map(file => uploadComprovante(file))
-      const results = await Promise.all(uploadPromises)
+    setPaymentForm(prev => ({
+      ...prev,
+      attachments: [...prev.attachments, ...pending]
+    }))
 
-      setPaymentForm(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...results]
-      }))
-    } catch (error) {
-      console.error('Error uploading payment receipt:', error)
-      setUploadError(error.message || 'Erro ao enviar comprovante')
-    } finally {
-      setUploading(false)
-      if (paymentFileInputRef.current) {
-        paymentFileInputRef.current.value = ''
-      }
+    if (paymentFileInputRef.current) {
+      paymentFileInputRef.current.value = ''
     }
   }
 
   const removePaymentAttachment = (index) => {
-    setPaymentForm(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index)
-    }))
+    setPaymentForm(prev => {
+      const removed = prev.attachments[index]
+      // Revoga blob URL pra não vazar memória
+      if (removed?.url?.startsWith('blob:')) URL.revokeObjectURL(removed.url)
+      return {
+        ...prev,
+        attachments: prev.attachments.filter((_, i) => i !== index)
+      }
+    })
   }
 
   // Tags
@@ -538,17 +546,26 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
         paidAt: new Date(paymentForm.date + 'T12:00:00'),
       })
 
-      // Anexar comprovante(s) à transaction recém-criada (transaction.id == bill_payment.id no novo modelo)
+      // Upload deferido dos comprovantes — backend retornou created.id (a transaction
+      // que representa o pagamento no novo modelo). attachmentService faz POST
+      // multipart pra cada arquivo. Revoga blob URL pra não vazar memória.
       if (paymentForm.attachments.length > 0 && created?.id) {
-        const { uploadAttachment } = await import('../services/attachmentService')
-        for (const att of paymentForm.attachments) {
-          if (att?.file) {
-            try {
-              await uploadAttachment(created.id, att.file)
-            } catch (err) {
-              console.warn('Erro ao anexar comprovante:', err)
+        setUploading(true)
+        try {
+          const { uploadAttachment } = await import('../services/attachmentService')
+          for (const att of paymentForm.attachments) {
+            if (att?.file) {
+              try {
+                await uploadAttachment(created.id, att.file)
+              } catch (err) {
+                console.warn('Erro ao anexar comprovante:', err)
+              } finally {
+                if (att.url?.startsWith('blob:')) URL.revokeObjectURL(att.url)
+              }
             }
           }
+        } finally {
+          setUploading(false)
         }
       }
 
