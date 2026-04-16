@@ -22,16 +22,7 @@ import {
   Lock,
   Scan
 } from 'lucide-react'
-// Firestore direto ainda usado por bill_payments (linhas ~599/635); remover quando bill_payments migrar.
-import {
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp
-} from 'firebase/firestore'
-import { db } from '../firebase/config'
-import { useAuth } from '../contexts/AuthContext'
+// useAuth removido após F8 — Cards.jsx não acessa mais user.uid pra Firestore.
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
@@ -45,14 +36,13 @@ import LimitProgressBar from '../components/ui/LimitProgressBar'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
-import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useTags, useCategories } from '../hooks/useFirestore'
+import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
 import { uploadComprovante } from '../services/storage'
 
 export default function Cards({ month, year, onMonthChange, onNavigate }) {
-  const { user } = useAuth()
   const { formatCurrency } = usePrivacy()
   const {
     cards,
@@ -94,6 +84,13 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
   const [bankSelectorOpen, setBankSelectorOpen] = useState(false)
+
+  // Faturas do cartão selecionado (Onda 2 — entidade própria) + helpers.
+  // refresh é invocado após pagar/estornar pra recomputar amount/balance/payment_amount.
+  const {
+    findInvoiceByDueMonth,
+    refresh: refreshInvoices,
+  } = useCreditCardInvoices(selectedCard?.id)
 
   // Toggles para seções do formulário
   const [showTags, setShowTags] = useState(false)
@@ -508,8 +505,17 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     e.preventDefault()
     if (!selectedCard || !paymentForm.accountId || !paymentForm.amount) return
 
-    const billAmount = cardTotals[selectedCard.id] || 0
-    const previousBalance = getPreviousBalance(selectedCard.id)
+    // Resolve a fatura cujo vencimento cai no mês/ano selecionados.
+    // Pós Onda 2: invoice.amount/previousBalance vêm computados pelo backend (mais
+    // confiável que cálculo client-side baseado em cardTotals + getPreviousBalance).
+    const invoice = findInvoiceByDueMonth(month, year)
+    if (!invoice) {
+      console.error(`Nenhuma fatura encontrada pra ${MONTHS[month]}/${year} no cartão ${selectedCard.name}`)
+      return
+    }
+
+    const billAmount = invoice.amount
+    const previousBalance = invoice.previousBalance
     const totalDue = billAmount + previousBalance
     const paymentAmount = paymentForm.amount || 0
 
@@ -519,40 +525,35 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       setSaving(true)
 
       const isPartialPayment = paymentAmount < totalDue
+      const description = `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}${isPartialPayment ? ' (parcial)' : ''}`
 
-      // 1. Criar transação de pagamento
-      const transactionData = {
-        description: `Fatura ${selectedCard.name} - ${MONTHS[month]}/${year}${isPartialPayment ? ' (parcial)' : ''}`,
-        amount: paymentAmount,
-        category: 'card_payment',
-        accountId: paymentForm.accountId,
-        date: new Date(paymentForm.date + 'T12:00:00'),
-        type: 'expense',
+      // Backend cria a transaction (com paid_credit_card_id + paid_credit_card_invoice_id)
+      // atomicamente. Não precisamos mais criar a transação separadamente.
+      const created = await addBillPayment({
         cardId: selectedCard.id,
-        billMonth: month,
-        billYear: year,
-        paid: true,
-        isPartialPayment: isPartialPayment,
-        createdAt: serverTimestamp()
-      }
-
-      if (paymentForm.attachments.length > 0) {
-        transactionData.attachments = paymentForm.attachments
-      }
-
-      const transactionRef = await addDoc(collection(db, `users/${user.uid}/transactions`), transactionData)
-
-      // 2. Registrar pagamento da fatura
-      await addBillPayment({
-        cardId: selectedCard.id,
-        month: month,
-        year: year,
-        amount: paymentAmount,
-        totalBill: totalDue,
+        paidCreditCardInvoiceId: invoice.id,
         accountId: paymentForm.accountId,
-        transactionId: transactionRef.id,
-        paidAt: new Date(paymentForm.date + 'T12:00:00')
+        amount: paymentAmount,
+        description,
+        paidAt: new Date(paymentForm.date + 'T12:00:00'),
       })
+
+      // Anexar comprovante(s) à transaction recém-criada (transaction.id == bill_payment.id no novo modelo)
+      if (paymentForm.attachments.length > 0 && created?.id) {
+        const { uploadAttachment } = await import('../services/attachmentService')
+        for (const att of paymentForm.attachments) {
+          if (att?.file) {
+            try {
+              await uploadAttachment(created.id, att.file)
+            } catch (err) {
+              console.warn('Erro ao anexar comprovante:', err)
+            }
+          }
+        }
+      }
+
+      // Recompute invoice (balance/payment_amount mudaram)
+      await refreshInvoices()
 
       setModalType('details')
     } catch (error) {
@@ -573,14 +574,10 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     try {
       setSaving(true)
 
-      // 1. Excluir a transação vinculada
-      if (payment.transactionId) {
-        const transactionRef = doc(db, `users/${user.uid}/transactions`, payment.transactionId)
-        await deleteDoc(transactionRef)
-      }
-
-      // 2. Excluir o registro de pagamento
+      // No novo modelo, payment.id == transaction.id (são a mesma row).
+      // deleteBillPayment já faz soft delete da transaction.
       await deleteBillPayment(payment.id)
+      await refreshInvoices()
 
     } catch (error) {
       console.error('Error canceling payment:', error)
