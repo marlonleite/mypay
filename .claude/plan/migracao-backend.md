@@ -300,10 +300,8 @@ CREATE TABLE transactions (
     total_installments      SMALLINT DEFAULT 1,
     installment_group_id    UUID,                   -- agrupa parcelas de uma compra
 
-    -- 🆕 Recorrência (substitui recurrence_group string por FK pra template)
+    -- 🆕 Recorrência (template FK; recurrence_group legado dropado na Onda 7)
     recurrence_id           UUID REFERENCES recurrences(id),
-
-    -- recurrence_group TEXT (legado — manter por enquanto pra compat de ETL Firestore?)
 
     deleted_at      TIMESTAMPTZ,                    -- soft delete
     created_at      TIMESTAMPTZ DEFAULT now(),
@@ -437,15 +435,14 @@ CREATE TABLE user_settings (
 CREATE INDEX idx_transactions_user_date ON transactions(user_id, date DESC);
 CREATE INDEX idx_transactions_user_account ON transactions(user_id, account_id);
 CREATE INDEX idx_transactions_active ON transactions(user_id, date) WHERE deleted_at IS NULL;
+CREATE INDEX idx_tx_credit_card_invoice ON transactions(credit_card_invoice_id) WHERE credit_card_invoice_id IS NOT NULL;
+CREATE INDEX idx_tx_recurrence ON transactions(recurrence_id) WHERE recurrence_id IS NOT NULL;
 
-CREATE INDEX idx_card_expenses_user_bill ON card_expenses(user_id, card_id, bill_year, bill_month);
-CREATE INDEX idx_card_expenses_active ON card_expenses(user_id, card_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_card_expenses_group ON card_expenses(installment_group_id) WHERE installment_group_id IS NOT NULL;
+CREATE INDEX idx_credit_card_invoices_card ON credit_card_invoices(card_id, due_date DESC);
+CREATE INDEX idx_recurrences_user_active ON recurrences(user_id) WHERE archived = false;
 
 CREATE INDEX idx_budgets_user_period ON budgets(user_id, month, year);
-CREATE INDEX idx_bill_payments_user_period ON bill_payments(user_id, month, year);
 CREATE INDEX idx_activities_user_date ON activities(user_id, created_at DESC);
-CREATE INDEX idx_transfers_user_date ON transfers(user_id, date DESC);
 CREATE INDEX idx_goals_user_status ON goals(user_id, status);
 CREATE INDEX idx_imports_user_date ON imports(user_id, created_at DESC);
 ```
@@ -470,15 +467,14 @@ mypay-api/
 │   │   ├── auth.py
 │   │   ├── transactions.py
 │   │   ├── cards.py
-│   │   ├── card_expenses.py
+│   │   ├── credit_card_invoices.py   # 🆕 Onda 2
+│   │   ├── recurrences.py            # 🆕 Onda 3
 │   │   ├── accounts.py
 │   │   ├── categories.py
 │   │   ├── tags.py
-│   │   ├── transfers.py
+│   │   ├── transfers.py              # wrapper atômico (tabela dropada)
 │   │   ├── budgets.py
-│   │   ├── bill_payments.py
 │   │   ├── goals.py
-│   │   ├── imports.py
 │   │   ├── documents.py    # upload + processamento IA
 │   │   ├── events.py       # SSE endpoint
 │   │   └── settings.py
@@ -486,14 +482,16 @@ mypay-api/
 │   │   ├── __init__.py
 │   │   ├── transactions.py
 │   │   ├── cards.py
-│   │   ├── card_expenses.py
+│   │   ├── credit_card_invoice.py
+│   │   ├── recurrence.py
 │   │   └── ...
 │   ├── usecases/           # Regras de negócio + orquestração
 │   │   ├── __init__.py
 │   │   ├── transactions.py
 │   │   ├── cards.py
-│   │   ├── card_expenses.py
-│   │   ├── transfers.py
+│   │   ├── credit_card_invoice.py
+│   │   ├── recurrence.py
+│   │   ├── transfer.py
 │   │   └── ...
 │   ├── repositories/       # Acesso a dados (SQLAlchemy queries)
 │   │   ├── __init__.py
@@ -645,7 +643,8 @@ class CardInvoice(BaseModel):
 
 ### Soft delete
 
-**Tabelas com `deleted_at`:** transactions, card_expenses, transfers, bill_payments, goals
+**Tabelas com `deleted_at`:** transactions, goals
+(Tabelas `card_expenses`, `transfers`, `bill_payments` foram dropadas no refactor Organizze — seção 14.)
 
 **Comportamento:**
 - Toda query padrão filtra `WHERE deleted_at IS NULL`
@@ -690,6 +689,11 @@ Escolhida por: single-user, volume pequeno (~milhares de docs), todas as collect
 
 ### 7.2 Estrutura do script ETL
 
+> **Atualizado 2026-04-15** pós-refactor Organizze (seção 14). Arquitetura reflete:
+> - Tabelas novas no Postgres: `credit_card_invoices`, `recurrences`
+> - Tabelas dropadas no Postgres: `card_expenses`, `card_expense_tags`, `bill_payments`, `transfers`
+> - Collections Firestore `cardExpenses`/`billPayments`/`transfers` ainda são source — mas unificam em `transactions` no destino (ver 14.6 + 7.5)
+
 ```
 mypay-api/
 └── scripts/
@@ -699,28 +703,38 @@ mypay-api/
         ├── config.py                       # load env: FIREBASE_CREDENTIALS, DATABASE_URL, R2 (read-only)
         ├── export.py                       # leitura do Firestore via firebase-admin
         ├── id_map.py                       # cache in-memory: Firestore doc_id (str) → UUID novo
-        ├── transform/                      # uma transform por entidade
+        ├── transform/                      # uma transform por ENTIDADE DE DESTINO (Postgres)
         │   ├── __init__.py
-        │   ├── users.py
+        │   ├── users.py                    # from Firebase Auth Admin SDK (sem collection Firestore)
         │   ├── accounts.py
         │   ├── categories.py
         │   ├── tags.py
         │   ├── cards.py
-        │   ├── transactions.py
-        │   ├── transaction_tags.py         # junction derivada de transactions.tags[]
+        │   ├── credit_card_invoices.py     # 🆕 cria invoices pros períodos usados por card_expenses
+        │   │                               #    (consome cards.closing_day/due_day; idempotente via UNIQUE)
+        │   ├── recurrences.py              # 🆕 agrega transactions.recurrence_group → 1 template
+        │   │                               #    + vincula recurrence_id nas ocorrências
+        │   ├── transactions.py             # UNIFICADO — consome 4 collections Firestore:
+        │   │                               #    • /transactions   → transactions base
+        │   │                               #    • /cardExpenses   → transactions(credit_card_id, credit_card_invoice_id)
+        │   │                               #    • /billPayments   → transactions(paid_credit_card_id, paid_credit_card_invoice_id)
+        │   │                               #    • /transfers      → 2 transactions pareadas (is_transfer=true)
+        │   ├── transaction_tags.py         # junction derivada de transactions.tags[] + cardExpenses.tags[]
         │   ├── transaction_attachments.py  # achata attachments[] embutidos; deriva storage_key da URL R2
-        │   ├── card_expenses.py
-        │   ├── transfers.py
         │   ├── budgets.py
-        │   ├── bill_payments.py
         │   ├── goals.py
         │   ├── imports.py
         │   ├── activities.py
         │   └── user_settings.py
         ├── load.py                         # insert no Postgres reusando models SQLAlchemy
-        ├── validate.py                     # contagens pós-carga (Firestore docs == Postgres rows)
+        ├── validate.py                     # contagens pós-carga (ver 7.6 — unified transactions count)
         └── README.md                       # como rodar (dry-run, cutover)
 ```
+
+**Removidos da estrutura original (pré-refactor):**
+- `transform/card_expenses.py` → lógica absorvida por `transform/transactions.py` (8b)
+- `transform/bill_payments.py` → lógica absorvida por `transform/transactions.py` (8c)
+- `transform/transfers.py` → lógica absorvida por `transform/transactions.py` (8d)
 
 ### 7.3 Contrato: transforms lêem os entity maps
 
@@ -736,25 +750,39 @@ Se um transform divergir do entity map, é **o map que governa** — ajuste o c�
 
 ### 7.4 Ordem de dependências (canônica)
 
-Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar os entity maps:
+Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar os entity maps.
+
+> **Atualizado 2026-04-15** — reflete entidades novas (`credit_card_invoices`, `recurrences`) e unificação de `card_expenses`/`bill_payments`/`transfers` em `transactions`.
 
 ```
-1.  users
-2.  accounts          (FK: users)
-3.  categories        (FK: users, self-ref parent)
-4.  tags              (FK: users)
-5.  cards             (FK: users)
-6.  transactions      (FK: users, accounts, categories)
-7.  transaction_tags  (FK: transactions, tags)
-8.  transaction_attachments  (FK: transactions, users)
-9.  card_expenses     (FK: users, cards, categories)
-10. transfers         (FK: users, accounts × 2, transactions × 2)
-11. budgets           (FK: users, categories)
-12. bill_payments     (FK: users, cards)
-13. goals             (FK: users)
-14. imports           (FK: users)
-15. activities        (FK: users; audit trail)
-16. user_settings     (FK: users; 1:1)
+ 1. users                    (from Firebase Auth Admin SDK — sem collection Firestore)
+ 2. accounts                 (FK: users)
+ 3. categories               (FK: users, self-ref parent)
+ 4. tags                     (FK: users)
+ 5. cards                    (FK: users)
+ 6. credit_card_invoices     (FK: users, cards)                              🆕
+                             Criadas pré-transactions: todo txn com credit_card_id
+                             exige invoice_id. ETL varre /cardExpenses e invoca
+                             invoice_resolution.ensure_invoice_for_period(card, date).
+ 7. recurrences              (FK: users, accounts, categories)               🆕
+                             Um template por recurrence_group único (inferido
+                             da primeira ocorrência em /transactions).
+ 8. transactions             (FK: users, accounts, categories, cards,
+                                credit_card_invoices, recurrences)
+                             UNIFICADA — quatro fontes Firestore:
+                             8a. /transactions      → linha direta
+                             8b. /cardExpenses      → credit_card_id + invoice_id
+                             8c. /billPayments      → paid_credit_card_id + paid_invoice_id
+                             8d. /transfers        → 2 rows (opposite_transaction_id
+                                                     cruzado, is_transfer=true)
+ 9. transaction_tags         (FK: transactions, tags)
+                             Inclui tags de /transactions E /cardExpenses.
+10. transaction_attachments  (FK: transactions, users)
+11. budgets                  (FK: users, categories)
+12. goals                    (FK: users)
+13. imports                  (FK: users)
+14. activities               (FK: users; audit trail)
+15. user_settings            (FK: users; 1:1)
 ```
 
 ### 7.5 Transforms críticos (resumo — detalhes nos entity maps)
@@ -775,9 +803,19 @@ Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar o
 | `card_expenses sem type → 'expense'` | `card_expenses` | Docs Firestore antigos sem `type` recebem 'expense'. Estorno = `'income'` |
 | **Drop em card_expenses:** `notes`, `attachments`, `isFixed`, `fixedFrequency`, `recurrenceGroup` | `card_expenses` | Decisão 2026-04-15: dead-code do Firestore schemaless. ETL DEVE ignorar esses campos — não tentar mapear (anexos vivem em `bill_payment`; recorrência só em `transactions`) |
 | `transfers.fromAccountName/toAccountName` → drop (denormalizado) | `transfers` | Backend resolve via JOIN em accounts; ETL não precisa migrar esses campos |
-| `transfers` cria 2 transactions vinculadas + transfer atomicamente | `transfers` | ETL: para cada doc Firestore `transfers/*`, gera 2 rows em `transactions` (out=expense, in=income, ambos `is_transfer=true`) com `opposite_transaction_id` cruzado, + 1 row em `transfers` com FKs `out_transaction_id`/`in_transaction_id`. Não copiar `category` antigo (`transfer_out`/`transfer_in`) — backend não usa |
-| `budgets.month 0→1-indexed` | `budgets` | Mesmo padrão de `card_expenses.bill_month` — JS 0=Jan, Postgres 1=Jan; **UNIQUE constraint** (user_id, category_id, month, year) impede duplicata por categoria/mês |
+| **`transfers` → 2 transactions pareadas (sem row em transfers)** | `transfers` | Tabela `transfers` foi dropada (Onda 5). Para cada doc Firestore `/transfers`, ETL gera 2 rows em `transactions`: out=(type=expense, account_id=from, is_transfer=true), in=(type=income, account_id=to, is_transfer=true), com `opposite_transaction_id` cruzado. Não copiar `category` antigo (`transfer_out`/`transfer_in`) — backend não usa. |
+| `budgets.month 0→1-indexed` | `budgets` | JS 0=Jan, Postgres 1=Jan; **UNIQUE constraint** (user_id, category_id, month, year) impede duplicata por categoria/mês |
 | `copy-previous` server-side | `budgets` | Backend handles Jan→Dec rollback e skip de duplicatas. Frontend chama 1 POST `/budgets/copy-previous` em vez de orquestrar busca + N inserts |
+
+#### Transforms específicos do refactor Organizze (adicionados 2026-04-15)
+
+| Transform | Escopo | Detalhe |
+|---|---|---|
+| **Auto-resolve de invoice** em card_expenses | `/cardExpenses` | Pra cada doc, ETL chama `invoice_resolution.ensure_invoice_for_period(uow, user_id, card_id, doc.date)` ANTES de inserir a transaction. Função reusa a mesma que o backend usa em runtime (`src/application/services/invoice_resolution.py`). Invoices são criadas em `credit_card_invoices` (Onda 6 do map). `installment`/`total_installments`/`installment_group_id` copiados direto. |
+| **`billPayments` → transactions + invoice FK** | `/billPayments` | Pra cada doc, ETL resolve invoice do período (`bill_month`/`bill_year`) via `ensure_invoice_for_period`, depois cria 1 row em `transactions` com: account_id=doc.accountId, type=expense, is_paid=true, paid_credit_card_id=doc.cardId, paid_credit_card_invoice_id=invoice.id. Campos derivados (`total_bill`, `carry_over_balance`, `is_partial`) NÃO migram — backend calcula via VIEW de balance. |
+| **`recurrence_group` (string) → `recurrences` template** | `/transactions[recurrence_group != null]` | Coluna `recurrence_group` foi dropada na Onda 7. Para preservar vínculo: agrupe `/transactions` por `recurrence_group`, crie 1 row em `recurrences` inferindo `description`/`amount`/`type`/`frequency`/`day_of_period`/`start_date` da primeira ocorrência. Popule `recurrence_id` em todas as N transactions do grupo. `last_generated` = data da última ocorrência. Decisão (2026-04-15): `frequency` inferido dos gaps entre datas consecutivas (fallback `monthly` se ambíguo). |
+| **`credit_card_invoices` — derivados não copiar** | `credit_card_invoices` | Campos `amount`/`payment_amount`/`previous_balance`/`balance` são computados via subquery + window function no repo (ver seção 14.4). ETL insere apenas `due_date`/`starting_date`/`closing_date`/`card_id`/`user_id`. |
+| **Drop de fallback `recurrence_group` column** | `transactions` | Coluna não existe mais no Postgres (Onda 7). ETL NÃO pode popular — precisa converter pra `recurrence_id` ou aceitar perda do agrupamento. Decisão: converter (ver linha acima). |
 
 ### 7.6 Garantias operacionais
 
@@ -785,9 +823,19 @@ Inserção segue a ordem de FKs. Qualquer mudança neste grafo implica revisar o
 - **Idempotência em staging.** Antes de rodar: `alembic downgrade base && alembic upgrade head` para drop + recreate. Em **produção, nunca** — a única ação idempotente em prod é "nunca rodar duas vezes".
 - **Validação pós-carga.** `validate.py` compara:
   - Contagem de docs Firestore vs. rows Postgres por entidade
-  - Soma de `amount` em transactions (Firestore) vs. soma em Postgres
-  - Integridade referencial (FKs não-órfãs)
+  - **Transactions unificadas** (pós-refactor Organizze):
+    ```
+    count(pg.transactions) = count(fs.transactions)
+                            + count(fs.cardExpenses)
+                            + count(fs.billPayments)
+                            + 2 * count(fs.transfers)
+    ```
+    Qualquer desvio indica doc perdido ou duplicado. Detalhar por fonte no relatório.
+  - Soma de `amount` preservada por fonte: `sum(pg.transactions.amount WHERE credit_card_id IS NOT NULL) == sum(fs.cardExpenses.amount)` etc.
+  - Integridade referencial (FKs não-órfãs — inclui `credit_card_invoice_id`, `paid_credit_card_invoice_id`, `recurrence_id`, `opposite_transaction_id`)
   - Presença de `user_settings` para cada user
+  - `credit_card_invoices`: campos derivados (`amount`/`payment_amount`/`previous_balance`/`balance`) NÃO são armazenados — validar via SELECT da window function no repo, não comparar com Firestore.
+  - `recurrences`: contagem = número de `recurrence_group` únicos em `fs.transactions`. Toda transaction com `recurrence_group` não-null deve terminar com `recurrence_id` preenchido no Postgres.
 - **Anexos (R2) não movem.** Objetos permanecem no bucket atual; só metadados migram. `storage_key` é derivado da URL pública; se regex falhar pra algum item, ETL aborta com erro claro.
 - **Auditoria desativada durante ETL.** O decorator `@audited` não roda no load (usa models diretamente, não usecases). Activities históricas migram do Firestore como dados; futuras serão escritas pela API normalmente.
 
@@ -1675,10 +1723,15 @@ Mapping direto:
 
 #### ETL do Firestore (myPay atual)
 
-ETL precisa **unificar** durante a migração:
-- `card_expenses[*]` → `transactions` com `credit_card_id` populado
-- `bill_payments[*]` → `transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id` populados (precisa antes garantir que `credit_card_invoices` exista pra cada `bill_month`/`bill_year`)
-- `transfers[*]` → 2 `transactions` com `opposite_transaction_id` cruzado (drop de `transfers/*`)
+ETL precisa **unificar** durante a migração (detalhes de transforms em 7.5):
+
+- `cardExpenses[*]` → `transactions` com `credit_card_id` populado. Antes de inserir cada row, chama `invoice_resolution.ensure_invoice_for_period(uow, user, card, date)` — mesmo service que o backend usa em runtime — pra obter/criar a invoice do período. Popula `credit_card_invoice_id` no row resultante. Campos `installment`/`total_installments`/`installment_group_id` preservados.
+
+- `billPayments[*]` → `transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id` populados. Antes, garante que `credit_card_invoices` existe pra cada `(card_id, bill_month, bill_year)` via mesmo `ensure_invoice_for_period`. Campos derivados (`total_bill`, `carry_over_balance`, `is_partial`) NÃO migram — calculados via VIEW de balance.
+
+- `transfers[*]` → 2 rows em `transactions` com `opposite_transaction_id` cruzado + `is_transfer=true`. **A collection Firestore `/transfers` continua sendo source do ETL** (lida, processada), mas o ETL **não insere em tabela `transfers` do Postgres** — essa tabela foi dropada na Onda 5. Só gera as 2 transactions pareadas. Campos denormalizados `fromAccountName`/`toAccountName` descartados (backend resolve via JOIN).
+
+- `transactions[*]` com `recurrence_group` não-null → agrupa por valor de `recurrence_group`, cria 1 row em `recurrences` (template inferido da primeira ocorrência: description, amount, type, frequency inferida dos gaps, day_of_period), popula `recurrence_id` em todas as N transactions do grupo. Column `recurrence_group` dropada no Postgres (Onda 7); este é o único caminho pra preservar o vínculo.
 
 ### 14.7 Plano de execução do refactor backend
 
