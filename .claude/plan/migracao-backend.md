@@ -130,6 +130,8 @@ MYPAY_PG_VERSION=17
 
 ## 3. Modelagem de Dados (PostgreSQL)
 
+> **⚠️ Esta seção foi reescrita em 2026-04-15 para alinhar com o modelo Organizze. Veja seção 14 pra contexto e justificativa. Tabelas `card_expenses`, `bill_payments`, `transfers`, `card_expense_tags` foram absorvidas em `transactions`. Tabelas novas: `credit_card_invoices`, `recurrences`.**
+
 ### Mapeamento Firestore → Postgres
 
 ```
@@ -177,7 +179,9 @@ CREATE TABLE accounts (
     icon        TEXT DEFAULT 'Wallet',
     color       TEXT DEFAULT 'blue',
     bank_id     TEXT DEFAULT 'generic',   -- banco BR (nubank/itau/etc.) — BankIcon no frontend
-    balance     NUMERIC(12,2) DEFAULT 0,
+    description TEXT,                     -- 🆕 (Organizze) texto livre adicional
+    is_default  BOOLEAN DEFAULT false,    -- 🆕 (Organizze) marca conta padrão
+    balance     NUMERIC(12,2) DEFAULT 0,  -- mantemos armazenado (Organizze calcula on-the-fly; manter por simplicidade)
     archived    BOOLEAN DEFAULT false,
     created_at  TIMESTAMPTZ DEFAULT now(),
     updated_at  TIMESTAMPTZ
@@ -188,9 +192,12 @@ CREATE TABLE categories (
     user_id     UUID NOT NULL REFERENCES users(id),
     parent_id   UUID REFERENCES categories(id) ON DELETE SET NULL,
     name        TEXT NOT NULL,
-    type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    type        TEXT NOT NULL CHECK (type IN ('income', 'expense')),  -- ←→ Organizze `kind`
     icon        TEXT DEFAULT 'Tag',
     color       TEXT DEFAULT 'violet',
+    group_id    TEXT,                     -- 🆕 (Organizze) semantic key: 'exp_food', 'ear_salary', 'exp_apartment'
+    fixed       BOOLEAN DEFAULT false,    -- 🆕 (Organizze) categoria de gasto fixo
+    essential   BOOLEAN DEFAULT false,    -- 🆕 (Organizze) categoria essencial vs supérflua
     archived    BOOLEAN DEFAULT false,
     is_default  BOOLEAN DEFAULT false,
     created_at  TIMESTAMPTZ DEFAULT now(),
@@ -202,13 +209,15 @@ CREATE TABLE cards (
     user_id         UUID NOT NULL REFERENCES users(id),
     name            TEXT NOT NULL,
     last_digits     TEXT,
-    brand           TEXT,                  -- Visa/Mastercard/Elo (bandeira)
+    brand           TEXT,                  -- Visa/Mastercard/Elo (bandeira) ←→ Organizze `card_network`
     credit_limit    NUMERIC(12,2),         -- Firestore: `limit` (legado) → `credit_limit`
     closing_day     SMALLINT,
     due_day         SMALLINT,
     color           TEXT DEFAULT 'violet',
     icon            TEXT DEFAULT 'CreditCard',
-    bank_id         TEXT DEFAULT 'generic',-- banco BR (nubank/itau/etc.) — BankIcon no frontend
+    bank_id         TEXT DEFAULT 'generic',-- banco BR ←→ Organizze `institution_id`
+    description     TEXT,                  -- 🆕 (Organizze) texto livre
+    is_default      BOOLEAN DEFAULT false, -- 🆕 (Organizze) marca cartão padrão
     archived        BOOLEAN DEFAULT false,
     created_at      TIMESTAMPTZ DEFAULT now(),
     updated_at      TIMESTAMPTZ
@@ -222,24 +231,99 @@ CREATE TABLE tags (
     UNIQUE(user_id, name)
 );
 
+-- 🆕 Faturas como entidade própria (Organizze: credit_card_invoices)
+-- Substitui o uso espalhado de bill_month/bill_year em card_expenses/bill_payments
+CREATE TABLE credit_card_invoices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    card_id         UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    due_date        DATE NOT NULL,                  -- vencimento (Organizze: date)
+    starting_date   DATE NOT NULL,                  -- início ciclo
+    closing_date    DATE NOT NULL,                  -- fechamento
+    -- amount, payment_amount, balance, previous_balance NÃO armazenados.
+    -- Calculados on-demand via VIEW ou função:
+    --   amount         = SUM(transactions.amount WHERE credit_card_invoice_id = invoice.id AND type='expense')
+    --                  - SUM(transactions.amount WHERE credit_card_invoice_id = invoice.id AND type='income')
+    --   payment_amount = SUM(transactions.amount WHERE paid_credit_card_invoice_id = invoice.id)
+    --   previous_balance = balance da invoice imediatamente anterior do mesmo card (window function)
+    --   balance        = previous_balance + amount - payment_amount
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (card_id, starting_date, closing_date)
+);
+CREATE INDEX idx_credit_card_invoices_card ON credit_card_invoices(card_id, due_date DESC);
+
+-- 🆕 Templates de recorrência (Organizze: recurrences)
+-- Substitui modelo "expand 12 transactions" por "template + geração on-demand"
+-- (absorve a seção 13.1 deste plano)
+CREATE TABLE recurrences (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    description     TEXT NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,
+    type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    account_id      UUID REFERENCES accounts(id),
+    category_id     UUID REFERENCES categories(id),
+    frequency       TEXT NOT NULL,                  -- daily/weekly/biweekly/monthly/bimonthly/quarterly/semiannual/annual
+    day_of_period   SMALLINT,                       -- ex.: dia 5 do mês
+    start_date      DATE NOT NULL,
+    end_date        DATE,                           -- NULL = indeterminado
+    last_generated  DATE,                           -- materialização incremental
+    archived        BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+
 CREATE TABLE transactions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users(id),
     account_id      UUID REFERENCES accounts(id),
     category_id     UUID REFERENCES categories(id),
     description     TEXT NOT NULL,
-    amount          NUMERIC(12,2) NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,         -- sempre positivo; sinal vem de `type`
     type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     date            DATE NOT NULL,
     notes           TEXT,
     is_paid         BOOLEAN DEFAULT true,
     is_transfer     BOOLEAN DEFAULT false,
     opposite_transaction_id UUID REFERENCES transactions(id),
-    recurrence_group TEXT,
-    deleted_at      TIMESTAMPTZ,       -- soft delete
+
+    -- 🆕 Compra de cartão (Organizze: credit_card_id + credit_card_invoice_id)
+    credit_card_id          UUID REFERENCES cards(id),
+    credit_card_invoice_id  UUID REFERENCES credit_card_invoices(id),
+
+    -- 🆕 Pagamento de fatura (Organizze: paid_credit_card_id + paid_credit_card_invoice_id)
+    paid_credit_card_id          UUID REFERENCES cards(id),
+    paid_credit_card_invoice_id  UUID REFERENCES credit_card_invoices(id),
+
+    -- 🆕 Parcelamento (antes só em card_expenses)
+    installment             SMALLINT DEFAULT 1,
+    total_installments      SMALLINT DEFAULT 1,
+    installment_group_id    UUID,                   -- agrupa parcelas de uma compra
+
+    -- 🆕 Recorrência (substitui recurrence_group string por FK pra template)
+    recurrence_id           UUID REFERENCES recurrences(id),
+
+    -- recurrence_group TEXT (legado — manter por enquanto pra compat de ETL Firestore?)
+
+    deleted_at      TIMESTAMPTZ,                    -- soft delete
     created_at      TIMESTAMPTZ DEFAULT now(),
-    updated_at      TIMESTAMPTZ
+    updated_at      TIMESTAMPTZ,
+
+    -- Constraint: as três "naturezas especiais" são exclusivas entre si
+    CHECK (
+        -- compra de cartão: credit_card_id + credit_card_invoice_id juntos
+        (credit_card_id IS NULL AND credit_card_invoice_id IS NULL)
+        OR (credit_card_id IS NOT NULL AND credit_card_invoice_id IS NOT NULL)
+    ),
+    CHECK (
+        -- pagamento de fatura: paid_credit_card_id + paid_credit_card_invoice_id juntos
+        (paid_credit_card_id IS NULL AND paid_credit_card_invoice_id IS NULL)
+        OR (paid_credit_card_id IS NOT NULL AND paid_credit_card_invoice_id IS NOT NULL)
+    )
 );
+CREATE INDEX idx_transactions_credit_card ON transactions(credit_card_id, credit_card_invoice_id) WHERE credit_card_id IS NOT NULL;
+CREATE INDEX idx_transactions_paid_credit_card ON transactions(paid_credit_card_invoice_id) WHERE paid_credit_card_invoice_id IS NOT NULL;
+CREATE INDEX idx_transactions_recurrence ON transactions(recurrence_id) WHERE recurrence_id IS NOT NULL;
 
 CREATE TABLE transaction_tags (
     transaction_id  UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
@@ -260,46 +344,18 @@ CREATE TABLE transaction_attachments (
 );
 CREATE INDEX idx_transaction_attachments_tx ON transaction_attachments(transaction_id);
 
-CREATE TABLE card_expenses (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL REFERENCES users(id),
-    card_id             UUID NOT NULL REFERENCES cards(id),
-    category_id         UUID REFERENCES categories(id),
-    description         TEXT NOT NULL,
-    amount              NUMERIC(12,2) NOT NULL,
-    type                TEXT NOT NULL DEFAULT 'expense'
-        CHECK (type IN ('income', 'expense')),  -- estorno = 'income'
-    date                DATE NOT NULL,
-    bill_month          SMALLINT NOT NULL,      -- 1-12 (Postgres convention; JS é 0-11)
-    bill_year           SMALLINT NOT NULL,
-    installment         SMALLINT DEFAULT 1,
-    total_installments  SMALLINT DEFAULT 1,
-    installment_group_id UUID,                  -- agrupa parcelas da mesma compra
-    deleted_at          TIMESTAMPTZ,            -- soft delete
-    created_at          TIMESTAMPTZ DEFAULT now(),
-    updated_at          TIMESTAMPTZ
-);
-
--- Junction: tags de card_expenses (mesmo padrão de transaction_tags)
-CREATE TABLE card_expense_tags (
-    card_expense_id UUID NOT NULL REFERENCES card_expenses(id) ON DELETE CASCADE,
-    tag_id          UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (card_expense_id, tag_id)
-);
-
-CREATE TABLE transfers (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL REFERENCES users(id),
-    from_account_id     UUID NOT NULL REFERENCES accounts(id),
-    to_account_id       UUID NOT NULL REFERENCES accounts(id),
-    out_transaction_id  UUID REFERENCES transactions(id),
-    in_transaction_id   UUID REFERENCES transactions(id),
-    amount              NUMERIC(12,2) NOT NULL,
-    date                DATE NOT NULL,
-    description         TEXT,
-    deleted_at          TIMESTAMPTZ,    -- soft delete
-    created_at          TIMESTAMPTZ DEFAULT now()
-);
+-- ❌ TABELAS REMOVIDAS NO REFACTOR DE 2026-04-15 (alinhamento Organizze):
+--
+--   card_expenses          → vira `transactions` com `credit_card_id` + `credit_card_invoice_id` populados
+--   card_expense_tags      → drop (tags ficam em `transaction_tags`, junction única)
+--   transfers              → drop como tabela; relação fica via par de `transactions` com
+--                            `opposite_transaction_id` cruzado e `is_transfer=true`.
+--                            POST /api/v1/transfers continua existindo como conveniência
+--                            mas internamente cria 2 rows em `transactions`.
+--   bill_payments          → vira `transactions` com `paid_credit_card_id`
+--                            + `paid_credit_card_invoice_id` populados.
+--
+-- Ver seção 14 pra justificativa, evidências da API Organizze, e plano de execução por ondas.
 
 CREATE TABLE budgets (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -313,21 +369,7 @@ CREATE TABLE budgets (
     UNIQUE(user_id, category_id, month, year)
 );
 
-CREATE TABLE bill_payments (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id             UUID NOT NULL REFERENCES users(id),
-    card_id             UUID NOT NULL REFERENCES cards(id),
-    account_id          UUID REFERENCES accounts(id),
-    transaction_id      UUID REFERENCES transactions(id),
-    month               SMALLINT NOT NULL,
-    year                SMALLINT NOT NULL,
-    amount              NUMERIC(12,2) NOT NULL,
-    total_bill          NUMERIC(12,2),
-    carry_over_balance  NUMERIC(12,2) DEFAULT 0,
-    is_partial          BOOLEAN DEFAULT false,
-    paid_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_at          TIMESTAMPTZ DEFAULT now()
-);
+-- (bill_payments removida — ver bloco "TABELAS REMOVIDAS" acima.)
 
 CREATE TABLE goals (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -874,15 +916,24 @@ VITE_API_URL=https://api.mypay.palmadigital.com.br
 
 ## 9. API Endpoints
 
+> **⚠️ Atualizado em 2026-04-15 (refactor Organizze).** Endpoints `/card-expenses`, `/bill-payments` removidos — viram filtros sobre `/transactions`. `/transfers` mantém POST como conveniência (cria 2 transactions atômicos), mas internamente sem tabela própria. Novos: `/credit-card-invoices`, `/recurrences`. Veja seção 14.
+
 ### Estrutura: `/api/v1/{resource}`
 
 ```
 Auth
   POST   /api/v1/auth/me                    # get/create user from Firebase token
 
-Transactions
+Transactions  (UNIFICADA: receitas, despesas, compras de cartão, pagamentos de fatura, transferências)
   GET    /api/v1/transactions               # ?month=&year=&account_id=&category_id=
-  POST   /api/v1/transactions
+                                            # &credit_card_id=&credit_card_invoice_id=
+                                            # &paid_credit_card_invoice_id=&recurrence_id=
+                                            # &is_transfer=
+  POST   /api/v1/transactions               # body pode incluir: credit_card_id+credit_card_invoice_id (compra)
+                                            # OU paid_credit_card_id+paid_credit_card_invoice_id (pagto fatura)
+                                            # OU opposite_transaction_id (parte de transferência)
+                                            # OU total_installments > 1 (gera N parcelas server-side)
+                                            # OU recurrence_id (associa a template existente)
   PUT    /api/v1/transactions/{id}
   DELETE /api/v1/transactions/{id}          # soft delete
   POST   /api/v1/transactions/{id}/restore
@@ -896,12 +947,16 @@ Cards
   PUT    /api/v1/cards/{id}
   DELETE /api/v1/cards/{id}
 
-Card Expenses
-  GET    /api/v1/card-expenses              # ?card_id=&month=&year=
-  POST   /api/v1/card-expenses
-  PUT    /api/v1/card-expenses/{id}
-  DELETE /api/v1/card-expenses/{id}         # soft delete
-  POST   /api/v1/card-expenses/{id}/restore
+Credit Card Invoices  🆕 (Organizze: faturas como entidade)
+  GET    /api/v1/credit-card-invoices       # ?card_id=
+  GET    /api/v1/credit-card-invoices/{id}  # com balance/payment_amount/previous_balance computados
+  # Auto-criadas pelo backend ao registrar primeira compra num período
+
+Recurrences  🆕 (templates — substitui modelo "expand 12")
+  GET    /api/v1/recurrences                # ?archived=
+  POST   /api/v1/recurrences
+  PUT    /api/v1/recurrences/{id}
+  DELETE /api/v1/recurrences/{id}           # archive (soft); ocorrências geradas permanecem
 
 Accounts
   GET    /api/v1/accounts
@@ -922,10 +977,10 @@ Tags
   PUT    /api/v1/tags/{id}
   DELETE /api/v1/tags/{id}
 
-Transfers
-  GET    /api/v1/transfers                  # ?month=&year=
-  POST   /api/v1/transfers                  # cria 2 transactions + transfer
-  DELETE /api/v1/transfers/{id}             # soft delete (+ transactions vinculadas)
+Transfers  (mantido como conveniência; backend cria 2 transactions com opposite_transaction_id)
+  GET    /api/v1/transfers                  # ?month=&year= — VIEW sobre transactions filtradas
+  POST   /api/v1/transfers                  # cria 2 transactions atomicamente; sem tabela transfers
+  DELETE /api/v1/transfers/{id}             # soft delete nas 2 transactions vinculadas
 
 Budgets
   GET    /api/v1/budgets                    # ?month=&year=
@@ -934,10 +989,9 @@ Budgets
   DELETE /api/v1/budgets/{id}
   POST   /api/v1/budgets/copy-previous      # copia do mês anterior
 
-Bill Payments
-  GET    /api/v1/bill-payments              # ?month=&year=
-  POST   /api/v1/bill-payments
-  DELETE /api/v1/bill-payments/{id}
+# ❌ REMOVIDOS no refactor 2026-04-15:
+# /api/v1/card-expenses/* → use /api/v1/transactions com credit_card_id no body/query
+# /api/v1/bill-payments/* → use /api/v1/transactions com paid_credit_card_invoice_id
 
 Goals
   GET    /api/v1/goals
@@ -1026,16 +1080,69 @@ Push Notifications
 - [ ] Insights: mover `insightService.js` para backend
 - [ ] Parsers determinísticos por emissor (Nubank, C6) — fase 2 da IA
 
+### 🆕 Fase B-Refactor — Alinhamento Organizze (3-5 dias) — INSERIDA 2026-04-15
+
+**Objetivo:** unificar `card_expenses` + `bill_payments` + `transfers` em `transactions`; introduzir `credit_card_invoices` e `recurrences` como entidades. **Briefing completo na seção 14.7.**
+
+> **Esta fase precede a continuação da Fase E.** Sem o refactor, hooks de `useCardExpenses`/`useBillPayments`/`useTransfers` viram filter views — não faz sentido migrar agora pra reescrever depois. Backend faz primeiro, frontend consolida em sequência.
+
+**Onda 1 — Estender entidades existentes**
+- [ ] `accounts`: adicionar `description`, `is_default`
+- [ ] `categories`: adicionar `group_id`, `fixed`, `essential`
+- [ ] `cards`: adicionar `description`, `is_default`
+- [ ] `transactions`: adicionar `credit_card_id`, `credit_card_invoice_id`, `paid_credit_card_id`, `paid_credit_card_invoice_id`, `installment`, `total_installments`, `installment_group_id`, `recurrence_id` + CHECK constraints
+- [ ] Migration alembic única
+- [ ] Atualizar schemas + mappers + tests
+
+**Onda 2 — Criar `credit_card_invoices`**
+- [ ] Model + entity + repo + schema + usecase
+- [ ] API: GET `/api/v1/credit-card-invoices?card_id=`, GET `/{id}`
+- [ ] VIEW SQL ou função pra `balance`/`payment_amount`/`previous_balance` computados
+- [ ] Lógica de auto-criação ao registrar primeira compra num período não coberto
+- [ ] Tests
+
+**Onda 3 — Criar `recurrences`**
+- [ ] Model + entity + repo + schema + usecase + API CRUD
+- [ ] Lógica de geração on-demand (chamada por list_transactions)
+- [ ] Decisão: manter `recurrence_group` legado pra ETL Firestore, ou migrar tudo pra `recurrence_id`?
+- [ ] Tests
+
+**Onda 4 — Reescrever `bill_payment` como filter view**
+- [ ] `POST /api/v1/transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id`
+- [ ] DELETE: soft delete da transaction (já cobre)
+- [ ] DROP da tabela `bill_payments` + endpoint `/bill-payments` (depois de validar zero data em prod)
+
+**Onda 5 — Reescrever `transfers` como filter view + helper**
+- [ ] `POST /api/v1/transfers` continua existindo (conveniência), mas internamente cria 2 rows em `transactions`
+- [ ] GET `/api/v1/transfers` vira VIEW/query sobre transactions filtradas
+- [ ] DROP tabela `transfers`
+
+**Onda 6 — Reescrever `card_expense` como compras de cartão**
+- [ ] DEPRECATE `POST /card-expenses`. Frontend passa a usar `POST /transactions` com `credit_card_id` + `credit_card_invoice_id`
+- [ ] Backend cria invoice se não existir (lógica da Onda 2)
+- [ ] Server-side ainda gera N parcelas via `total_installments`
+- [ ] DROP `/card-expenses` endpoint + tabela + `card_expense_tags`
+
+**Onda 7 — Cleanup**
+- [ ] Drop migrations das 4 tabelas mortas
+- [ ] Drop schemas, models, repos, usecases, APIs órfãos
+- [ ] Atualizar `_status.md` no map; marcar entity maps mortos como DEPRECATED
+
 ### Fase E — Frontend + Cutover (1-2 semanas)
 
 **Objetivo:** adaptar frontend e migrar dados.
 
 - [ ] Criar `src/api/client.js` — fetch wrapper com auth token
 - [ ] Migrar hooks: `useFirestore.js` → hooks individuais chamando API
+  - Já migrados: `tags`, `categories`, `accounts`, `transactions`, `transaction_attachments`, `cards`, `card_expenses` (será reescrito), `transfers` (será reescrito), `budgets`
+  - **Após Fase B-Refactor:** `useCardExpenses`/`useAllCardExpenses` viram filter views sobre `useTransactions`; `useBillPayments` idem; `useTransfers` idem. Adicionar: `useCreditCardInvoices`, `useRecurrences`.
+  - Pendentes ainda: `goals`, `settings` (contexts), `activities`, `imports`, `documents` (IA), `push`
 - [ ] Integrar SSE para invalidação de queries
 - [ ] Remover dependências Firebase Firestore do frontend
 - [ ] Remover variáveis VITE_S3_* e VITE_GOOGLE_AI_KEY
 - [ ] Script ETL em `mypay-api/scripts/migrate_firestore_to_postgres/` (ver seção 7.1–7.8)
+  - **Atualizado pós-refactor:** ETL precisa unificar `card_expenses` → `transactions(credit_card_id)`, `bill_payments` → `transactions(paid_credit_card_invoice_id)`, `transfers/*` → par de `transactions(opposite_transaction_id)`. Ver seção 14.6.
+- [ ] Alternativa: ETL direto do Organizze (`scripts/migrate_organizze.py` no repo `mypay`) → `mypay-api/scripts/migrate_organizze_to_postgres/` (mapping quase 1:1; ver seção 14.6)
 - [ ] Testes do ETL em `mypay-api/tests/etl/` com testcontainers
 - [ ] Dry-run do ETL em staging (múltiplas vezes)
 - [ ] Cutover big-bang (ver seção 7 e 7.7)
@@ -1253,6 +1360,8 @@ Se algum problema crítico for detectado após cutover:
 
 ### 13.1 Refatorar recorrência de `transactions` — modelo "template indeterminado"
 
+> **🔄 ABSORVIDO em 2026-04-15** pela Fase B-Refactor (Onda 3) e seção 14. A análise abaixo continua válida e foi confirmada pela validação direta da API Organizze (que faz exatamente este modelo). O timing mudou: era "pós-cutover", virou parte estruturante do refactor.
+
 **Problema atual:**
 Recorrência fixa em `transactions` (ex.: condomínio, salário, mensalidade) é implementada como **"expansão eager em 12 ocorrências"** — ao criar a despesa fixa, o frontend gera 12 rows em `transactions` com `recurrence_group` em comum (`Transactions.jsx:658-678`). Isso tem dois problemas:
 
@@ -1306,3 +1415,363 @@ ALTER TABLE transactions ADD COLUMN recurrence_template_id UUID REFERENCES recur
 **Quando atacar:** após Fase E concluída e cutover estabilizado por ~2 semanas. Antes disso o foco é não regredir features, não adicionar arquitetura nova.
 
 **Origem:** mencionado pelo usuário em 2026-04-15 durante migração de `card_expenses` ("não curto muito o expande em 12 transactions, poderia ficar indeterminado o prazo").
+
+---
+
+## 14. Decisão Arquitetural — Alinhamento com Modelo Organizze (2026-04-15)
+
+> **Mudança de direção significativa.** Validação direta na API real do Organizze (com credenciais do usuário) revelou que o modelo de dados original do myPay (que se inspirou no Organizze) **divergiu substancialmente** ao longo do tempo, criando duplicações desnecessárias. Esta seção documenta a decisão de **refatorar o backend** para retornar ao modelo unificado do Organizze antes de continuar a Fase E.
+
+### 14.1 Origem da decisão
+
+Durante a migração de `bill_payments` (2026-04-15), surgiu a pergunta:
+> *"O myPay foi modelado sobre o Organizze. Vale validar a API real antes de continuar fazendo decisões de schema."*
+
+Validação rodada usando o proxy `api/organizze-proxy.js` + credenciais `VITE_ORGANIZZE_EMAIL/VITE_ORGANIZZE_API_KEY` contra `https://api.organizze.com.br/rest/v2`. Endpoints consultados: `/accounts`, `/categories`, `/credit_cards`, `/credit_cards/{id}/invoices`, `/transactions`, `/budgets`. Endpoints `/tags` e `/recurrences` retornam 404 (não expostos publicamente, mas os campos aparecem inline em `transactions`).
+
+### 14.2 Achados — divergências fundamentais
+
+#### Divergência 1: Duplicação de tabelas pra movimentações financeiras
+
+| Tipo de movimentação | Organizze | myPay (atual) |
+|---|---|---|
+| Receita / despesa em conta | `transactions` | `transactions` |
+| Compra de cartão de crédito | `transactions` (com `credit_card_id`) | `card_expenses` ❌ tabela separada |
+| Pagamento de fatura | `transactions` (com `paid_credit_card_invoice_id`) | `bill_payments` + `transactions` ❌ duas tabelas |
+| Transferência entre contas | par de `transactions` (com `oposite_transaction_id`) | `transfers` + 2 `transactions` ❌ três rows |
+
+**Consequência:** myPay tem `notes`, `attachments`, `tags`, `type` espalhados em múltiplas tabelas com semântica inconsistente. Decisões anteriores ("dropar attachments em card_expenses porque vivem em bill_payment") foram **patches** pra essa divergência — a raiz é estrutural.
+
+#### Divergência 2: Faturas (invoices) não são entidade
+
+| Organizze | myPay (atual) |
+|---|---|
+| `credit_card_invoices` table com `id`, `due_date`, `starting_date`, `closing_date`, `amount_cents`, `payment_amount_cents`, `balance_cents`, `previous_balance_cents` | Apenas colunas `bill_month` (SMALLINT) e `bill_year` (SMALLINT) espalhadas em `card_expenses` e `bill_payments` |
+| Pagamento de fatura aponta pra `paid_credit_card_invoice_id` (FK) | `bill_payment.transaction_id` aponta pra transação genérica |
+
+**Consequência:** myPay perde:
+- Saldo carry-over entre faturas como entidade computada
+- Vista "fatura X tem N compras + Y pagamentos parciais"
+- `previous_balance` automatizado
+- Navegação direta por fatura
+
+#### Divergência 3: Recorrência expandida vs. template
+
+| Organizze | myPay (atual) |
+|---|---|
+| `recurring: true` + `recurrence_id` FK pra template | `recurrence_group: string` + 12 transactions geradas |
+| **307 transactions recurring** na conta real do usuário (feature usada extensivamente) | Limite arbitrário de 12, edição em massa frágil |
+
+Confirma a análise da seção 13.1 — Organizze valida que template-based é o padrão correto. **Não é mais "post-cutover"; faz parte do refactor agora.**
+
+#### Divergência 4: Campos faltantes em entidades existentes
+
+| Entidade | Faltante no myPay |
+|---|---|
+| `accounts` | `description` (texto livre adicional), `is_default` (marca conta padrão) |
+| `categories` | `group_id` (semantic key: 'exp_food'/'ear_salary'), `fixed` (categoria fixa), `essential` (essencial vs supérfluo), `uuid` (id global separado) |
+| `cards` | `description`, `is_default` |
+| `transactions` | `installment` + `total_installments` + `installment_group_id` (parcelamento — hoje só em card_expenses), `recurrence_id` (FK pro template) |
+
+### 14.3 Evidências (samples reais da API Organizze)
+
+#### Account
+```json
+{ "id": 41766, "name": "carteira", "type": "checking",
+  "institution_id": "default", "description": "Conta Corrente",
+  "default": true, "archived": false }
+```
+
+#### Category (subcategoria)
+```json
+{ "id": 118813973, "name": "Supermercados / Mercearia",
+  "color": "ff6600", "parent_id": 3344330,
+  "group_id": "exp_food", "kind": "expenses",
+  "fixed": false, "essential": false,
+  "uuid": "7f423cb68fc4e1db910ca9d8eeac273df1e80c41",
+  "archived": false }
+```
+
+#### Credit Card
+```json
+{ "id": 774825, "name": "C6 Bank Master Card",
+  "card_network": "default", "institution_id": "c6bank",
+  "limit_cents": 0, "closing_day": 31, "due_day": 10,
+  "description": null, "default": false, "archived": false }
+```
+
+#### Credit Card Invoice (entidade nova)
+```json
+{ "id": 312, "credit_card_id": 774825,
+  "date": "2026-01-10",                    // due_date (vencimento)
+  "starting_date": "2025-12-01",
+  "closing_date": "2025-12-31",
+  "amount_cents": 0, "payment_amount_cents": 0,
+  "balance_cents": 0, "previous_balance_cents": 0 }
+```
+
+#### Transaction — compra de cartão
+```json
+{ "id": 3109871406, "description": "Fatura Bradesco",
+  "date": "2025-11-10", "paid": true,
+  "amount_cents": -689418,                 // SIGNED no Organizze
+  "account_id": 1524327, "category_id": 603630,
+  "notes": null, "attachments_count": 1,
+  "credit_card_id": 1524327,               // ← compra de cartão
+  "credit_card_invoice_id": 310,           // ← qual fatura compõe
+  "paid_credit_card_id": null,
+  "paid_credit_card_invoice_id": null,
+  "oposite_transaction_id": null,
+  "total_installments": 1, "installment": 1,
+  "recurring": false, "recurrence_id": null,
+  "tags": [], "attachments": [{"url": "..."}] }
+```
+
+#### Transaction — pagamento de fatura
+```json
+{ "id": 3109871462, "description": "Pagamento de fatura",
+  "date": "2025-11-10", "amount_cents": -689418,
+  "account_id": 41766, "category_id": 110914800,
+  "credit_card_id": null, "credit_card_invoice_id": null,
+  "paid_credit_card_id": 1524327,          // ← qual cartão pagou
+  "paid_credit_card_invoice_id": 310,      // ← qual fatura pagou
+  "tags": [], "attachments": [] }
+```
+
+#### Transaction — recorrente
+```json
+{ "id": 2458178986, "description": "Unimed 2025",
+  "date": "2025-12-29", "amount_cents": -53222,
+  "account_id": 41766, "recurring": true,
+  "recurrence_id": 21856672,               // ← FK pro template
+  "attachments": [{"url": "..."}] }
+```
+
+#### Transaction — parcelada
+```json
+{ "id": 2458170211, "description": "Lote 5 VALENTHYM CONSTRUTORA",
+  "amount_cents": -186839,
+  "total_installments": 60, "installment": 44,
+  "recurring": false, "recurrence_id": 21856539,  // template gerador
+  "attachments_count": 2 }
+```
+
+### 14.4 Modelo proposto (alinhado Organizze)
+
+#### Tabelas que **morrem** ❌
+
+- `card_expenses` → vira `transactions` com `credit_card_id` populado
+- `card_expense_tags` → drop (junction única em `transaction_tags`)
+- `bill_payments` → vira `transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id`
+- `transfers` → drop como tabela; relação fica via par de `transactions` com `opposite_transaction_id` cruzado (se quisermos listagem dedicada, usar VIEW SQL)
+
+#### Tabelas que **evoluem**
+
+- **`transactions`** ganha:
+  - `credit_card_id UUID FK NULL` (compra de cartão)
+  - `credit_card_invoice_id UUID FK NULL` (qual fatura essa compra compõe)
+  - `paid_credit_card_id UUID FK NULL` (se é pagamento de fatura, qual cartão)
+  - `paid_credit_card_invoice_id UUID FK NULL` (qual fatura foi paga)
+  - `installment SMALLINT DEFAULT 1`
+  - `total_installments SMALLINT DEFAULT 1`
+  - `installment_group_id UUID NULL`
+  - `recurrence_id UUID FK NULL` (template gerador)
+  - **CHECK constraint:** uma transaction pode ter (`credit_card_id` + `credit_card_invoice_id`) OU (`paid_credit_card_id` + `paid_credit_card_invoice_id`) OU `opposite_transaction_id`, mas não combinações inválidas.
+- **`accounts`** ganha: `description TEXT NULL`, `is_default BOOLEAN DEFAULT false`
+- **`categories`** ganha: `group_id TEXT NULL` (semantic key tipo 'exp_food'), `fixed BOOLEAN DEFAULT false`, `essential BOOLEAN DEFAULT false`. Campo `uuid` opcional (Organizze tem; pode pular se id já é UUID).
+- **`cards`** ganha: `description TEXT NULL`, `is_default BOOLEAN DEFAULT false`. (Já tem `bank_id` ✅)
+- **`transaction_tags`** e **`transaction_attachments`** continuam como junction/tabela única — agora servem TODAS as transações (incluindo compras de cartão, pagamentos de fatura, transferências, recorrentes).
+
+#### Tabelas **novas**
+
+##### `credit_card_invoices`
+```sql
+CREATE TABLE credit_card_invoices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    card_id         UUID NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    due_date        DATE NOT NULL,                  -- vencimento (Organizze: date)
+    starting_date   DATE NOT NULL,                  -- início ciclo
+    closing_date    DATE NOT NULL,                  -- fechamento
+    -- amount, payment_amount, balance, previous_balance NÃO armazenados.
+    -- Calculados via VIEW ou função:
+    --   amount = SUM(transactions.amount WHERE credit_card_invoice_id = invoice.id)
+    --   payment_amount = SUM(transactions.amount WHERE paid_credit_card_invoice_id = invoice.id)
+    --   balance = amount - payment_amount + previous_balance
+    --   previous_balance = balance da invoice imediatamente anterior do mesmo card (window function)
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (card_id, starting_date, closing_date)
+);
+
+-- VIEW pra cálculo on-demand:
+CREATE VIEW credit_card_invoices_with_balance AS ...
+```
+
+**Geração de invoices:** quando a primeira compra é registrada num cartão pra um período (definido por `closing_day` do cartão), o backend cria automaticamente o row em `credit_card_invoices` se ainda não existir. Alternativa: job que pré-gera 12 meses na frente quando o cartão é criado.
+
+##### `recurrences` (template)
+```sql
+CREATE TABLE recurrences (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES users(id),
+    description     TEXT NOT NULL,
+    amount          NUMERIC(12,2) NOT NULL,
+    type            TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    account_id      UUID REFERENCES accounts(id),
+    category_id     UUID REFERENCES categories(id),
+    frequency       TEXT NOT NULL,                  -- monthly, weekly, biweekly, daily, ...
+    day_of_period   SMALLINT,                        -- ex.: dia 5 do mês
+    start_date      DATE NOT NULL,
+    end_date        DATE,                            -- NULL = indeterminado
+    last_generated  DATE,                            -- até que data foi materializada
+    archived        BOOLEAN DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ
+);
+```
+
+**Geração on-demand:** ao listar transactions de um mês, backend garante que `transactions` tem rows pra esse mês baseado nos templates ativos (`last_generated` evita duplicação). Cada ocorrência fica em `transactions` normal — pode ser editada individualmente sem afetar template.
+
+### 14.5 Implicações pro frontend
+
+**Hooks consolidam:**
+- `useCardExpenses(cardId, month, year)` → vira `useTransactions({ creditCardId, billMonth, billYear })` — só filtro
+- `useAllCardExpenses()` → `useTransactions({ creditCardId: 'any' })`
+- `useBillPayments(month, year)` → `useTransactions({ paidCreditCard: true, billMonth, billYear })`
+- `useTransfers(month, year)` → `useTransactions({ isTransfer: true, month, year })` (reconhecível por `oppositeTransactionId`)
+
+Hooks novos:
+- `useCreditCardInvoices(cardId)` — lista faturas do cartão com balance computado
+- `useRecurrences()` — CRUD de templates
+
+**Pages que mudam:**
+- `Cards.jsx` — UI de fatura passa a ler de `useCreditCardInvoices` + filtrar transactions por `credit_card_invoice_id`
+- `Accounts.jsx` (transferências) — passa a usar par de transactions com `opposite_transaction_id`
+- `Budgets.jsx` — sem mudança
+- Possivelmente nova page `Recurrences.jsx` ou seção em Settings pra gerenciar templates
+
+**Hooks já migrados que continuam intactos:**
+- `useTags`, `useCategories` (ganha campos opcionais), `useAccounts` (ganha campos opcionais), `useTransactions` (estende), `useBudgets`
+
+**Hooks que viram filter views (descartar implementação atual):**
+- `useCardExpenses`, `useAllCardExpenses` (`mapCardExpense`/`buildCardExpensePayload` viram desnecessários)
+- `useTransfers` (`mapTransfer`/orquestração viram desnecessários)
+- `useBillPayments` (será reescrito como filter view antes mesmo de migrar)
+
+### 14.6 Implicações pro ETL
+
+#### ETL do Organizze — agora trivial
+
+O script `scripts/migrate_organizze.py` (no repo `mypay`) hoje converte Organizze → Firestore. **No novo modelo, é mapeamento quase 1:1 com o Postgres.** Pode até virar `mypay-api/scripts/migrate_organizze_to_postgres.py` substituindo o ETL via Firestore.
+
+Mapping direto:
+- `transactions[].amount_cents` → `transactions.amount = abs(cents)/100`, `type = 'income' if cents > 0 else 'expense'`
+- `transactions[].credit_card_id` → `transactions.credit_card_id` (resolve via id_map)
+- `transactions[].credit_card_invoice_id` → `transactions.credit_card_invoice_id`
+- `transactions[].paid_credit_card_invoice_id` → idem
+- `transactions[].oposite_transaction_id` → `transactions.opposite_transaction_id` (corrigindo o typo)
+- `transactions[].recurrence_id` → cria `recurrences` row se não existe, depois liga
+- `credit_card_invoices` → mapping 1:1 (drop dos campos derivados — calculados via VIEW)
+
+#### ETL do Firestore (myPay atual)
+
+ETL precisa **unificar** durante a migração:
+- `card_expenses[*]` → `transactions` com `credit_card_id` populado
+- `bill_payments[*]` → `transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id` populados (precisa antes garantir que `credit_card_invoices` exista pra cada `bill_month`/`bill_year`)
+- `transfers[*]` → 2 `transactions` com `opposite_transaction_id` cruzado (drop de `transfers/*`)
+
+### 14.7 Plano de execução do refactor backend
+
+> **Esse é o briefing pra sessão Claude no repo `mypay-api`.**
+
+#### Pré-requisitos
+
+1. Ler este plano completo (especialmente seção 14)
+2. Ler entity maps em `mypay-api/.claude/map/entities/`:
+   - `transactions.md` (estendido)
+   - `accounts.md`, `categories.md`, `cards.md` (campos novos)
+   - `credit-card-invoices.md` (novo)
+   - `recurrences.md` (novo)
+   - `card-expenses.md`, `bill-payments.md`, `transfers.md` (marcados como **DEPRECATED** — código existe mas vai morrer)
+3. Confirmar que migration alembic atual (`a5f8b2d1c3e7`) está aplicada em staging
+
+#### Ondas de execução
+
+**Onda 1 — Estender entidades existentes**
+- Adicionar campos a `accounts` (description, is_default), `categories` (group_id, fixed, essential), `cards` (description, is_default)
+- Adicionar campos a `transactions` (credit_card_id, credit_card_invoice_id, paid_credit_card_id, paid_credit_card_invoice_id, installment, total_installments, installment_group_id, recurrence_id)
+- Migration alembic única
+- Atualizar schemas Pydantic + mappers
+- Tests existentes devem continuar passando
+
+**Onda 2 — Criar `credit_card_invoices`**
+- Model + entity + repo + schema + usecase
+- API: GET `/api/v1/credit-card-invoices?card_id=`, GET `/{id}`
+- VIEW SQL `credit_card_invoices_with_balance` (ou função Python que calcula balance/previous_balance)
+- Lógica de auto-criação de invoice quando primeira compra é registrada num período não coberto
+- Tests
+
+**Onda 3 — Criar `recurrences`**
+- Model + entity + repo + schema + usecase + API CRUD
+- Lógica de geração on-demand (chamada por list_transactions: garantir rows materializados pro período visualizado)
+- Tests
+- **NOTA:** a refatoração de recurrence em transactions **substitui** o `recurrence_group` (string) atual. Decidir: manter `recurrence_group` por compat ou drop?
+
+**Onda 4 — Reescrever bill_payment usecase como filter view de transactions**
+- POST `/api/v1/transactions` com `paid_credit_card_id` + `paid_credit_card_invoice_id` populados (sem tabela `bill_payments`)
+- DELETE: soft delete da transaction (já cobre tudo)
+- GET filtros já cobertos por `/api/v1/transactions?paid_credit_card_id=...`
+- Eventualmente DROP da tabela `bill_payments` (depois de validar que não tem dado em prod — não tem porque ETL ainda não rodou)
+
+**Onda 5 — Reescrever transfer usecase**
+- POST `/api/v1/transfers` continua existindo como **conveniência** (1 chamada cria 2 transactions vinculadas)
+- Mas backend agora não tem tabela `transfers` — só cria 2 rows em `transactions` com `opposite_transaction_id` + `is_transfer=true`
+- GET `/api/v1/transfers` vira VIEW/query sobre transactions filtradas
+- DROP tabela `transfers`
+
+**Onda 6 — Reescrever card_expense como compras de cartão**
+- POST `/api/v1/card-expenses` → DEPRECATED. Frontend passa a usar `POST /api/v1/transactions` com `credit_card_id` + `credit_card_invoice_id`
+- Backend cria invoice se não existir (lógica da Onda 2)
+- Server-side ainda gera N parcelas via `total_installments`
+- Eventualmente DROP `/card-expenses` endpoint + tabela
+
+**Onda 7 — Cleanup**
+- Drop migrations das 4 tabelas mortas (card_expenses, card_expense_tags, bill_payments, transfers)
+- Drop schemas, models, repos, usecases, APIs órfãos
+- Atualizar `_status.md` no map
+
+#### Critérios de aceite (por onda)
+
+- ✅ Tests passam após cada onda (sem regressão)
+- ✅ Migration alembic up + down rodam limpos
+- ✅ Endpoint smoke test via Swagger UI ou curl
+- ✅ Entity maps refletem mudanças
+
+### 14.8 Estado do trabalho atual descartado
+
+Ao iniciar este refactor, o seguinte trabalho da Fase E **continua válido**:
+- ✅ `tags`, `categories`, `accounts` (precisa adicionar mapping de campos novos), `transactions` (precisa estender mapping), `transaction_attachments`, `budgets`
+
+E o seguinte trabalho **será reescrito** quando a Onda correspondente do refactor backend chegar:
+- 🔄 `cards` — adicionar `description`, `is_default` no mapper
+- 🔄 `card_expenses` (ondas 2+6) — vai virar filter sobre `useTransactions`
+- 🔄 `transfers` (onda 5) — POST `/transfers` permanece como conveniência mas internamente é par de transactions
+- 🔴 `bill_payments` (onda 4) — não faz sentido migrar agora; vai ser reescrito como filter sobre `useTransactions` na onda 4
+
+### 14.9 Risco e custo
+
+- **Esforço estimado:** 3-5 dias backend + 1-2 dias frontend (consolidação dos hooks)
+- **Trabalho descartado:** ~3 hooks da Fase E (`useCardExpenses`, `useTransfers`, e a migração planejada de `useBillPayments`). Código fica como referência mas vai ser reescrito.
+- **Risco baixo de regressão de produção:** Firestore ainda tá no ar; backend não tem dados em prod. Migration destrutiva é segura.
+- **Risco de escopo:** refactor pode revelar outras divergências. Mitigação: cada onda é independente — se onda 3 (recurrences) virar projeto grande, isolar como Fase pós-cutover novamente.
+
+### 14.10 Decisão registrada
+
+- **Data:** 2026-04-15
+- **Quem decidiu:** usuário, após validação direta da API Organizze
+- **Motivação:** "do organizze eu gosto como ele atua, podemos refatorar [...] como gerencia contas, tags, categoria, transacoes eram perfeitas"
+- **Próximo passo concreto:** sessão Claude no repo `mypay-api` lê este plano e executa Onda 1.
+
+### 14.11 Absorção da seção 13.1
+
+A seção 13.1 ("Roadmap pós-cutover — refatorar recorrência de transactions") fica **absorvida pela Onda 3** deste refactor. Não é mais "pós-cutover" — vira parte estruturante do novo modelo. A análise técnica daquela seção continua válida; o que muda é o timing.
