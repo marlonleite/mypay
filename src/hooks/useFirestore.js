@@ -1,23 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-// Firestore direto ainda necessário pra useBillPayments (próxima entidade na fila Fase E).
-// Remover quando bill_payments migrar.
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  addDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp
-} from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
-import { parseLocalDate } from '../utils/helpers'
+// 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
+// pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
+// de dados (firestore) saiu deste arquivo após F4 da Fase E pós-refactor.
 
 // Transform: API response → frontend shape
 // Nota: campo "paid" (não "isPaid") — Firestore sempre usou "paid"
+// Pós Fase B-Refactor (Organizze): transactions é tabela UNIFICADA — receitas,
+// despesas, compras de cartão, pagamentos de fatura, pares de transferência e
+// ocorrências de recorrência vivem aqui (FKs novas indicam o tipo).
 function mapTransaction(t) {
   return {
     id: t.id,
@@ -32,9 +23,21 @@ function mapTransaction(t) {
     paid: t.is_paid,
     isTransfer: t.is_transfer,
     oppositeTransactionId: t.opposite_transaction_id ?? null,
-    recurrenceGroup: t.recurrence_group ?? null,
+    // 🆕 Onda 1+6 (compra de cartão)
+    creditCardId: t.credit_card_id ?? null,
+    creditCardInvoiceId: t.credit_card_invoice_id ?? null,
+    // 🆕 Onda 1+4 (pagamento de fatura)
+    paidCreditCardId: t.paid_credit_card_id ?? null,
+    paidCreditCardInvoiceId: t.paid_credit_card_invoice_id ?? null,
+    // 🆕 Onda 1 (parcelamento — antes só em card_expenses)
+    installment: typeof t.installment === 'number' ? t.installment : 1,
+    totalInstallments: typeof t.total_installments === 'number' ? t.total_installments : 1,
+    installmentGroupId: t.installment_group_id ?? null,
+    // 🆕 Onda 3 (FK pra template recurrences); recurrence_group string foi removido na Onda 7
+    recurrenceId: t.recurrence_id ?? null,
     tags: t.tags ? t.tags.map(tag => tag.name) : [],
     createdAt: t.created_at ? new Date(t.created_at) : null,
+    updatedAt: t.updated_at ? new Date(t.updated_at) : null,
   }
 }
 
@@ -47,7 +50,10 @@ async function resolveTagIds(tagNames, apiClient) {
     .filter(Boolean)
 }
 
-// Converte payload frontend (camelCase) → API (snake_case)
+// Converte payload frontend (camelCase) → API (snake_case).
+// Pós Fase B-Refactor (Organizze): aceita campos novos do modelo unificado.
+// Constraint do backend: credit_card_invoice_id requer credit_card_id;
+// paid_credit_card_id e paid_credit_card_invoice_id devem vir juntos.
 async function buildTransactionPayload(data, apiClient) {
   const tag_ids = data.tags !== undefined
     ? await resolveTagIds(data.tags, apiClient)
@@ -62,12 +68,24 @@ async function buildTransactionPayload(data, apiClient) {
       ? data.date.toISOString().slice(0, 10)
       : data.date,
     account_id: data.accountId ?? null,
-    category_id: data.categoryId ?? null,
+    // Form de Transactions.jsx usa `category` (legacy Firestore name); aceita ambos.
+    category_id: data.categoryId ?? data.category ?? null,
     notes: data.notes ?? null,
     is_paid: data.paid ?? true,
     is_transfer: data.isTransfer ?? false,
     opposite_transaction_id: data.oppositeTransactionId ?? null,
-    recurrence_group: data.recurrenceGroup ?? null,
+    // 🆕 Onda 1+6 — compra de cartão (invoice_id é opcional; backend auto-resolve)
+    credit_card_id: data.creditCardId ?? null,
+    credit_card_invoice_id: data.creditCardInvoiceId ?? null,
+    // 🆕 Onda 1+4 — pagamento de fatura
+    paid_credit_card_id: data.paidCreditCardId ?? null,
+    paid_credit_card_invoice_id: data.paidCreditCardInvoiceId ?? null,
+    // 🆕 Onda 1 — parcelamento (backend gera N rows quando total_installments > 1)
+    installment: data.installment ?? 1,
+    total_installments: data.totalInstallments ?? data.installments ?? 1,
+    installment_group_id: data.installmentGroupId ?? null,
+    // 🆕 Onda 3 — vínculo a template de recorrência (substitui recurrence_group string)
+    recurrence_id: data.recurrenceId ?? null,
   }
 
   if (tag_ids !== undefined) payload.tag_ids = tag_ids
@@ -152,25 +170,11 @@ export function useTransactions(month, year, dateRange) {
     await fetchTransactions()
   }
 
-  const updateRecurrenceGroup = async (recurrenceGroup, updates) => {
-    if (!user) throw new Error('Usuário não autenticado')
-    const { apiClient } = await import('../services/apiClient')
-    const payload = await buildTransactionPayload(updates, apiClient)
-    const result = await apiClient.put(
-      `/api/v1/transactions/recurrence/${recurrenceGroup}`,
-      payload
-    )
-    await fetchTransactions()
-    return Array.isArray(result) ? result.length : 0
-  }
-
-  const deleteRecurrenceGroup = async (recurrenceGroup) => {
-    if (!user) throw new Error('Usuário não autenticado')
-    const { apiClient } = await import('../services/apiClient')
-    await apiClient.delete(`/api/v1/transactions/recurrence/${recurrenceGroup}`)
-    await fetchTransactions()
-    return 0
-  }
+  // ❌ updateRecurrenceGroup / deleteRecurrenceGroup REMOVIDOS na Onda 7 do refactor.
+  // O backend não tem mais coluna `recurrence_group` (string) nem endpoints batch
+  // `/transactions/recurrence/{group}`. Recurrence vive em `recurrences` (template) +
+  // FK `recurrence_id` em transactions. Edição em massa de "fixed" deve ir pelo
+  // template (PUT /api/v1/recurrences/{id}) — ver hook `useRecurrences` (F6).
 
   return {
     transactions,
@@ -179,8 +183,6 @@ export function useTransactions(month, year, dateRange) {
     addTransaction,
     updateTransaction,
     deleteTransaction,
-    updateRecurrenceGroup,
-    deleteRecurrenceGroup
   }
 }
 
@@ -201,6 +203,8 @@ function mapCard(c) {
     color: c.color,
     icon: c.icon,
     bankId: c.bank_id ?? 'generic',
+    description: c.description ?? null,        // 🆕 Onda 1 (Organizze)
+    isDefault: c.is_default ?? false,          // 🆕 Onda 1 (Organizze) — marca cartão padrão
     archived: c.archived,
     createdAt: c.created_at ? new Date(c.created_at) : null,
     updatedAt: c.updated_at ? new Date(c.updated_at) : null,
@@ -221,6 +225,8 @@ function buildCardPayload(data) {
   if (data.color !== undefined) payload.color = data.color
   if (data.icon !== undefined) payload.icon = data.icon
   if (data.bankId !== undefined) payload.bank_id = data.bankId
+  if (data.description !== undefined) payload.description = data.description  // 🆕
+  if (data.isDefault !== undefined) payload.is_default = data.isDefault       // 🆕
   if (data.archived !== undefined) payload.archived = data.archived
   return payload
 }
@@ -293,37 +299,307 @@ export function useCards() {
   }
 }
 
-// Transform: API response (snake_case, 1-indexed month) → frontend shape (camelCase, 0-indexed)
-function mapCardExpense(e) {
+// =====================================================================
+// Credit Card Invoices — 🆕 entidade adicionada na Onda 2 do refactor.
+// Faturas vivem como entidade própria; compras (`transactions.credit_card_invoice_id`)
+// e pagamentos (`transactions.paid_credit_card_invoice_id`) referenciam invoice.id.
+// Backend computa balance/payment_amount/previous_balance via window function.
+// =====================================================================
+
+// Transform: API response (snake_case + decimals como string) → frontend shape.
+function mapCreditCardInvoice(i) {
+  const toNumber = (v) => (v !== null && v !== undefined ? parseFloat(v) : 0)
   return {
-    id: e.id,
-    cardId: e.card_id,
-    category: e.category_id, // mantém nome legado `category` na UI; valor é UUID
-    description: e.description,
-    amount: parseFloat(e.amount),
-    type: e.type, // 'income' | 'expense'
-    // "T12:00:00" garante interpretação local (evita UTC shift)
-    date: e.date ? new Date(e.date + 'T12:00:00') : null,
-    billMonth: typeof e.bill_month === 'number' ? e.bill_month - 1 : null, // 1-indexed (API) → 0-indexed (JS)
-    billYear: e.bill_year,
-    installment: e.installment,
-    totalInstallments: e.total_installments,
-    installmentGroupId: e.installment_group_id ?? null,
-    tags: e.tags ? e.tags.map(t => t.name) : [],
-    createdAt: e.created_at ? new Date(e.created_at) : null,
-    updatedAt: e.updated_at ? new Date(e.updated_at) : null,
+    id: i.id,
+    cardId: i.card_id,
+    // due_date é o vencimento (ex.: 10/04). dateNoon evita UTC shift.
+    dueDate: i.due_date ? new Date(i.due_date + 'T12:00:00') : null,
+    startingDate: i.starting_date ? new Date(i.starting_date + 'T12:00:00') : null,
+    closingDate: i.closing_date ? new Date(i.closing_date + 'T12:00:00') : null,
+    // Computed fields:
+    amount: toNumber(i.amount),                       // soma compras - estornos
+    paymentAmount: toNumber(i.payment_amount),        // soma pagamentos alocados
+    previousBalance: toNumber(i.previous_balance),    // carry-over fatura anterior
+    balance: toNumber(i.balance),                     // previous_balance + amount - payment_amount
+    createdAt: i.created_at ? new Date(i.created_at) : null,
   }
 }
 
-// camelCase (frontend) → snake_case (API). Resolve tag names → UUIDs e billMonth 0→1.
-async function buildCardExpensePayload(data, apiClient) {
+// Hook pra faturas de um cartão. Sem cardId, retorna lista vazia (não busca tudo).
+// Backend: GET /api/v1/credit-card-invoices?card_id=X (lista todas as invoices do cartão).
+//
+// Helpers expostos:
+// - findInvoiceByDueMonth(month, year): retorna invoice cujo due_date cai no mês/ano (JS, 0-indexed).
+//   Útil pro fluxo "pagar fatura de abril" — é a invoice que vence em abril.
+// - findInvoiceForDate(date): retorna invoice que cobre essa data (entre starting/closing).
+//   Útil pra saber em qual fatura uma compra cai.
+export function useCreditCardInvoices(cardId) {
+  const { user } = useAuth()
+  const [invoices, setInvoices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchInvoices = useCallback(async () => {
+    if (!user || !cardId) {
+      setInvoices([])
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+      // Ordena por due_date desc — fatura mais recente primeiro.
+      const sorted = [...data].sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''))
+      setInvoices(sorted.map(mapCreditCardInvoice))
+    } catch (err) {
+      console.error('Error fetching credit card invoices:', err)
+      setError('Erro ao carregar faturas')
+    } finally {
+      setLoading(false)
+    }
+  }, [user, cardId])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchInvoices()
+  }, [fetchInvoices])
+
+  // month: 0-indexed (JS); year: 4 dígitos.
+  const findInvoiceByDueMonth = (month, year) => {
+    return invoices.find(inv =>
+      inv.dueDate &&
+      inv.dueDate.getMonth() === month &&
+      inv.dueDate.getFullYear() === year
+    )
+  }
+
+  const findInvoiceForDate = (date) => {
+    if (!date) return null
+    const target = date instanceof Date ? date : new Date(date)
+    return invoices.find(inv =>
+      inv.startingDate && inv.closingDate &&
+      target >= inv.startingDate && target <= inv.closingDate
+    )
+  }
+
+  // Re-fetch (útil após criar/pagar transação que afeta computed fields).
+  const refresh = fetchInvoices
+
+  return {
+    invoices,
+    loading,
+    error,
+    findInvoiceByDueMonth,
+    findInvoiceForDate,
+    refresh,
+  }
+}
+
+// =====================================================================
+// Recurrences — 🆕 entidade adicionada na Onda 3 do refactor (Organizze).
+// Templates de recorrência (condomínio, salário, mensalidade). Backend
+// materializa ocorrências on-demand em `transactions.list` quando month+year
+// são fornecidos — substitui o modelo "expand 12 transactions" do Firestore.
+//
+// Endpoints (sem DELETE — só archive/unarchive):
+//   GET    /api/v1/recurrences?include_archived=
+//   POST   /api/v1/recurrences
+//   GET    /api/v1/recurrences/{id}
+//   PUT    /api/v1/recurrences/{id}
+//   PUT    /api/v1/recurrences/{id}/archive
+//   PUT    /api/v1/recurrences/{id}/unarchive
+// =====================================================================
+
+// Frequencies aceitas pelo backend (Literal type em RecurrenceCreate).
+export const RECURRENCE_FREQUENCIES = [
+  'daily',
+  'weekly',
+  'biweekly',
+  'monthly',
+  'bimonthly',
+  'quarterly',
+  'semiannual',
+  'annual',
+]
+
+// Transform: API response (snake_case) → frontend shape (camelCase).
+function mapRecurrence(r) {
+  return {
+    id: r.id,
+    description: r.description,
+    amount: parseFloat(r.amount),
+    type: r.type, // 'income' | 'expense'
+    accountId: r.account_id ?? null,
+    categoryId: r.category_id ?? null,
+    frequency: r.frequency,
+    dayOfPeriod: r.day_of_period ?? null,
+    startDate: r.start_date ? new Date(r.start_date + 'T12:00:00') : null,
+    endDate: r.end_date ? new Date(r.end_date + 'T12:00:00') : null,
+    lastGenerated: r.last_generated ? new Date(r.last_generated + 'T12:00:00') : null,
+    archived: r.archived,
+    createdAt: r.created_at ? new Date(r.created_at) : null,
+    updatedAt: r.updated_at ? new Date(r.updated_at) : null,
+  }
+}
+
+// camelCase → snake_case. Datas viram 'YYYY-MM-DD'.
+function buildRecurrencePayload(data) {
+  const toIsoDate = (d) => {
+    if (!d) return null
+    if (d instanceof Date) return d.toISOString().slice(0, 10)
+    return d // assume já é string ISO
+  }
+
+  const payload = {}
+  if (data.description !== undefined) payload.description = data.description
+  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.type !== undefined) payload.type = data.type
+  if (data.accountId !== undefined) payload.account_id = data.accountId
+  if (data.categoryId !== undefined) payload.category_id = data.categoryId
+  if (data.frequency !== undefined) payload.frequency = data.frequency
+  if (data.dayOfPeriod !== undefined) payload.day_of_period = data.dayOfPeriod
+  if (data.startDate !== undefined) payload.start_date = toIsoDate(data.startDate)
+  if (data.endDate !== undefined) payload.end_date = toIsoDate(data.endDate)
+  return payload
+}
+
+// Hook pra templates de recorrência. Sem parâmetros, retorna apenas ativos
+// (archived=false). Passe { includeArchived: true } pra ver todos.
+export function useRecurrences({ includeArchived = false } = {}) {
+  const { user } = useAuth()
+  const [recurrences, setRecurrences] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchRecurrences = useCallback(async () => {
+    if (!user) {
+      setRecurrences([])
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      const qs = includeArchived ? '?include_archived=true' : ''
+      const data = await apiClient.get(`/api/v1/recurrences${qs}`)
+      // Ordenação: ativos primeiro, depois por description.
+      const sorted = [...data].sort((a, b) => {
+        if (a.archived !== b.archived) return a.archived ? 1 : -1
+        return (a.description ?? '').localeCompare(b.description ?? '')
+      })
+      setRecurrences(sorted.map(mapRecurrence))
+    } catch (err) {
+      console.error('Error fetching recurrences:', err)
+      setError('Erro ao carregar recorrências')
+    } finally {
+      setLoading(false)
+    }
+  }, [user, includeArchived])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchRecurrences()
+  }, [fetchRecurrences])
+
+  const addRecurrence = async (data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
+    // Defaults: startDate hoje, type expense, frequency monthly se omitidos.
+    const payload = buildRecurrencePayload({
+      type: 'expense',
+      frequency: 'monthly',
+      startDate: new Date(),
+      ...data,
+    })
+    const created = await apiClient.post('/api/v1/recurrences', payload)
+    await fetchRecurrences()
+    return mapRecurrence(created)
+  }
+
+  const updateRecurrence = async (id, data) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
+    const updated = await apiClient.put(`/api/v1/recurrences/${id}`, buildRecurrencePayload(data))
+    await fetchRecurrences()
+    return mapRecurrence(updated)
+  }
+
+  // Backend não tem DELETE — só archive (preserva ocorrências já materializadas).
+  const archiveRecurrence = async (id) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
+    const updated = await apiClient.put(`/api/v1/recurrences/${id}/archive`, {})
+    await fetchRecurrences()
+    return mapRecurrence(updated)
+  }
+
+  const unarchiveRecurrence = async (id) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
+    const updated = await apiClient.put(`/api/v1/recurrences/${id}/unarchive`, {})
+    await fetchRecurrences()
+    return mapRecurrence(updated)
+  }
+
+  const refresh = fetchRecurrences
+
+  return {
+    recurrences,
+    loading,
+    error,
+    addRecurrence,
+    updateRecurrence,
+    archiveRecurrence,
+    unarchiveRecurrence,
+    refresh,
+  }
+}
+
+// Transform: transaction (modelo unificado pós-Onda 6) → shape legado de card_expense.
+// Pós Fase B-Refactor: card_expenses table foi DROPPED; compras de cartão agora
+// vivem em `transactions` com `credit_card_id` populado. Esta camada de adaptação
+// preserva a interface esperada pelos consumidores (Cards.jsx, Dashboard, Reports).
+//
+// IMPORTANTE: `billMonth`/`billYear` agora são DERIVADOS de `transaction.date`
+// (aproximação — não considera closing_day do cartão). Pra precisão correta da
+// fatura (que pode shiftar uma compra do dia 31/jan pra fatura de fevereiro),
+// usar `useCreditCardInvoices` (F5) e fazer JOIN via `creditCardInvoiceId`.
+function mapTransactionAsCardExpense(t) {
+  const date = t.date ? new Date(t.date + 'T12:00:00') : null
+  return {
+    id: t.id,
+    cardId: t.credit_card_id,
+    creditCardInvoiceId: t.credit_card_invoice_id ?? null,
+    category: t.category_id,
+    description: t.description,
+    amount: parseFloat(t.amount),
+    type: t.type,
+    date,
+    // Aproximação até F5 expor invoice's starting/closing dates:
+    billMonth: date ? date.getMonth() : null,   // 0-indexed (JS)
+    billYear: date ? date.getFullYear() : null,
+    installment: typeof t.installment === 'number' ? t.installment : 1,
+    totalInstallments: typeof t.total_installments === 'number' ? t.total_installments : 1,
+    installmentGroupId: t.installment_group_id ?? null,
+    tags: t.tags ? t.tags.map(tag => tag.name) : [],
+    notes: t.notes ?? null,
+    createdAt: t.created_at ? new Date(t.created_at) : null,
+    updatedAt: t.updated_at ? new Date(t.updated_at) : null,
+  }
+}
+
+// camelCase (frontend, shape legado de card_expense) → payload /transactions com credit_card_id.
+// Backend auto-resolve `credit_card_invoice_id` se omitido (Onda 6 — invoice_resolution.ensure_invoice_for_period).
+async function buildCardExpenseAsTransactionPayload(data, apiClient) {
   const tag_ids = data.tags !== undefined
     ? await resolveTagIds(data.tags, apiClient)
     : undefined
 
   const payload = {}
 
-  if (data.cardId !== undefined) payload.card_id = data.cardId
+  if (data.cardId !== undefined) payload.credit_card_id = data.cardId
+  if (data.creditCardInvoiceId !== undefined) payload.credit_card_invoice_id = data.creditCardInvoiceId
   if (data.category !== undefined) payload.category_id = data.category || null
   if (data.categoryId !== undefined) payload.category_id = data.categoryId || null
   if (data.description !== undefined) payload.description = data.description
@@ -334,21 +610,21 @@ async function buildCardExpensePayload(data, apiClient) {
       ? data.date.toISOString().slice(0, 10)
       : data.date
   }
-  // billMonth: 0-indexed (JS) → 1-indexed (API)
-  if (data.billMonth !== undefined && data.billMonth !== null) {
-    payload.bill_month = data.billMonth + 1
-  }
-  if (data.billYear !== undefined) payload.bill_year = data.billYear
-  // installments: backend gera N parcelas server-side via total_installments
+  if (data.notes !== undefined) payload.notes = data.notes
+  // Parcelamento: frontend ainda gera N rows manualmente em fluxos legacy.
+  // Onda 6 backend NÃO splita server-side em /transactions (só no antigo /card-expenses).
+  if (data.installment !== undefined) payload.installment = data.installment
   if (data.installments !== undefined) payload.total_installments = data.installments
   if (data.totalInstallments !== undefined) payload.total_installments = data.totalInstallments
+  if (data.installmentGroupId !== undefined) payload.installment_group_id = data.installmentGroupId
   if (tag_ids !== undefined) payload.tag_ids = tag_ids
 
   return payload
 }
 
-// Hook para despesas do cartão — migrado para REST API (GET /api/v1/card-expenses)
-// month/year são 0-indexed na chamada (JS); o mapping converte pra 1-indexed na URL.
+// Hook para despesas do cartão — agora FILTER VIEW sobre /api/v1/transactions
+// (post-refactor: tabela `card_expenses` foi DROPPED na Onda 6).
+// Interface preservada: { expenses, loading, error, addCardExpense, updateCardExpense, deleteCardExpense }.
 export function useCardExpenses(cardId, month, year) {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
@@ -365,12 +641,15 @@ export function useCardExpenses(cardId, month, year) {
     try {
       const { apiClient } = await import('../services/apiClient')
       const params = new URLSearchParams()
-      if (cardId) params.set('card_id', cardId)
+      if (cardId) params.set('credit_card_id', cardId)
       if (typeof month === 'number') params.set('month', String(month + 1))
       if (typeof year === 'number') params.set('year', String(year))
       const qs = params.toString()
-      const data = await apiClient.get(`/api/v1/card-expenses${qs ? `?${qs}` : ''}`)
-      setExpenses(data.map(mapCardExpense))
+      const data = await apiClient.get(`/api/v1/transactions${qs ? `?${qs}` : ''}`)
+      // Filtro defensivo: se backend não filtrou por credit_card_id (caller omitiu),
+      // ainda retorna só transactions de cartão.
+      const cardTxns = cardId ? data : data.filter(t => t.credit_card_id)
+      setExpenses(cardTxns.map(mapTransactionAsCardExpense))
     } catch (err) {
       console.error('Error fetching card expenses:', err)
       setError('Erro ao carregar despesas do cartão')
@@ -387,35 +666,31 @@ export function useCardExpenses(cardId, month, year) {
   const addCardExpense = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const payload = await buildCardExpensePayload(data, apiClient)
-    // Defaults obrigatórios pelo backend caso o caller não passe billMonth/billYear:
-    if (payload.bill_month === undefined && data.date) {
-      const parsed = parseLocalDate(data.date)
-      payload.bill_month = parsed.getMonth() + 1
-    }
-    if (payload.bill_year === undefined && data.date) {
-      const parsed = parseLocalDate(data.date)
-      payload.bill_year = parsed.getFullYear()
-    }
+    const payload = await buildCardExpenseAsTransactionPayload(data, apiClient)
+    // type default
     if (payload.type === undefined) payload.type = 'expense'
-    const created = await apiClient.post('/api/v1/card-expenses', payload)
+    // credit_card_id obrigatório no novo modelo
+    if (!payload.credit_card_id) {
+      throw new Error('cardId é obrigatório para criar despesa de cartão')
+    }
+    const created = await apiClient.post('/api/v1/transactions', payload)
     await fetchExpenses()
-    return mapCardExpense(created)
+    return mapTransactionAsCardExpense(created)
   }
 
   const updateCardExpense = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const payload = await buildCardExpensePayload(data, apiClient)
-    const updated = await apiClient.put(`/api/v1/card-expenses/${id}`, payload)
+    const payload = await buildCardExpenseAsTransactionPayload(data, apiClient)
+    const updated = await apiClient.put(`/api/v1/transactions/${id}`, payload)
     await fetchExpenses()
-    return mapCardExpense(updated)
+    return mapTransactionAsCardExpense(updated)
   }
 
   const deleteCardExpense = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    await apiClient.delete(`/api/v1/card-expenses/${id}`)
+    await apiClient.delete(`/api/v1/transactions/${id}`)
     await fetchExpenses()
   }
 
@@ -429,7 +704,12 @@ export function useCardExpenses(cardId, month, year) {
   }
 }
 
-// Hook para pegar todas as despesas de cartão (sem filtros) — migrado.
+// Hook para todas as despesas de cartão (sem filtro de mês). Filter view sobre
+// /api/v1/transactions retornando apenas as com credit_card_id != null.
+//
+// Performance: backend não tem filtro `is_credit_card=true` — o GET retorna TODAS
+// transactions e filtramos client-side. Aceitável pra single-user; revisitar se virar
+// multi-tenant ou se o volume crescer. Alternativa futura: filtro server-side.
 export function useAllCardExpenses() {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
@@ -444,8 +724,9 @@ export function useAllCardExpenses() {
 
     try {
       const { apiClient } = await import('../services/apiClient')
-      const data = await apiClient.get('/api/v1/card-expenses')
-      setExpenses(data.map(mapCardExpense))
+      const data = await apiClient.get('/api/v1/transactions')
+      const cardTxns = data.filter(t => t.credit_card_id)
+      setExpenses(cardTxns.map(mapTransactionAsCardExpense))
     } catch (err) {
       console.error('Error fetching all card expenses:', err)
     } finally {
@@ -613,6 +894,8 @@ function mapAccount(a) {
     icon: a.icon,
     color: a.color,
     bankId: a.bank_id ?? 'generic',
+    description: a.description ?? null,        // 🆕 Onda 1 (Organizze)
+    isDefault: a.is_default ?? false,          // 🆕 Onda 1 (Organizze) — marca conta padrão
     balance: a.balance !== null && a.balance !== undefined
       ? parseFloat(a.balance)
       : 0,
@@ -630,6 +913,8 @@ function buildAccountPayload(data) {
   if (data.icon !== undefined) payload.icon = data.icon
   if (data.color !== undefined) payload.color = data.color
   if (data.bankId !== undefined) payload.bank_id = data.bankId
+  if (data.description !== undefined) payload.description = data.description  // 🆕
+  if (data.isDefault !== undefined) payload.is_default = data.isDefault       // 🆕
   if (data.balance !== undefined) payload.balance = data.balance
   if (data.archived !== undefined) payload.archived = data.archived
   return payload
@@ -1011,73 +1296,80 @@ export function useBudgets(month, year) {
   }
 }
 
-// Hook para pagamentos de fatura de cartão
+// Transform: transaction (com paid_credit_card_id populado) → shape legado de bill_payment.
+// Pós Fase B-Refactor: tabela `bill_payments` foi DROPPED na Onda 4.
+// Pagamentos de fatura agora vivem em `transactions` com `paid_credit_card_id` +
+// `paid_credit_card_invoice_id`. Esta camada de adaptação preserva a interface
+// dos consumidores (Cards.jsx, Accounts.jsx).
+//
+// IMPORTANTE: campos `totalBill` e `carryOverBalance` (que existiam em
+// bill_payment) NÃO existem na transaction. Eles eram CALCULADOS — totalBill
+// vinha do form do usuário (snapshot do total da fatura na hora do pagamento),
+// carryOverBalance era derivado disso. No novo modelo, esses dados vivem em
+// `credit_card_invoices` (campos computed `amount`/`balance`/`previous_balance`).
+//
+// Pra preservar a interface mínima dos consumidores agora:
+// - getTotalPaid/isBillPaid funcionam (somam transactions de pagamento)
+// - getPreviousBalance retorna 0 (placeholder) até F5/F8 wirearem useCreditCardInvoices
+function mapTransactionAsBillPayment(t) {
+  return {
+    id: t.id,
+    cardId: t.paid_credit_card_id,
+    paidCreditCardInvoiceId: t.paid_credit_card_invoice_id ?? null,
+    accountId: t.account_id ?? null,
+    // Bill payment não tem mais relação com transaction_id externa — é a própria transaction.
+    transactionId: t.id,
+    amount: parseFloat(t.amount),
+    // Aproximação até F5: deriva month/year da date do pagamento.
+    // O correto seria via paid_credit_card_invoice_id.starting_date.
+    month: t.date ? new Date(t.date + 'T12:00:00').getMonth() : null,    // 0-indexed
+    year: t.date ? new Date(t.date + 'T12:00:00').getFullYear() : null,
+    paidAt: t.date ? new Date(t.date + 'T12:00:00') : null,
+    // Campos legados que não têm equivalente direto no novo modelo:
+    totalBill: parseFloat(t.amount),  // sem snapshot; assumimos amount = totalBill
+    carryOverBalance: 0,              // F5/F8 vai buscar do invoice.previous_balance
+    isPartial: false,                 // F5/F8 vai derivar comparando amount vs invoice.amount
+  }
+}
+
+// Hook para pagamentos de fatura — agora FILTER VIEW sobre /api/v1/transactions
+// (Onda 4: bill_payments DROPPED). Interface preservada pra consumidores existentes.
 export function useBillPayments(month, year) {
   const { user } = useAuth()
   const [payments, setPayments] = useState([])
-  const [allPayments, setAllPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
+  const fetchPayments = useCallback(async () => {
     if (!user) {
       setPayments([])
-      setAllPayments([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-    setError(null)
-
-    // Buscar pagamentos do mês/ano específico
-    const q = query(
-      collection(db, `users/${user.uid}/billPayments`),
-      where('month', '==', month),
-      where('year', '==', year)
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          paidAt: doc.data().paidAt?.toDate()
-        }))
-        setPayments(data)
-        setLoading(false)
-      },
-      (err) => {
-        console.error('Error fetching bill payments:', err)
-        setError('Erro ao carregar pagamentos')
-        setLoading(false)
-      }
-    )
-
-    // Buscar todos os pagamentos para calcular saldo anterior
-    const allQ = query(
-      collection(db, `users/${user.uid}/billPayments`),
-      orderBy('paidAt', 'desc')
-    )
-
-    const unsubscribeAll = onSnapshot(
-      allQ,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          paidAt: doc.data().paidAt?.toDate()
-        }))
-        setAllPayments(data)
-      }
-    )
-
-    return () => {
-      unsubscribe()
-      unsubscribeAll()
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      // Buscar transactions do mês com paid_credit_card_id != null.
+      // Backend não tem filtro `is_bill_payment`; usa month/year e filtra client-side.
+      const params = new URLSearchParams()
+      if (typeof month === 'number') params.set('month', String(month + 1))
+      if (typeof year === 'number') params.set('year', String(year))
+      const qs = params.toString()
+      const data = await apiClient.get(`/api/v1/transactions${qs ? `?${qs}` : ''}`)
+      const billPayments = data.filter(t => t.paid_credit_card_id)
+      setPayments(billPayments.map(mapTransactionAsBillPayment))
+    } catch (err) {
+      console.error('Error fetching bill payments:', err)
+      setError('Erro ao carregar pagamentos')
+    } finally {
+      setLoading(false)
     }
   }, [user, month, year])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchPayments()
+  }, [fetchPayments])
 
   // Verificar se uma fatura específica foi paga (total ou parcialmente)
   const isBillPaid = (cardId) => {
@@ -1107,64 +1399,49 @@ export function useBillPayments(month, year) {
     return payments.filter(p => p.cardId === cardId)
   }
 
-  // Calcular saldo anterior (faturas não pagas de meses anteriores)
-  const getPreviousBalance = (cardId) => {
-    let balance = 0
-
-    // Calcular mês anterior
-    let checkMonth = month - 1
-    let checkYear = year
-    if (checkMonth < 0) {
-      checkMonth = 11
-      checkYear = year - 1
-    }
-
-    // Buscar pagamentos do mês anterior
-    const prevPayments = allPayments.filter(p =>
-      p.cardId === cardId &&
-      p.month === checkMonth &&
-      p.year === checkYear
-    )
-
-    // Se houver pagamento parcial, calcular saldo não pago
-    // (isso precisaria de acesso aos gastos do mês anterior - simplificado por ora)
-    if (prevPayments.length > 0) {
-      const hasCarryOver = prevPayments.some(p => p.carryOverBalance && p.carryOverBalance > 0)
-      if (hasCarryOver) {
-        balance = prevPayments[0].carryOverBalance
-      }
-    }
-
-    return balance
+  // Calcular saldo anterior (carry-over de meses anteriores).
+  // ⚠️ TRANSITIONAL: até F5/F8, retorna 0. O dado correto vive em
+  // credit_card_invoices.previous_balance (computed pelo backend).
+  const getPreviousBalance = (_cardId) => {
+    return 0
   }
 
-  // Registrar pagamento de fatura (suporta pagamentos parciais)
+  // Registrar pagamento de fatura: cria transaction com paid_credit_card_id
+  // + paid_credit_card_invoice_id. Backend valida que ambos vêm juntos.
   const addBillPayment = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
+    if (!data.cardId) throw new Error('cardId é obrigatório')
+    if (!data.paidCreditCardInvoiceId) {
+      throw new Error('paidCreditCardInvoiceId é obrigatório (resolver via useCreditCardInvoices)')
+    }
 
-    // Calcular saldo não pago (carry over)
-    const carryOverBalance = data.totalBill ? Math.max(0, data.totalBill - data.amount) : 0
+    const { apiClient } = await import('../services/apiClient')
+    const paidAt = data.paidAt instanceof Date
+      ? data.paidAt.toISOString().slice(0, 10)
+      : (data.paidAt || new Date().toISOString().slice(0, 10))
 
-    return await addDoc(collection(db, `users/${user.uid}/billPayments`), {
-      cardId: data.cardId,
-      month: data.month,
-      year: data.year,
+    const payload = {
+      description: data.description || `Pagamento de fatura`,
       amount: data.amount,
-      totalBill: data.totalBill || data.amount,
-      carryOverBalance: carryOverBalance,
-      accountId: data.accountId,
-      transactionId: data.transactionId,
-      isPartial: data.amount < (data.totalBill || data.amount),
-      paidAt: data.paidAt || new Date(),
-      createdAt: serverTimestamp()
-    })
+      type: 'expense',
+      date: paidAt,
+      account_id: data.accountId ?? null,
+      paid_credit_card_id: data.cardId,
+      paid_credit_card_invoice_id: data.paidCreditCardInvoiceId,
+      is_paid: true,
+    }
+
+    const created = await apiClient.post('/api/v1/transactions', payload)
+    await fetchPayments()
+    return mapTransactionAsBillPayment(created)
   }
 
-  // Excluir pagamento (caso precise estornar)
+  // Excluir pagamento (estorno) — soft delete da transaction.
   const deleteBillPayment = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
-    const docRef = doc(db, `users/${user.uid}/billPayments`, id)
-    return await deleteDoc(docRef)
+    const { apiClient } = await import('../services/apiClient')
+    await apiClient.delete(`/api/v1/transactions/${id}`)
+    await fetchPayments()
   }
 
   return {
