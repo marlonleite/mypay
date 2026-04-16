@@ -1,79 +1,62 @@
-import { useState, useEffect } from 'react'
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  addDoc,
-  serverTimestamp
-} from 'firebase/firestore'
-import { db } from '../firebase/config'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { listImports } from '../services/documentService'
 import { parseLocalDate } from '../utils/helpers'
+import { apiClient } from '../services/apiClient'
 
 /**
- * Hook para gerenciar histórico de importações e operações relacionadas
+ * Hook pra histórico de importações + criação de despesa de cartão a partir
+ * do review da IA.
+ *
+ * Pós Fase E migration:
+ * - `imports` lê de `/api/v1/documents/imports` (REST). Backend cria
+ *   automaticamente os import_records ao processar documentos via
+ *   `/documents/process`.
+ * - `addImport` REMOVIDO — backend cria automaticamente; chamadas duplas
+ *   gerariam histórico em paralelo (Firestore + Postgres).
+ * - `addCardExpense` continua POST `/api/v1/transactions` com `credit_card_id`
+ *   (Onda 6 do refactor backend; backend auto-resolve invoice).
  */
 export function useImportHistory() {
   const { user } = useAuth()
   const [imports, setImports] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchImports = useCallback(async () => {
     if (!user) {
       setImports([])
       setLoading(false)
       return
     }
 
-    setLoading(true)
-
-    const q = query(
-      collection(db, `users/${user.uid}/imports`),
-      orderBy('createdAt', 'desc'),
-      limit(10)
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        setImports(data)
-        setLoading(false)
-      },
-      (error) => {
-        console.error('Erro ao carregar histórico de importações:', error)
-        setLoading(false)
-      }
-    )
-
-    return () => unsubscribe()
+    try {
+      const data = await listImports()
+      // Ordena desc por createdAt
+      data.sort((a, b) => {
+        const aT = a.createdAt ? a.createdAt.getTime() : 0
+        const bT = b.createdAt ? b.createdAt.getTime() : 0
+        return bT - aT
+      })
+      setImports(data)
+    } catch (err) {
+      console.error('Erro ao carregar histórico de importações:', err)
+    } finally {
+      setLoading(false)
+    }
   }, [user])
 
-  /**
-   * Adiciona um registro de importação ao histórico
-   */
-  const addImport = async (data) => {
-    if (!user) throw new Error('Usuário não autenticado')
-
-    return await addDoc(collection(db, `users/${user.uid}/imports`), {
-      ...data,
-      createdAt: serverTimestamp()
-    })
-  }
+  useEffect(() => {
+    setLoading(true)
+    fetchImports()
+  }, [fetchImports])
 
   /**
-   * Adiciona uma despesa de cartão.
+   * Cria despesa de cartão a partir da review da IA.
    *
-   * Pós Fase B-Refactor (Onda 6): a tabela `card_expenses` foi DROPPED.
-   * Compras de cartão agora são `transactions` com `credit_card_id` populado.
+   * Pós Onda 6 do refactor backend: card_expenses table foi DROPPED.
+   * Compras de cartão são `transactions` com `credit_card_id` populado.
    * Backend auto-resolve `credit_card_invoice_id` via
-   * `invoice_resolution.ensure_invoice_for_period` se omitido — só precisamos
-   * mandar `credit_card_id`.
+   * `invoice_resolution.ensure_invoice_for_period`.
    */
   const addCardExpense = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
@@ -83,10 +66,8 @@ export function useImportHistory() {
     const dateIso = parsedDate.toISOString().slice(0, 10)
 
     // Resolve tags (nomes → ids) se vierem como strings
-    const { apiClient } = await import('../services/apiClient')
     let tag_ids
     if (Array.isArray(data.tags) && data.tags.length > 0) {
-      // Se já vierem como ids (UUIDs), passa direto; se como nomes, resolve.
       const looksLikeId = (v) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)
       if (data.tags.every(looksLikeId)) {
         tag_ids = data.tags
@@ -115,11 +96,14 @@ export function useImportHistory() {
     return await apiClient.post('/api/v1/transactions', payload)
   }
 
+  // Re-fetch imports (útil após processar novo documento).
+  const refresh = fetchImports
+
   return {
     imports,
     loading,
-    addImport,
-    addCardExpense
+    addCardExpense,
+    refresh,
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useRef } from 'react'
 import {
   Sparkles,
   Loader2,
@@ -17,9 +17,7 @@ import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
 import { useCards, useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
-import { processDocument, normalizeExtractedData } from '../services/ai/gemini'
-import { uploadComprovante } from '../services/storage'
-import { fileToBase64, extractTextFromPDF, getFileType, PDFPasswordError } from '../utils/fileProcessing'
+import { processDocument } from '../services/documentService'
 import { DOCUMENT_TYPES } from '../utils/constants'
 
 const BATCH_CHUNK_SIZE = 20
@@ -43,7 +41,7 @@ export default function Documents({ month, year }) {
   const { accounts } = useAccounts()
   const { tags } = useTags()
   const { addTransaction } = useTransactions(month, year)
-  const { imports, addImport, addCardExpense } = useImportHistory()
+  const { imports, addCardExpense, refresh: refreshImports } = useImportHistory()
   const { categories: allCategories, getMainCategories } = useCategories()
 
   // Handlers
@@ -61,18 +59,6 @@ export default function Documents({ month, year }) {
     setExtractedData(null)
   }
 
-  // Formata categorias do usuário para enviar ao prompt da IA
-  const getCategoriesForAI = useCallback(() => {
-    if (!allCategories?.length) return null
-
-    const typeFilter = documentType === 'extrato' ? null : 'expense'
-    const mainCats = typeFilter
-      ? getMainCategories(typeFilter)
-      : allCategories.filter(c => !c.parentId && !c.archived)
-
-    return mainCats.length > 0 ? mainCats : null
-  }, [allCategories, documentType, getMainCategories])
-
   const handleProcess = async () => {
     if (!file) return
 
@@ -80,34 +66,17 @@ export default function Documents({ month, year }) {
     setError(null)
 
     try {
-      let pdfText = null
-      let base64 = null
-      const isPDF = getFileType(file) === 'pdf'
-
-      if (isPDF) {
-        try {
-          pdfText = await extractTextFromPDF(file, pendingPasswordRef.current)
-        } catch (extractErr) {
-          if (extractErr instanceof PDFPasswordError) {
-            setPasswordIncorrect(extractErr.isIncorrect)
-            setShowPasswordModal(true)
-            setStatus('preview')
-            return
-          }
-          console.warn('Extração de texto do PDF falhou, usando fallback de imagem:', extractErr)
-        }
-      }
-
-      if (!pdfText) {
-        base64 = await fileToBase64(file)
-      }
-
-      const categories = getCategoriesForAI()
-      const result = await processDocument(base64, file.type, documentType, categories, pdfText)
+      // Backend faz: extrair texto/PDF, chamar Gemini, upload R2, criar import_record.
+      // Frontend só envia o arquivo. Categorias do usuário são lidas server-side
+      // (não precisamos mais montar payload de prompt aqui).
+      const result = await processDocument(file, documentType)
 
       setExtractedData(result)
       setStatus('result')
       pendingPasswordRef.current = null
+
+      // Refresh do histórico — backend já criou o import_record.
+      refreshImports()
 
     } catch (err) {
       console.error('Erro ao processar documento:', err)
@@ -120,49 +89,21 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante (apenas quando há arquivo)
-      let comprovanteData = null
-      if (file) {
-        try {
-          comprovanteData = await uploadComprovante(file)
-        } catch (uploadErr) {
-          console.warn('Upload do comprovante falhou:', uploadErr)
-        }
+      // Backend `/documents/process` já fez upload pra R2 e criou o import_record.
+      // Se a IA extraiu um file_url, anexamos à transaction via attachmentService;
+      // senão, transação fica sem anexo (usuário pode anexar depois).
+      const transactionWithComprovante = { ...transactionData }
+      if (extractedData?.file_url) {
+        transactionWithComprovante.attachments = [{
+          url: extractedData.file_url,
+          fileName: file?.name || 'documento',
+          fileType: file?.type || null,
+        }]
       }
-
-      // Adiciona URL do comprovante à transação como attachment
-      const transactionWithComprovante = {
-        ...transactionData,
-        ...(comprovanteData && {
-          attachments: [{
-            url: comprovanteData.url,
-            fileName: comprovanteData.fileName || file.name,
-            fileType: comprovanteData.type || file.type
-          }]
-        })
-      }
-
-      console.log('Criando transação normal:', transactionWithComprovante)
 
       await addTransaction(transactionWithComprovante)
-
-      // Salvar no histórico de importações (pula se for re-importação de review)
-      if (file) {
-        await addImport({
-          fileName: file.name,
-          fileType: file.type,
-          documentType: extractedData.tipo_documento,
-          extractedData: extractedData.dados_completos,
-          status: 'completed',
-          confidence: extractedData.confianca,
-          action: 'transaction',
-          ...(comprovanteData && { comprovante: comprovanteData })
-        })
-      }
-
       setStatus('success')
 
-      // Reset após 2 segundos
       setTimeout(() => {
         handleReset()
       }, 2000)
@@ -179,42 +120,11 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
-      // Upload do comprovante (apenas para registro no histórico de imports;
-      // a despesa em si NÃO recebe attachment — anexos vivem em bill_payment).
-      let comprovanteData = null
-      if (file) {
-        try {
-          comprovanteData = await uploadComprovante(file)
-        } catch (uploadErr) {
-          console.warn('Upload do comprovante falhou:', uploadErr)
-        }
-      }
-
       // Card_expense não persiste attachments (decisão 2026-04-15);
-      // PDF original permanece linkado ao addImport abaixo.
-      const expenseWithComprovante = expenseData
-
-      console.log('Criando despesa de cartão:', expenseWithComprovante)
-
-      await addCardExpense(expenseWithComprovante)
-
-      // Salvar no histórico de importações (pula se for re-importação de review)
-      if (file) {
-        await addImport({
-          fileName: file.name,
-          fileType: file.type,
-          documentType: extractedData.tipo_documento,
-          extractedData: extractedData.dados_completos,
-          status: 'completed',
-          confidence: extractedData.confianca,
-          action: 'cardExpense',
-          ...(comprovanteData && { comprovante: comprovanteData })
-        })
-      }
-
+      // o PDF da fatura fica linkado ao import_record (criado pelo backend).
+      await addCardExpense(expenseData)
       setStatus('success')
 
-      // Reset após 2 segundos
       setTimeout(() => {
         handleReset()
       }, 2000)
@@ -239,18 +149,8 @@ export default function Documents({ month, year }) {
         )
       }
 
-      // Registrar no histórico (pula se for re-importação de review)
-      if (file) {
-        await addImport({
-          fileName: file.name,
-          fileType: file.type,
-          documentType: 'fatura_batch',
-          extractedData: extractedData.dados_completos,
-          status: 'completed',
-          action: 'batchCardExpense',
-          count: expenses.length,
-        })
-      }
+      // Backend já criou import_record automaticamente em /documents/process.
+      // Não precisa addImport client-side.
 
       setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)
       setStatus('success')
@@ -267,12 +167,14 @@ export default function Documents({ month, year }) {
     }
   }
 
-  const handleReview = (importItem) => {
-    if (!importItem.extractedData) return
-    const normalized = normalizeExtractedData(importItem.extractedData)
-    setExtractedData(normalized)
-    setReviewImport(importItem)
-    setStatus('result')
+  // Pós-migração IA: review de import antigo não tem mais o JSON extraído
+  // localmente (ficava em Firestore via addImport). Backend só guarda
+  // metadata (file_name, items_imported, total_amount). Pra "reabrir" um
+  // import o usuário precisa re-importar o arquivo.
+  // Mantemos o handler como no-op interativo: abre o picker novamente.
+  const handleReview = (_importItem) => {
+    setReviewImport(null)
+    setStatus('idle')
   }
 
   const handleReprocess = () => {
