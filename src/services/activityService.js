@@ -1,20 +1,13 @@
 /**
- * Serviço de registro de atividades
- * Persiste logs de ações do usuário no Firestore
+ * Activity helpers.
+ *
+ * Pós Fase E migration: este serviço só contém helpers puros (formatadores,
+ * agrupadores, constantes). A leitura de activities vai pelo `useActivities`
+ * hook (REST API). A escrita NÃO existe no frontend — backend registra
+ * automaticamente via `@audited` em todo usecase de mutação.
  */
 
-import {
-  collection,
-  addDoc,
-  query,
-  where,
-  orderBy,
-  getDocs,
-  serverTimestamp,
-  Timestamp,
-  limit
-} from 'firebase/firestore'
-import { db } from '../firebase/config'
+import { apiClient } from './apiClient'
 
 // Tipos de ação
 export const ACTIVITY_ACTIONS = {
@@ -58,109 +51,84 @@ export const ENTITY_LABELS = {
 }
 
 /**
- * Registra uma atividade
- * @param {string} userId - ID do usuário
- * @param {Object} activity - Dados da atividade
+ * Transform: API response (snake_case + new_data/old_data) → frontend shape
+ * (camelCase + data/previousData) que ActivityItem.jsx espera.
+ *
+ * Backend grava `metadata` JSONB que pode conter `accountId`/`categoryId`
+ * dentro — promovemos ao topo pra preservar acesso direto pelo UI.
  */
-export async function logActivity(userId, {
-  action,
-  entityType,
-  entityId,
-  entityName,
-  entitySubtype = null, // income/expense para transações
-  data = null,
-  previousData = null,
-  accountId = null,
-  categoryId = null
-}) {
-  if (!userId) return null
-
-  try {
-    const activityRef = collection(db, `users/${userId}/activities`)
-
-    const activityData = {
-      action,
-      entityType,
-      entityId,
-      entityName,
-      entitySubtype,
-      data,
-      previousData,
-      accountId,
-      categoryId,
-      createdAt: serverTimestamp()
-    }
-
-    const docRef = await addDoc(activityRef, activityData)
-    return docRef.id
-  } catch (error) {
-    console.error('Erro ao registrar atividade:', error)
-    return null
+function mapActivity(a) {
+  const meta = a.metadata || {}
+  return {
+    id: a.id,
+    action: a.action,
+    entityType: a.entity_type,
+    entityId: a.entity_id,
+    entityName: a.entity_name ?? null,
+    entitySubtype: a.entity_subtype ?? null,
+    // Renames pra preservar interface de ActivityItem.jsx:
+    data: a.new_data ?? null,
+    previousData: a.old_data ?? null,
+    // Promovido de metadata pra fácil acesso (consumidores filtram por isso):
+    accountId: meta.accountId ?? meta.account_id ?? null,
+    categoryId: meta.categoryId ?? meta.category_id ?? null,
+    metadata: meta,
+    createdAt: a.created_at ? new Date(a.created_at) : new Date(),
   }
 }
 
 /**
- * Busca atividades do usuário
- * @param {string} userId - ID do usuário
- * @param {Object} filters - Filtros opcionais
+ * Lê activities do backend.
+ *
+ * Backend tem filtros: entity_type, action, limit, offset.
+ * NÃO tem filtros por accountId/categoryId/daysBack — esses ficam client-side
+ * (storage em metadata JSONB; filtro server-side exigiria mudança backend).
+ *
+ * Trade-off aceitável pra single-user (~centenas de activities). Se virar
+ * multi-tenant ou volume crescer, mover filtros pra backend.
  */
-export async function getActivities(userId, {
-  accountId = null,
-  categoryId = null,
-  daysBack = 90,
-  maxResults = 100
+export async function fetchActivities({
+  entityType = null,
+  action = null,
+  limit: maxResults = 200,
+  offset = 0,
 } = {}) {
-  if (!userId) return []
+  const params = new URLSearchParams()
+  if (entityType) params.set('entity_type', entityType)
+  if (action) params.set('action', action)
+  params.set('limit', String(maxResults))
+  if (offset) params.set('offset', String(offset))
 
-  try {
-    const activitiesRef = collection(db, `users/${userId}/activities`)
+  const data = await apiClient.get(`/api/v1/activities?${params.toString()}`)
+  return Array.isArray(data) ? data.map(mapActivity) : []
+}
 
-    // Data limite (90 dias atrás)
+/**
+ * Filtro client-side por accountId/categoryId/daysBack.
+ * Aplicado pelo hook após receber a lista do backend.
+ */
+export function filterActivitiesClientSide(activities, { accountId, categoryId, daysBack } = {}) {
+  let out = activities
+
+  if (accountId) {
+    out = out.filter(a => a.accountId === accountId)
+  }
+
+  if (categoryId) {
+    out = out.filter(a => a.categoryId === categoryId)
+  }
+
+  if (typeof daysBack === 'number' && daysBack > 0) {
     const limitDate = new Date()
     limitDate.setDate(limitDate.getDate() - daysBack)
-    const limitTimestamp = Timestamp.fromDate(limitDate)
-
-    // Construir query
-    let constraints = [
-      where('createdAt', '>=', limitTimestamp),
-      orderBy('createdAt', 'desc'),
-      limit(maxResults)
-    ]
-
-    // Adicionar filtros se especificados
-    if (accountId) {
-      constraints = [
-        where('accountId', '==', accountId),
-        ...constraints
-      ]
-    }
-
-    if (categoryId) {
-      constraints = [
-        where('categoryId', '==', categoryId),
-        ...constraints
-      ]
-    }
-
-    const q = query(activitiesRef, ...constraints)
-    const snapshot = await getDocs(q)
-
-    const activities = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date()
-    }))
-
-    return activities
-  } catch (error) {
-    console.error('Erro ao buscar atividades:', error)
-    return []
+    out = out.filter(a => a.createdAt >= limitDate)
   }
+
+  return out
 }
 
 /**
- * Agrupa atividades por data
- * @param {Array} activities - Lista de atividades
+ * Agrupa atividades por data (chave em pt-BR).
  */
 export function groupActivitiesByDate(activities) {
   const groups = {}
@@ -183,15 +151,13 @@ export function groupActivitiesByDate(activities) {
 }
 
 /**
- * Formata a descrição da atividade
- * @param {Object} activity - Atividade
+ * Formata a descrição da atividade ("criou uma despesa", etc.)
  */
 export function formatActivityDescription(activity) {
   const actionLabel = ACTION_LABELS[activity.action] || activity.action
 
   let entityLabel = ENTITY_LABELS[activity.entityType]
 
-  // Tratar transações com subtipo
   if (activity.entityType === ACTIVITY_ENTITIES.TRANSACTION && activity.entitySubtype) {
     entityLabel = ENTITY_LABELS[ACTIVITY_ENTITIES.TRANSACTION][activity.entitySubtype]
       || ENTITY_LABELS[ACTIVITY_ENTITIES.TRANSACTION].default
@@ -203,9 +169,7 @@ export function formatActivityDescription(activity) {
 }
 
 /**
- * Obtém as diferenças entre dados antigos e novos
- * @param {Object} previousData - Dados anteriores
- * @param {Object} currentData - Dados atuais
+ * Diff entre old_data e new_data — usado pra mostrar "antes/depois" em updates.
  */
 export function getDataDiff(previousData, currentData) {
   if (!previousData || !currentData) return null

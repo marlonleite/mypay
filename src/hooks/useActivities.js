@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import {
-  getActivities,
+  fetchActivities,
+  filterActivitiesClientSide,
   groupActivitiesByDate,
-  logActivity,
-  ACTIVITY_ACTIONS,
-  ACTIVITY_ENTITIES
 } from '../services/activityService'
 
 /**
- * Hook para gerenciar atividades
+ * Lê activities via REST API (`/api/v1/activities`).
+ *
+ * Backend tem filtros: entity_type, action, limit, offset.
+ * NÃO tem filtros por accountId/categoryId/daysBack — esses ficam client-side.
+ * Pra single-user com volume modesto isso é aceitável; revisitar se virar
+ * multi-tenant.
  */
 export function useActivities(filters = {}) {
   const { user } = useAuth()
@@ -30,16 +33,30 @@ export function useActivities(filters = {}) {
       setLoading(true)
       setError(null)
 
-      const data = await getActivities(user.uid, filters)
-      setActivities(data)
-      setGroupedActivities(groupActivitiesByDate(data))
+      // Backend retorna até 200 (limite do endpoint); filtros server-side
+      // só pra entityType/action.
+      const raw = await fetchActivities({
+        entityType: filters.entityType,
+        action: filters.action,
+        limit: filters.limit ?? 200,
+      })
+
+      // Filtros que o backend não suporta nativamente (metadata JSONB).
+      const filtered = filterActivitiesClientSide(raw, {
+        accountId: filters.accountId,
+        categoryId: filters.categoryId,
+        daysBack: filters.daysBack,
+      })
+
+      setActivities(filtered)
+      setGroupedActivities(groupActivitiesByDate(filtered))
     } catch (err) {
       console.error('Erro ao carregar atividades:', err)
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [user, filters.accountId, filters.categoryId, filters.daysBack])
+  }, [user, filters.accountId, filters.categoryId, filters.daysBack, filters.entityType, filters.action, filters.limit])
 
   useEffect(() => {
     loadActivities()
@@ -59,131 +76,26 @@ export function useActivities(filters = {}) {
 }
 
 /**
- * Hook para registrar atividades
+ * useActivityLogger — NO-OP após Fase E migration.
+ *
+ * Backend agora registra activities AUTOMATICAMENTE via `@audited` decorator
+ * em todo usecase de mutação (transactions, card_expenses, transfers, goals,
+ * etc.). O frontend não precisa mais chamar logger nenhum.
+ *
+ * As funções abaixo viram no-ops mas a interface é preservada pra que
+ * Transactions.jsx (e qualquer outro caller) continue funcionando sem
+ * mudanças. Próxima refactor pode remover os callsites e este hook inteiro.
  */
 export function useActivityLogger() {
-  const { user } = useAuth()
-
-  const log = useCallback(async (activityData) => {
-    if (!user) return null
-    return logActivity(user.uid, activityData)
-  }, [user])
-
-  // Helpers para ações comuns
-  const logTransactionCreate = useCallback((transaction) => {
-    return log({
-      action: ACTIVITY_ACTIONS.CREATE,
-      entityType: ACTIVITY_ENTITIES.TRANSACTION,
-      entityId: transaction.id,
-      entityName: transaction.description,
-      entitySubtype: transaction.type,
-      data: {
-        description: transaction.description,
-        amount: transaction.amount,
-        date: transaction.date,
-        paid: transaction.paid,
-        accountId: transaction.accountId,
-        category: transaction.category
-      },
-      accountId: transaction.accountId,
-      categoryId: transaction.category
-    })
-  }, [log])
-
-  const logTransactionUpdate = useCallback((transaction, previousData) => {
-    return log({
-      action: ACTIVITY_ACTIONS.UPDATE,
-      entityType: ACTIVITY_ENTITIES.TRANSACTION,
-      entityId: transaction.id,
-      entityName: transaction.description,
-      entitySubtype: transaction.type,
-      data: {
-        description: transaction.description,
-        amount: transaction.amount,
-        date: transaction.date,
-        paid: transaction.paid,
-        accountId: transaction.accountId,
-        category: transaction.category
-      },
-      previousData,
-      accountId: transaction.accountId,
-      categoryId: transaction.category
-    })
-  }, [log])
-
-  const logTransactionDelete = useCallback((transaction) => {
-    return log({
-      action: ACTIVITY_ACTIONS.DELETE,
-      entityType: ACTIVITY_ENTITIES.TRANSACTION,
-      entityId: transaction.id,
-      entityName: transaction.description,
-      entitySubtype: transaction.type,
-      data: {
-        description: transaction.description,
-        amount: transaction.amount,
-        date: transaction.date
-      },
-      accountId: transaction.accountId,
-      categoryId: transaction.category
-    })
-  }, [log])
-
-  const logCardExpenseCreate = useCallback((expense) => {
-    return log({
-      action: ACTIVITY_ACTIONS.CREATE,
-      entityType: ACTIVITY_ENTITIES.CARD_EXPENSE,
-      entityId: expense.id,
-      entityName: expense.description,
-      data: {
-        description: expense.description,
-        amount: expense.amount,
-        date: expense.date,
-        cardId: expense.cardId,
-        category: expense.category
-      },
-      categoryId: expense.category
-    })
-  }, [log])
-
-  const logCardExpenseUpdate = useCallback((expense, previousData) => {
-    return log({
-      action: ACTIVITY_ACTIONS.UPDATE,
-      entityType: ACTIVITY_ENTITIES.CARD_EXPENSE,
-      entityId: expense.id,
-      entityName: expense.description,
-      data: {
-        description: expense.description,
-        amount: expense.amount,
-        date: expense.date,
-        cardId: expense.cardId,
-        category: expense.category
-      },
-      previousData,
-      categoryId: expense.category
-    })
-  }, [log])
-
-  const logCardExpenseDelete = useCallback((expense) => {
-    return log({
-      action: ACTIVITY_ACTIONS.DELETE,
-      entityType: ACTIVITY_ENTITIES.CARD_EXPENSE,
-      entityId: expense.id,
-      entityName: expense.description,
-      data: {
-        description: expense.description,
-        amount: expense.amount
-      },
-      categoryId: expense.category
-    })
-  }, [log])
+  const noop = useCallback(() => Promise.resolve(null), [])
 
   return {
-    log,
-    logTransactionCreate,
-    logTransactionUpdate,
-    logTransactionDelete,
-    logCardExpenseCreate,
-    logCardExpenseUpdate,
-    logCardExpenseDelete
+    log: noop,
+    logTransactionCreate: noop,
+    logTransactionUpdate: noop,
+    logTransactionDelete: noop,
+    logCardExpenseCreate: noop,
+    logCardExpenseUpdate: noop,
+    logCardExpenseDelete: noop,
   }
 }
