@@ -1,8 +1,7 @@
 // Hook for managing push notifications
 import { useState, useEffect, useCallback } from 'react'
-import { doc, onSnapshot } from 'firebase/firestore'
-import { db } from '../firebase/config'
 import { useAuth } from '../contexts/AuthContext'
+import { fetchSettings, subscribeSettings } from '../services/settingsService'
 import {
   initializeServiceWorker,
   requestNotificationPermission,
@@ -33,7 +32,7 @@ export function usePushNotifications() {
     setLoading(false)
   }, [isEnabled])
 
-  // Listen to push settings from Firestore
+  // Load push settings from backend (settingsService dedupes concurrent calls).
   useEffect(() => {
     if (!user) {
       setIsEnabled(false)
@@ -41,22 +40,30 @@ export function usePushNotifications() {
       return
     }
 
-    const pushSettingsRef = doc(db, `users/${user.uid}/settings/push`)
-    const unsubscribe = onSnapshot(pushSettingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data()
-        setIsEnabled(data.enabled || false)
-        setToken(data.token || null)
-      } else {
-        setIsEnabled(false)
-        setToken(null)
-      }
-    }, (err) => {
-      console.error('Error listening to push settings:', err)
-      setError(err.message)
+    let cancelled = false
+
+    fetchSettings()
+      .then((settings) => {
+        if (cancelled || !settings) return
+        setIsEnabled(settings.pushEnabled || false)
+        setToken(settings.pushToken || null)
+      })
+      .catch((err) => {
+        console.error('Error loading push settings:', err)
+        setError(err.message)
+      })
+
+    // Reage a mudanças vindas de outras abas/dispositivos via SSE → settingsService.
+    const unsubscribe = subscribeSettings((settings) => {
+      if (cancelled || !settings) return
+      setIsEnabled(settings.pushEnabled || false)
+      setToken(settings.pushToken || null)
     })
 
-    return () => unsubscribe()
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [user])
 
   // Setup foreground message listener

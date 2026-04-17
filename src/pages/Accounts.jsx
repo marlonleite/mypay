@@ -15,9 +15,6 @@ import {
   Settings,
   AlertTriangle
 } from 'lucide-react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '../firebase/config'
-import { useAuth } from '../contexts/AuthContext'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
@@ -50,7 +47,6 @@ const ACCOUNT_COLORS = [
 
 export default function Accounts({ onNavigate }) {
   const { formatCurrency } = usePrivacy()
-  const { user } = useAuth()
 
   const {
     accounts,
@@ -64,7 +60,7 @@ export default function Accounts({ onNavigate }) {
   const { month, year } = getCurrentMonthYear()
 
   // Buscar todas as transações (sem filtro de mês) para calcular saldo total
-  const { transactions } = useTransactions(month, year)
+  const { transactions, addTransaction } = useTransactions(month, year)
 
   // Cartões de crédito
   const { cards } = useCards()
@@ -338,17 +334,14 @@ export default function Accounts({ onNavigate }) {
       const type = difference > 0 ? 'income' : 'expense'
       const amount = Math.abs(difference)
 
-      await addDoc(collection(db, `users/${user.uid}/transactions`), {
+      await addTransaction({
         description: `Ajuste de saldo - ${adjustingAccount.name}`,
         amount: amount,
-        category: 'balance_adjustment',
         accountId: adjustingAccount.id,
-        date: new Date(adjustForm.date + 'T12:00:00'),
+        date: adjustForm.date,
         type: type,
         paid: true,
         notes: adjustForm.notes || `Saldo anterior: ${formatCurrency(currentBalance)}, Novo saldo: ${formatCurrency(newBalance)}`,
-        isAdjustment: true,
-        createdAt: serverTimestamp()
       })
 
       setAdjustModalOpen(false)
