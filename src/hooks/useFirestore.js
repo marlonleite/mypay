@@ -652,7 +652,7 @@ async function buildCardExpenseAsTransactionPayload(data, apiClient) {
 // Hook para despesas do cartão — agora FILTER VIEW sobre /api/v1/transactions
 // (post-refactor: tabela `card_expenses` foi DROPPED na Onda 6).
 // Interface preservada: { expenses, loading, error, addCardExpense, updateCardExpense, deleteCardExpense }.
-export function useCardExpenses(cardId, month, year) {
+export function useCardExpenses(cardId, month, year, invoiceId) {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
@@ -668,13 +668,17 @@ export function useCardExpenses(cardId, month, year) {
     try {
       const { apiClient } = await import('../services/apiClient')
       const params = new URLSearchParams()
-      if (cardId) params.set('credit_card_id', cardId)
-      if (typeof month === 'number') params.set('month', String(month + 1))
-      if (typeof year === 'number') params.set('year', String(year))
       params.set('exclude_card_expenses', 'false')
+      if (invoiceId) {
+        params.set('credit_card_invoice_id', invoiceId)
+      } else {
+        if (cardId) params.set('credit_card_id', cardId)
+        if (typeof month === 'number') params.set('month', String(month + 1))
+        if (typeof year === 'number') params.set('year', String(year))
+      }
       const qs = params.toString()
       const data = await apiClient.get(`/api/v1/transactions${qs ? `?${qs}` : ''}`)
-      const cardTxns = cardId ? data : data.filter(t => t.credit_card_id)
+      const cardTxns = invoiceId ? data : (cardId ? data : data.filter(t => t.credit_card_id))
       setExpenses(cardTxns.map(mapTransactionAsCardExpense))
     } catch (err) {
       console.error('Error fetching card expenses:', err)
@@ -682,7 +686,7 @@ export function useCardExpenses(cardId, month, year) {
     } finally {
       setLoading(false)
     }
-  }, [user, cardId, month, year])
+  }, [user, cardId, month, year, invoiceId])
 
   useEffect(() => {
     setLoading(true)

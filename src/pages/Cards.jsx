@@ -94,6 +94,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     refresh: refreshInvoices,
   } = useCreditCardInvoices(selectedCard?.id)
 
+  const currentInvoice = findInvoiceByDueMonth(month, year)
+
   // Toggles para seções do formulário
   const [showTags, setShowTags] = useState(false)
 
@@ -190,13 +192,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return totals
   }, [cards, allExpenses, month, year])
 
-  // Despesas do cartão selecionado
+  // Despesas do cartão selecionado — vêm do hook invoice-based quando há invoice.
   const selectedCardExpenses = useMemo(() => {
     if (!selectedCard) return []
+    if (currentInvoice) return [...invoiceExpenses].sort((a, b) => new Date(b.date) - new Date(a.date))
     return allExpenses
       .filter(e => e.cardId === selectedCard.id && isExpenseInBill(e, month, year))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
-  }, [allExpenses, selectedCard, month, year])
+  }, [invoiceExpenses, allExpenses, selectedCard, currentInvoice, month, year])
 
   // Categorias para filtro de lançamentos (expense + income)
   const expenseFilterCategories = useMemo(() => {
@@ -374,8 +377,13 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     }
   }
 
-  // Hook para despesas do cartão (REST API)
-  const { addCardExpense, updateCardExpense, deleteCardExpense } = useCardExpenses()
+  // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
+  const {
+    expenses: invoiceExpenses,
+    addCardExpense,
+    updateCardExpense,
+    deleteCardExpense,
+  } = useCardExpenses(selectedCard?.id, month, year, currentInvoice?.id)
 
   // Selecionar arquivos de comprovante de pagamento (DEFERRED upload).
   // Pós F-Cards-attachments: arquivos ficam locais como `File` objects;
