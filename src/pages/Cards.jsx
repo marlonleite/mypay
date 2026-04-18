@@ -378,7 +378,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
   const currentInvoice = findInvoiceByDueMonth(month, year)
   const {
-    expenses: invoiceExpenses,
+    expenses: invoiceExpenses = [],
     addCardExpense,
     updateCardExpense,
     deleteCardExpense,

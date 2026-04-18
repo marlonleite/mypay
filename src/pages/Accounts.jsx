@@ -25,10 +25,10 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
-import { useAccounts, useTransactions, useTransfers, useCards, useAllCardExpenses, useBillPayments } from '../hooks/useFirestore'
+import { useAccounts, useTransactions, useTransfers, useCards, useAllCreditCardInvoices } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
-import { getCurrentMonthYear, isDateInMonth } from '../utils/helpers'
-import { CARD_COLORS, TRANSACTION_TYPES } from '../utils/constants'
+import { getCurrentMonthYear } from '../utils/helpers'
+import { CARD_COLORS } from '../utils/constants'
 
 const ACCOUNT_TYPES = [
   { value: 'wallet', label: 'Carteira', icon: Wallet },
@@ -64,8 +64,8 @@ export default function Accounts({ onNavigate }) {
 
   // Cartões de crédito
   const { cards } = useCards()
-  const { expenses: allCardExpenses } = useAllCardExpenses()
-  const { getTotalPaid, getPreviousBalance } = useBillPayments(month, year)
+  const cardIds = useMemo(() => cards.map(c => c.id), [cards])
+  const { findInvoiceByDueMonth } = useAllCreditCardInvoices(cardIds)
 
   // Transferências do mês atual
   const { transfers, addTransfer, deleteTransfer, loading: loadingTransfers } = useTransfers(month, year)
@@ -138,29 +138,17 @@ export default function Accounts({ onNavigate }) {
     return { totalBalance, totalIncome, totalExpenses }
   }, [accountsWithBalance])
 
-  // Cartões com saldo devedor do mês
+  // Cartões com saldo devedor do mês — usa invoice.balance (computed no backend).
   const cardsWithBalance = useMemo(() => {
     return cards.map(card => {
-      const cardExpenses = allCardExpenses.filter(e => {
-        if (e.cardId !== card.id) return false
-        if (e.billMonth != null && e.billYear != null) {
-          return e.billMonth === month && e.billYear === year
-        }
-        return isDateInMonth(e.date, month, year)
-      })
-
-      const currentBill = cardExpenses.reduce((sum, e) => {
-        const amount = e.amount || 0
-        return e.type === TRANSACTION_TYPES.INCOME ? sum - amount : sum + amount
-      }, 0)
-
-      const previousBalance = getPreviousBalance(card.id)
-      const totalPaid = getTotalPaid(card.id)
-      const balance = currentBill + previousBalance - totalPaid
-
+      const invoice = findInvoiceByDueMonth(card.id, month, year)
+      const currentBill = invoice?.amount ?? 0
+      const previousBalance = invoice?.previousBalance ?? 0
+      const totalPaid = invoice?.paymentAmount ?? 0
+      const balance = invoice?.balance ?? 0
       return { ...card, currentBill, previousBalance, totalPaid, balance }
     })
-  }, [cards, allCardExpenses, month, year, getPreviousBalance, getTotalPaid])
+  }, [cards, findInvoiceByDueMonth, month, year])
 
   const totalCreditDebt = useMemo(() => {
     return cardsWithBalance.reduce((sum, c) => sum + Math.max(0, c.balance), 0)

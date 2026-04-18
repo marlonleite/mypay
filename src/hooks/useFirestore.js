@@ -419,6 +419,58 @@ export function useCreditCardInvoices(cardId) {
   }
 }
 
+// Busca invoices de múltiplos cartões em paralelo. Usado por Accounts.jsx
+// para mostrar o saldo devedor real (invoice.balance computed) de cada cartão.
+export function useAllCreditCardInvoices(cardIds) {
+  const { user } = useAuth()
+  const [invoicesByCard, setInvoicesByCard] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  const cardIdsKey = Array.isArray(cardIds) ? cardIds.join(',') : ''
+
+  const fetchAll = useCallback(async () => {
+    if (!user || !cardIds || cardIds.length === 0) {
+      setInvoicesByCard({})
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { apiClient } = await import('../services/apiClient')
+      const results = await Promise.all(
+        cardIds.map(async (cardId) => {
+          const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+          return [cardId, data.map(mapCreditCardInvoice)]
+        })
+      )
+      setInvoicesByCard(Object.fromEntries(results))
+    } catch (err) {
+      console.error('Error fetching all credit card invoices:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [user, cardIdsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setLoading(true)
+    fetchAll()
+  }, [fetchAll])
+
+  useEventInvalidation(['transaction', 'card'], fetchAll)
+
+  // Retorna a invoice cujo due_date cai no mês/ano (month 0-indexed).
+  const findInvoiceByDueMonth = (cardId, month, year) => {
+    const invoices = invoicesByCard[cardId] || []
+    return invoices.find(inv =>
+      inv.dueDate &&
+      inv.dueDate.getMonth() === month &&
+      inv.dueDate.getFullYear() === year
+    )
+  }
+
+  return { invoicesByCard, loading, findInvoiceByDueMonth }
+}
+
 // =====================================================================
 // Recurrences — 🆕 entidade adicionada na Onda 3 do refactor (Organizze).
 // Templates de recorrência (condomínio, salário, mensalidade). Backend
@@ -787,6 +839,9 @@ function mapCategory(c) {
     icon: c.icon,
     color: c.color,
     parentId: c.parent_id ?? null,
+    groupId: c.group_id ?? null,
+    fixed: c.fixed ?? false,
+    essential: c.essential ?? false,
     archived: c.archived,
     isDefault: c.is_default ?? false,
     createdAt: c.created_at ? new Date(c.created_at) : null,
@@ -848,6 +903,9 @@ export function useCategories() {
       icon: data.icon || 'Tag',
       color: data.color || 'violet',
       parent_id: data.parentId || null,
+      group_id: data.groupId ?? null,
+      fixed: data.fixed ?? false,
+      essential: data.essential ?? false,
     })
     await fetchCategories()
   }
@@ -859,6 +917,7 @@ export function useCategories() {
     // camelCase → snake_case para campos que divergem
     if ('parentId' in body) { body.parent_id = body.parentId; delete body.parentId }
     if ('isDefault' in body) { body.is_default = body.isDefault; delete body.isDefault }
+    if ('groupId' in body) { body.group_id = body.groupId; delete body.groupId }
     await apiClient.put(`/api/v1/categories/${id}`, body)
     await fetchCategories()
   }
