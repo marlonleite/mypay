@@ -671,10 +671,9 @@ export function useCardExpenses(cardId, month, year) {
       if (cardId) params.set('credit_card_id', cardId)
       if (typeof month === 'number') params.set('month', String(month + 1))
       if (typeof year === 'number') params.set('year', String(year))
+      params.set('exclude_card_expenses', 'false')
       const qs = params.toString()
       const data = await apiClient.get(`/api/v1/transactions${qs ? `?${qs}` : ''}`)
-      // Filtro defensivo: se backend não filtrou por credit_card_id (caller omitiu),
-      // ainda retorna só transactions de cartão.
       const cardTxns = cardId ? data : data.filter(t => t.credit_card_id)
       setExpenses(cardTxns.map(mapTransactionAsCardExpense))
     } catch (err) {
@@ -754,7 +753,7 @@ export function useAllCardExpenses() {
 
     try {
       const { apiClient } = await import('../services/apiClient')
-      const data = await apiClient.get('/api/v1/transactions')
+      const data = await apiClient.get('/api/v1/transactions?exclude_card_expenses=false')
       const cardTxns = data.filter(t => t.credit_card_id)
       setExpenses(cardTxns.map(mapTransactionAsCardExpense))
     } catch (err) {
