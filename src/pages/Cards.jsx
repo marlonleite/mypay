@@ -94,8 +94,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     refresh: refreshInvoices,
   } = useCreditCardInvoices(selectedCard?.id)
 
-  const currentInvoice = findInvoiceByDueMonth(month, year)
-
   // Toggles para seções do formulário
   const [showTags, setShowTags] = useState(false)
 
@@ -378,6 +376,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   }
 
   // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
+  const currentInvoice = findInvoiceByDueMonth(month, year)
   const {
     expenses: invoiceExpenses,
     addCardExpense,
