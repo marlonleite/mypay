@@ -190,6 +190,15 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return totals
   }, [cards, allExpenses, month, year])
 
+  // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
+  const currentInvoice = findInvoiceByDueMonth(month, year)
+  const {
+    expenses: invoiceExpenses = [],
+    addCardExpense,
+    updateCardExpense,
+    deleteCardExpense,
+  } = useCardExpenses(selectedCard?.id, month, year, currentInvoice?.id)
+
   // Despesas do cartão selecionado — vêm do hook invoice-based quando há invoice.
   const selectedCardExpenses = useMemo(() => {
     if (!selectedCard) return []
@@ -374,15 +383,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       console.error('Error deleting card:', error)
     }
   }
-
-  // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
-  const currentInvoice = findInvoiceByDueMonth(month, year)
-  const {
-    expenses: invoiceExpenses = [],
-    addCardExpense,
-    updateCardExpense,
-    deleteCardExpense,
-  } = useCardExpenses(selectedCard?.id, month, year, currentInvoice?.id)
 
   // Selecionar arquivos de comprovante de pagamento (DEFERRED upload).
   // Pós F-Cards-attachments: arquivos ficam locais como `File` objects;
