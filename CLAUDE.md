@@ -12,11 +12,13 @@ Este arquivo fornece orientações ao Claude Code quando trabalhando neste repos
 
 A doutrina **agnóstica de stack** (fluxo, comunicação, RCA, retrospectiva) já está em **`~/.cursor/rules/`**: por exemplo `doutrina-operacional.mdc`, `comunicacao.mdc`, `protocolo-debug-raiz.mdc`, `protocolo-retro.mdc`. Elas **somam** automaticamente a qualquer workspace.
 
-Neste repo, **`.cursor/rules/*.mdc`** traz o que é **específico do myPay**: testes Vitest, princípios de código, frontend React, mapa de migração API e **`10-mypay-conventions.mdc`** (espelho enxuto de **`.claude/settings.json`** — estilo, Firebase, i18n, pastas). Não duplicar aqui o que o global já cobre.
+Neste repo, **`.cursor/rules/*.mdc`** cobre só o **específico do myPay** (vide lista abaixo com pares `.md` / `.mdc`). Não duplicar aqui o que o global já cobre.
 
 ### Regras Globais (Sempre Ativas)
 
 Leia PRIMEIRO os seguintes arquivos antes de qualquer ação:
+
+> **Cursor:** Para 01–05 não há `.mdc` neste repo — use `~/.cursor/rules/` (bloco acima). Para 06–08 e 10, o mesmo conteúdo aplicável no Cursor está em **`.cursor/rules/*.mdc`** com o mesmo número de arquivo.
 
 - **`.claude/rules/01-core.md`** - Doutrina operacional central (OBRIGATÓRIO)
   - Reconhecimento antes de tocar (completo vs. focalizado)
@@ -30,15 +32,17 @@ Leia PRIMEIRO os seguintes arquivos antes de qualquer ação:
   - Modos: ask (conversa), plan (planejamento), agent (execução silenciosa)
   - Legenda de status: ✅ sucesso, ⚠️ autocorrigido, 🚧 bloqueio
 
-- **`.claude/rules/06-testes.md`** - Guia de Testes React/Vitest (FUTURO)
+- **`.claude/rules/06-testes.md`** — Guia de Testes React/Vitest (FUTURO); **Cursor:** `.cursor/rules/06-testes.mdc`
   - ⚠️ **Testes não configurados neste projeto atualmente**
   - Guia completo para quando Vitest for configurado
   - Testing Library, mocking Firebase, padrões AAA
 
-- **`.claude/rules/07-desenvolvimento.md`** - Princípios de código (OBRIGATÓRIO)
+- **`.claude/rules/07-desenvolvimento.md`** — Princípios de código (OBRIGATÓRIO); **Cursor:** `.cursor/rules/07-desenvolvimento.mdc`
   - Modularização, responsabilidade única, nomeação clara
   - Segurança, escalabilidade, testabilidade
   - Tratamento robusto de erros, logs estruturados
+
+- **`.claude/settings.json`** — Convenções de estilo, Firebase, i18n e pastas; **Cursor:** `.cursor/rules/10-mypay-conventions.mdc` (espelho enxuto para `src/`)
 
 ### Regras Contextuais (Ativadas Conforme Necessário)
 
@@ -54,10 +58,14 @@ Leia PRIMEIRO os seguintes arquivos antes de qualquer ação:
   - **Quando:** Comando `/retro` explícito ou solicitação de lições aprendidas
   - **Conteúdo:** Reflexão, abstração de lições duráveis, evolução da doutrina
 
-- **`.claude/rules/08-frontend.md`** - Doutrina Frontend (ATIVO)
+- **`.claude/rules/08-frontend.md`** — Doutrina Frontend (ATIVO); **Cursor:** `.cursor/rules/08-frontend.mdc`
   - **Quando:** Sempre (projeto React + Vite)
   - **Conteúdo:** Stack, arquitetura, Context API, Tailwind CSS, padrões de código
   - **Regra adaptada para este projeto específico**
+
+- **`.claude/rules/09-migration-map.md`** — Migração Firebase → API Postgres; **Cursor:** `.cursor/rules/09-migration-map.mdc`
+  - **Quando:** Hooks, services, contexts ou acesso a dados durante a migração
+  - **Conteúdo:** Entity maps em `mypay-api/.claude/map/`, transforms (meses, money, datas, IDs, snake_case), auth Bearer
 
 ---
 
