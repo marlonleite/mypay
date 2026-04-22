@@ -1,0 +1,54 @@
+---
+description: Convenções do projeto espelhadas de .claude/settings.json — estilo, Firebase, i18n, pastas
+alwaysApply: true
+globs: "src/**/*.{js,jsx}"
+---
+
+# Convenções myPay (Claude `settings.json` → Cursor)
+
+> Fonte canônica para Claude Code: `.claude/settings.json`. Skills e comandos: `.claude/skills/`, `.claude/commands/`.
+
+## Estilo de código
+
+- Aspas **simples**; **sem** ponto e vírgula no fim de linha.
+- Componentes **funcionais**; estado com hooks.
+- **Nomes:** componentes `PascalCase` (arquivos de componente em PascalCase); utils `camelCase`; hooks `use[Nome]`; constantes `UPPER_SNAKE_CASE`.
+
+## Pastas
+
+- UI reutilizável: `src/components/ui/`.
+- Demais caminhos padrão: `pages/`, `hooks/`, `services/`, `contexts/`, `utils/` (como no restante da doutrina).
+
+## Imports
+
+- Ordem preferida: React → libs externas → componentes internos → hooks → services → utils.
+- Barrel files (`index.js`) são aceitos quando já usados no projeto.
+
+## React
+
+- Operações Firestore preferencialmente em **custom hooks**.
+- Sempre **loading** e **error**; listas/dados vazios: usar **`EmptyState`** (padrão do projeto).
+- Extrair UI genérica para `components/ui/`; manter componentes **enxutos** (orientação: menos de ~200 linhas).
+
+## Firebase / Firestore
+
+- Dados do usuário sob **`users/{userId}/`** (hierarquia acordada no projeto).
+- Onde fizer sentido: listeners em tempo real (`onSnapshot`); **sempre cancelar/cleanup** da inscrição no unmount ou quando trocar query.
+- Checar **autenticação** antes de queries que dependem do usuário.
+- **Datas:** armazenar com **meio-dia local (12:00)** quando aplicável, para reduzir bugs de fuso em “dia civil”.
+
+## UI / Tailwind
+
+- **Mobile-first**; espaçamento consistente (ex.: `gap-4`, `p-4`).
+- Demais regras visuais: ver `08-frontend.mdc`.
+
+## Idioma (i18n)
+
+- **Texto da interface:** português (pt-BR).
+- **Código:** identificadores e nomes em **inglês**.
+- **Comentários no código:** **inglês**.
+
+## Assistência / mudanças
+
+- Evitar mudanças **breaking** sem alinhar com o usuário.
+- Preferir diffs **mínimos** e alinhados ao padrão existente; sugerir testes após alterações relevantes.

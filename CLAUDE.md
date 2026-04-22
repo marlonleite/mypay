@@ -8,6 +8,12 @@ Este arquivo fornece orientações ao Claude Code quando trabalhando neste repos
 
 **TODAS as regras definidas em `.claude/rules/` devem ser rigorosamente seguidas.**
 
+### Cursor (`~/.cursor/rules/` + este repositório)
+
+A doutrina **agnóstica de stack** (fluxo, comunicação, RCA, retrospectiva) já está em **`~/.cursor/rules/`**: por exemplo `doutrina-operacional.mdc`, `comunicacao.mdc`, `protocolo-debug-raiz.mdc`, `protocolo-retro.mdc`. Elas **somam** automaticamente a qualquer workspace.
+
+Neste repo, **`.cursor/rules/*.mdc`** traz o que é **específico do myPay**: testes Vitest, princípios de código, frontend React, mapa de migração API e **`10-mypay-conventions.mdc`** (espelho enxuto de **`.claude/settings.json`** — estilo, Firebase, i18n, pastas). Não duplicar aqui o que o global já cobre.
+
 ### Regras Globais (Sempre Ativas)
 
 Leia PRIMEIRO os seguintes arquivos antes de qualquer ação:
@@ -183,4 +189,4 @@ src/
 
 ---
 
-**Em caso de dúvida sobre regras operacionais, releia `.claude/rules/01-core.md`.**
+**Em caso de dúvida sobre regras operacionais:** `.claude/rules/01-core.md` (Claude Code) ou `~/.cursor/rules/doutrina-operacional.mdc` (Cursor).

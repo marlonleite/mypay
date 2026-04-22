@@ -1,0 +1,53 @@
+---
+description: Mapa de migração backend — hooks, services, contexts (ativar com @ ao migrar dados)
+alwaysApply: false
+globs: "src/hooks/**/*,src/services/**/*,src/contexts/**/*"
+---
+
+# Mapa de Migração Backend
+
+> Regra ativa sempre que trabalhando em hooks, services, contexts ou qualquer acesso a dados no frontend.
+
+## Instrucoes
+
+1. **Antes de migrar qualquer hook, service ou context**, leia o entity map correspondente:
+   `/Users/marlon/Code/mypay-api/.claude/map/entities/<entity>.md`
+
+2. O entity map contém:
+   - Endpoints disponíveis no backend (método + path)
+   - Mapeamento de campos Firestore → Postgres (camelCase → snake_case, tipos, transforms)
+   - Status de implementação por layer (saiba o que já existe)
+   - Notas sobre particularidades (transforms críticos, gotchas)
+
+3. **Para descobrir qual entity map usar**, consulte o status geral:
+   `/Users/marlon/Code/mypay-api/.claude/map/_status.md`
+
+4. Use `/map <entity>` no repositório `mypay-api` para detalhes completos de uma entidade.
+
+## Transforms Críticos (aplicar em todos os contextos relevantes)
+
+- **Months**: JavaScript usa 0-indexed (0=Jan), backend usa 1-indexed (1=Jan)
+- **Money**: JavaScript float → backend Decimal/NUMERIC — nunca arredondar
+- **Dates**: Firestore Timestamp → string ISO 8601 para o backend
+- **IDs**: Firestore doc IDs (string) → UUIDs no backend
+- **camelCase → snake_case**: todos os campos no body das requisições
+- **Auth**: Todo request autenticado deve incluir `Authorization: Bearer <firebase_token>`
+
+## Padrão de Migração de Hook
+
+Para cada hook Firebase a migrar:
+
+1. Leia o entity map da entidade correspondente
+2. Identifique os endpoints que substituem as queries/mutations Firestore
+3. Substitua chamadas Firestore por chamadas `fetch`/`axios` ao backend
+4. Aplique os transforms de campos necessários
+5. Mantenha a mesma interface de retorno do hook (não quebre os componentes consumidores)
+
+## Diretório do Mapa
+
+```
+/Users/marlon/Code/mypay-api/.claude/map/
+  _status.md          # dashboard de progresso (14 entidades, 5 serviços)
+  entities/           # 14 entity files com mapeamento completo
+  services/           # 5 service files (AI, Export, Push, Storage, SSE)
+```
