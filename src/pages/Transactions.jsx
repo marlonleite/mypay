@@ -487,11 +487,26 @@ export default function Transactions({
     proceedToEdit(transaction)
   }
 
-  const proceedToEdit = (transaction, mode = 'single') => {
+  const proceedToEdit = async (transaction, mode = 'single') => {
     setEditMode(mode)
     setEditModeModalOpen(false)
     setTransactionType(transaction.type)
     setEditingTransaction(transaction)
+
+    // Anexos vivem em endpoint dedicado (`GET /transactions/{id}/attachments`) e NÃO
+    // são embutidos no response da transação. Se o openDetailModal já pré-carregou,
+    // reaproveita; caso contrário (edit direto ou race com o fetch do detalhe),
+    // busca aqui para que o formulário reflita o estado real.
+    let attachments = transaction.attachments
+    if (!Array.isArray(attachments)) {
+      try {
+        attachments = await listAttachments(transaction.id)
+      } catch (error) {
+        console.error('Error loading attachments for edit:', error)
+        attachments = []
+      }
+    }
+
     setFormData({
       description: transaction.description,
       amount: transaction.amount,
@@ -500,7 +515,7 @@ export default function Transactions({
       date: formatDateForInput(transaction.date),
       notes: transaction.notes || '',
       tags: transaction.tags || [],
-      attachments: transaction.attachments || (transaction.attachment ? [transaction.attachment] : []),
+      attachments,
       recurrenceType: '',
       fixedFrequency: 'monthly',
       installments: '',
@@ -637,7 +652,7 @@ export default function Transactions({
       const data = {
         description: formData.description,
         amount: formData.amount,
-        category: formData.category || 'other', // Categoria padrão se não selecionada
+        category: formData.category || null,
         accountId: formData.accountId,
         date: formData.date,
         type: transactionType,
@@ -711,6 +726,25 @@ export default function Transactions({
           return checkDate > today
         }
 
+        // Upload dos anexos pendentes (Files locais capturados antes do POST).
+        // Vincula ao primeiro lançamento criado: em grupos (fixa/parcelada) os
+        // anexos pertencem ao grupo logicamente, mas a API os associa a uma única
+        // transaction; anexar à primeira mantém consistência com a UX de "comprovante".
+        const uploadPendingAttachmentsTo = async (transactionId) => {
+          if (!transactionId) return
+          const pending = formData.attachments.filter(a => a?._pending && a.file)
+          for (const att of pending) {
+            try {
+              await uploadAttachment(transactionId, att.file)
+            } catch (err) {
+              console.error('Error uploading attachment after save:', err)
+              setUploadError(err.message || 'Erro ao enviar anexo')
+            } finally {
+              if (att.url) URL.revokeObjectURL(att.url)
+            }
+          }
+        }
+
         // Verificar tipo de recorrência
         // Pós-refactor backend (Ondas 1+7): `recurrence_group` (string) foi removido;
         // grupos agora usam `installment_group_id` (UUID). Recurrência template real
@@ -720,13 +754,14 @@ export default function Transactions({
           // Despesa fixa - criar 12 lançamentos com frequência selecionada
           const baseDate = new Date(formData.date)
           const installmentGroupId = crypto.randomUUID()
+          let firstResult = null
 
           for (let i = 0; i < 12; i++) {
             const transactionDate = addDateInterval(baseDate, formData.fixedFrequency, i)
             // Lançamentos futuros ficam como pendente
             const isPaid = !isFutureDate(transactionDate) && formData.paid
 
-            await addTransaction({
+            const result = await addTransaction({
               ...data,
               date: formatDateForInput(transactionDate),
               paid: isPaid,
@@ -734,7 +769,10 @@ export default function Transactions({
               installment: i + 1,
               totalInstallments: 12,
             })
+            if (i === 0) firstResult = result
           }
+
+          await uploadPendingAttachmentsTo(firstResult?.id)
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
           // Parcelado com período selecionado
           const numInstallments = parseInt(formData.installments) || 1
@@ -743,6 +781,7 @@ export default function Transactions({
           const remainder = Math.round((total - (baseInstallmentAmount * numInstallments)) * 100) / 100
           const baseDate = new Date(formData.date)
           const installmentGroupId = crypto.randomUUID()
+          let firstResult = null
 
           for (let i = 0; i < numInstallments; i++) {
             const transactionDate = addDateInterval(baseDate, formData.installmentPeriod, i)
@@ -751,7 +790,7 @@ export default function Transactions({
             // Lançamentos futuros ficam como pendente
             const isPaid = !isFutureDate(transactionDate) && formData.paid
 
-            await addTransaction({
+            const result = await addTransaction({
               ...data,
               amount: installmentAmount,
               date: formatDateForInput(transactionDate),
@@ -760,25 +799,16 @@ export default function Transactions({
               installment: i + 1,
               totalInstallments: numInstallments,
             })
+            if (i === 0) firstResult = result
           }
+
+          await uploadPendingAttachmentsTo(firstResult?.id)
         } else {
           const result = await addTransaction(data)
           // Registrar atividade
           if (result?.id) {
             logTransactionCreate({ id: result.id, ...data })
-
-            // Nova transação: faz upload dos anexos pendentes agora que temos o id.
-            const pending = formData.attachments.filter(a => a?._pending && a.file)
-            for (const att of pending) {
-              try {
-                await uploadAttachment(result.id, att.file)
-              } catch (err) {
-                console.error('Error uploading attachment after save:', err)
-                setUploadError(err.message || 'Erro ao enviar anexo')
-              } finally {
-                if (att.url) URL.revokeObjectURL(att.url)
-              }
-            }
+            await uploadPendingAttachmentsTo(result.id)
           }
         }
       }
@@ -1723,7 +1753,7 @@ export default function Transactions({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
+              accept="application/pdf,image/jpeg,image/png"
               onChange={handleFileSelect}
               multiple
               className="hidden"

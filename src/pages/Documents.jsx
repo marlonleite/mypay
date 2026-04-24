@@ -1,17 +1,17 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import {
   Sparkles,
   Loader2,
   CheckCircle,
   AlertCircle,
-  RotateCcw
+  RotateCcw,
+  Lock,
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Select from '../components/ui/Select'
 import FileUpload from '../components/documents/FileUpload'
 import FilePreview from '../components/documents/FilePreview'
-import PasswordModal from '../components/documents/PasswordModal'
 import ProcessingResult from '../components/documents/ProcessingResult'
 import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
@@ -19,8 +19,26 @@ import { useCards, useTransactions, useCategories, useAccounts, useTags } from '
 import { useImportHistory } from '../hooks/useDocumentImport'
 import { processDocument } from '../services/documentService'
 import { DOCUMENT_TYPES } from '../utils/constants'
+import Input from '../components/ui/Input'
 
 const BATCH_CHUNK_SIZE = 20
+
+function isPdfFile(file) {
+  if (!file) return false
+  if (file.type === 'application/pdf') return true
+  return typeof file.name === 'string' && file.name.toLowerCase().endsWith('.pdf')
+}
+
+/** Resultado suspeito em PDF: vale tentar de novo com pdf_password. */
+function isSuspiciousPdfExtract(file, result) {
+  if (!isPdfFile(file) || !result) return false
+  if (result.tipo_documento === 'fatura_batch') {
+    return !Array.isArray(result.transacoes) || result.transacoes.length === 0
+  }
+  const noDesc = !result.descricao?.trim()
+  const noAmount = result.valor === undefined || result.valor === null || Number(result.valor) === 0
+  return noDesc && noAmount
+}
 
 export default function Documents({ month, year }) {
   // Estados
@@ -31,10 +49,10 @@ export default function Documents({ month, year }) {
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [successMessage, setSuccessMessage] = useState(null)
-  const [showPasswordModal, setShowPasswordModal] = useState(false)
-  const [passwordIncorrect, setPasswordIncorrect] = useState(false)
   const [reviewImport, setReviewImport] = useState(null)
-  const pendingPasswordRef = useRef(null)
+  /** Senha só em memória; limpa após cada envio e no reset (não persistir). */
+  const [pdfPassword, setPdfPassword] = useState('')
+  const [processHint, setProcessHint] = useState(null)
 
   // Hooks
   const { cards } = useCards()
@@ -50,6 +68,8 @@ export default function Documents({ month, year }) {
     setStatus('preview')
     setError(null)
     setExtractedData(null)
+    setPdfPassword('')
+    setProcessHint(null)
   }
 
   const handleRemoveFile = () => {
@@ -57,6 +77,8 @@ export default function Documents({ month, year }) {
     setStatus('idle')
     setError(null)
     setExtractedData(null)
+    setPdfPassword('')
+    setProcessHint(null)
   }
 
   const handleProcess = async () => {
@@ -64,16 +86,26 @@ export default function Documents({ month, year }) {
 
     setStatus('processing')
     setError(null)
+    setProcessHint(null)
 
     try {
       // Backend faz: extrair texto/PDF, chamar Gemini, upload R2, criar import_record.
-      // Frontend só envia o arquivo. Categorias do usuário são lidas server-side
-      // (não precisamos mais montar payload de prompt aqui).
-      const result = await processDocument(file, documentType)
+      // pdf_password opcional no multipart (PDFs cifrados, ex. Bradesco/C6).
+      const pwd = pdfPassword.trim()
+      const result = await processDocument(file, documentType, null, pwd || null)
+
+      if (isSuspiciousPdfExtract(file, result)) {
+        setProcessHint(
+          'Nada útil foi detectado neste PDF. Se ele estiver protegido por senha, preencha o campo abaixo e processe de novo.'
+        )
+        setStatus('preview')
+        setExtractedData(null)
+        refreshImports()
+        return
+      }
 
       setExtractedData(result)
       setStatus('result')
-      pendingPasswordRef.current = null
 
       // Refresh do histórico — backend já criou o import_record.
       refreshImports()
@@ -82,6 +114,8 @@ export default function Documents({ month, year }) {
       console.error('Erro ao processar documento:', err)
       setError(err.message || 'Erro ao processar documento. Tente novamente.')
       setStatus('error')
+    } finally {
+      setPdfPassword('')
     }
   }
 
@@ -183,19 +217,6 @@ export default function Documents({ month, year }) {
     setDocumentType(docType)
   }
 
-  const handlePasswordSubmit = (password) => {
-    pendingPasswordRef.current = password
-    setShowPasswordModal(false)
-    setPasswordIncorrect(false)
-    handleProcess()
-  }
-
-  const handlePasswordCancel = () => {
-    setShowPasswordModal(false)
-    setPasswordIncorrect(false)
-    pendingPasswordRef.current = null
-  }
-
   const handleDiscard = () => {
     handleReset()
   }
@@ -208,15 +229,19 @@ export default function Documents({ month, year }) {
     setError(null)
     setSaving(false)
     setSuccessMessage(null)
-    setShowPasswordModal(false)
-    setPasswordIncorrect(false)
     setReviewImport(null)
-    pendingPasswordRef.current = null
+    setPdfPassword('')
+    setProcessHint(null)
   }
 
   const handleRetry = () => {
     setStatus('preview')
     setError(null)
+    if (isPdfFile(file)) {
+      setProcessHint(
+        'Se o PDF estiver protegido por senha, informe abaixo e processe novamente.'
+      )
+    }
   }
 
   return (
@@ -250,6 +275,24 @@ export default function Documents({ month, year }) {
       {status === 'preview' && file && (
         <div className="space-y-4">
           <FilePreview file={file} onRemove={handleRemoveFile} />
+
+          {processHint && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200/90">
+              {processHint}
+            </div>
+          )}
+
+          {isPdfFile(file) && (
+            <Input
+              type="password"
+              label="Senha do PDF (opcional)"
+              placeholder="Só se o banco exigir senha ao abrir o arquivo"
+              icon={Lock}
+              value={pdfPassword}
+              onChange={(e) => setPdfPassword(e.target.value)}
+              autoComplete="off"
+            />
+          )}
 
           <Button
             onClick={handleProcess}
@@ -305,6 +348,7 @@ export default function Documents({ month, year }) {
             saving={saving}
             month={month}
             year={year}
+            fileName={file?.name ?? null}
           />
         ) : (
           <ProcessingResult
@@ -347,6 +391,11 @@ export default function Documents({ month, year }) {
             </div>
             <p className="text-white font-medium mt-4">Erro ao processar</p>
             <p className="text-sm text-red-400 mt-1 max-w-xs">{error}</p>
+            {isPdfFile(file) && (
+              <p className="text-sm text-dark-400 mt-3 max-w-sm">
+                PDFs protegidos por senha precisam da senha informada antes de processar. Volte, preencha &quot;Senha do PDF (opcional)&quot; e tente de novo.
+              </p>
+            )}
 
             <div className="flex gap-3 mt-6">
               <Button onClick={handleRetry} icon={RotateCcw} variant="secondary">
@@ -365,14 +414,6 @@ export default function Documents({ month, year }) {
         <ImportHistory imports={imports} onReview={handleReview} />
       )}
 
-      {/* Modal de senha para PDFs protegidos */}
-      <PasswordModal
-        isOpen={showPasswordModal}
-        onSubmit={handlePasswordSubmit}
-        onCancel={handlePasswordCancel}
-        isIncorrect={passwordIncorrect}
-        loading={status === 'processing'}
-      />
     </div>
   )
 }

@@ -21,6 +21,7 @@ import CurrencyInput from '../ui/CurrencyInput'
 import Select from '../ui/Select'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { findBestCategory } from '../../utils/categoryMapping'
+import { guessCardIdFromFileName } from '../../utils/guessCardFromFileName'
 
 const confidenceConfig = {
   alta: { color: 'text-emerald-400', bg: 'bg-emerald-500/20', icon: CheckCircle2 },
@@ -83,6 +84,18 @@ export default function ProcessingResult({
   const [selectedCard, setSelectedCard] = useState('')
   const [selectedAccount, setSelectedAccount] = useState(accounts[0]?.id || '')
   const [showDetails, setShowDetails] = useState(false)
+
+  useEffect(() => {
+    const active = cards.filter((c) => c && !c.archived)
+    if (active.length === 0) return
+    const fileName = file?.name ?? null
+    setSelectedCard((prev) => {
+      if (prev) return prev
+      if (active.length === 1) return active[0].id
+      const guessed = fileName ? guessCardIdFromFileName(fileName, active) : null
+      return guessed || ''
+    })
+  }, [cards, file])
 
   // Campos extras para pré-visualização
   const [notes, setNotes] = useState('')

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import {
   CreditCard,
   CheckSquare,
@@ -16,8 +16,47 @@ import CategorySelector from '../transactions/CategorySelector'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { findBestCategory } from '../../utils/categoryMapping'
 import { MONTHS } from '../../utils/constants'
+import { getCurrentMonthYear, parseLocalDate } from '../../utils/helpers'
+import { guessCardIdFromFileName } from '../../utils/guessCardFromFileName'
 
 const VALIDATION_TOLERANCE = 0.02
+
+/**
+ * Período da fatura alinhado às linhas extraídas: usa o mês/ano da compra mais recente.
+ * Evita confiar em mes_referencia/ano_referencia da IA quando estão incoerentes com as datas.
+ */
+function inferBillPeriodFromTransactions(transacoes) {
+  if (!Array.isArray(transacoes) || transacoes.length === 0) return null
+  let latest = null
+  for (const t of transacoes) {
+    if (!t?.data || typeof t.data !== 'string') continue
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.data.trim())) continue
+    const d = parseLocalDate(t.data.trim())
+    if (Number.isNaN(d.getTime())) continue
+    if (!latest || d > latest) latest = d
+  }
+  if (!latest) return null
+  return { billMonth: latest.getMonth(), billYear: latest.getFullYear() }
+}
+
+function resolveInitialBillPeriod(data, month, year) {
+  const fromLines = inferBillPeriodFromTransactions(data?.transacoes)
+  if (fromLines) return fromLines
+
+  if (data?.mes_referencia >= 1 && data?.mes_referencia <= 12 && data?.ano_referencia) {
+    return { billMonth: data.mes_referencia - 1, billYear: data.ano_referencia }
+  }
+
+  if (
+    typeof month === 'number' && month >= 0 && month <= 11 &&
+    typeof year === 'number' && year >= 2000
+  ) {
+    return { billMonth: month, billYear: year }
+  }
+
+  const now = getCurrentMonthYear()
+  return { billMonth: now.month, billYear: now.year }
+}
 
 function formatBRL(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
@@ -33,6 +72,8 @@ export default function FaturaResult({
   saving = false,
   month,
   year,
+  /** Nome do ficheiro enviado (ex. fatura_c6_2026-04.pdf) — heurística de cartão. */
+  fileName = null,
 }) {
   const { formatCurrency } = usePrivacy()
 
@@ -55,14 +96,23 @@ export default function FaturaResult({
   }, [data, firestoreCategories, expenseCategories])
 
   const [selectedCard, setSelectedCard] = useState('')
-  const [billMonth, setBillMonth] = useState(() => {
-    if (data?.mes_referencia >= 1 && data?.mes_referencia <= 12) return data.mes_referencia - 1
-    return month
-  })
-  const [billYear, setBillYear] = useState(() => {
-    if (data?.ano_referencia) return data.ano_referencia
-    return year
-  })
+
+  // Pré-seleciona: 1 cartão ativo, ou match do nome do ficheiro (ex. c6, bradesco) com nome/descrição do cartão.
+  useEffect(() => {
+    const active = cards.filter((c) => c && !c.archived)
+    if (active.length === 0) return
+
+    setSelectedCard((prev) => {
+      if (prev) return prev
+      if (active.length === 1) return active[0].id
+      const guessed = fileName ? guessCardIdFromFileName(fileName, active) : null
+      return guessed || ''
+    })
+  }, [cards, fileName])
+
+  const [{ billMonth, billYear }, setBillPeriod] = useState(() =>
+    resolveInitialBillPeriod(data, month, year)
+  )
   const [selectedIds, setSelectedIds] = useState(() => {
     if (!data?.transacoes?.length) return new Set()
     return new Set(data.transacoes.map(t => t.id))
@@ -77,7 +127,7 @@ export default function FaturaResult({
       .reduce((sum, t) => sum + (t.valor || 0), 0)
   }, [editedTransactions, selectedIds])
 
-  const totalFatura = data?.valor_total_fatura || 0
+  const totalFatura = data?.valor_total_fatura ?? data?.valor_total ?? 0
   const diff = Math.abs(totalFatura - selectedTotal)
   const isBalanced = diff <= VALIDATION_TOLERANCE
 
@@ -223,13 +273,17 @@ export default function FaturaResult({
         <div className="flex gap-2">
           <Select
             value={billMonth}
-            onChange={(e) => setBillMonth(Number(e.target.value))}
+            onChange={(e) =>
+              setBillPeriod((p) => ({ ...p, billMonth: Number(e.target.value) }))
+            }
             options={MONTHS.map((name, i) => ({ value: i, label: name }))}
             className="flex-1"
           />
           <Select
             value={billYear}
-            onChange={(e) => setBillYear(Number(e.target.value))}
+            onChange={(e) =>
+              setBillPeriod((p) => ({ ...p, billYear: Number(e.target.value) }))
+            }
             options={Array.from({ length: 5 }, (_, i) => {
               const y = new Date().getFullYear() - 2 + i
               return { value: y, label: String(y) }

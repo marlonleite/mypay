@@ -47,8 +47,8 @@ export default function TransactionDetail({
       setUploadingAttachment(true)
       setUploadError(null)
       await onAddAttachments(files)
-    } catch {
-      setUploadError('Erro ao enviar arquivo')
+    } catch (err) {
+      setUploadError(err?.message || 'Erro ao enviar arquivo')
     } finally {
       setUploadingAttachment(false)
     }
@@ -205,7 +205,7 @@ export default function TransactionDetail({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
+                    accept="application/pdf,image/jpeg,image/png"
                     onChange={handleFileSelect}
                     multiple
                     className="hidden"

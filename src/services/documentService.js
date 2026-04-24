@@ -28,9 +28,15 @@ async function buildAuthHeader() {
  * @param {File} file - Arquivo a processar
  * @param {string} documentType - 'auto' | 'fatura' | 'comprovante' | 'extrato'
  * @param {string|null} cardId - UUID do cartão associado (opcional, pra fatura)
+ * @param {string|null} pdfPassword - Senha do PDF se o arquivo estiver cifrado (opcional). Não persistir no cliente.
  * @returns {Promise<Object>} shape em português compatível com consumers
  */
-export async function processDocument(file, documentType = 'auto', cardId = null) {
+export async function processDocument(
+  file,
+  documentType = 'auto',
+  cardId = null,
+  pdfPassword = null
+) {
   if (!file) throw new Error('Arquivo é obrigatório')
 
   const headers = await buildAuthHeader()
@@ -38,6 +44,8 @@ export async function processDocument(file, documentType = 'auto', cardId = null
   body.append('file', file)
   body.append('document_type', documentType)
   if (cardId) body.append('card_id', cardId)
+  const pwd = typeof pdfPassword === 'string' ? pdfPassword.trim() : ''
+  if (pwd) body.append('pdf_password', pwd)
 
   const res = await fetch(`${API_BASE}/api/v1/documents/process`, {
     method: 'POST',

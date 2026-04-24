@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useCallback, useEffect } from 'react'
+import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { useSearch } from './contexts/SearchContext'
 import { usePrivacy } from './contexts/PrivacyContext'
@@ -28,8 +28,56 @@ import { getCurrentMonthYear } from './utils/helpers'
 
 const INITIAL_FILTERS = { type: 'all', account: 'all', category: [], tag: [] }
 
+const VALID_TABS = new Set([
+  'dashboard',
+  'transactions',
+  'cards',
+  'reports',
+  'goals',
+  'budgets',
+  'accounts',
+  'categories',
+  'tags',
+  'documents',
+  'activities',
+  'settings',
+])
+
 function AppContent() {
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const tabParam = searchParams.get('tab')
+  const activeTab =
+    tabParam && VALID_TABS.has(tabParam) ? tabParam : 'dashboard'
+
+  useEffect(() => {
+    if (tabParam && !VALID_TABS.has(tabParam)) {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.delete('tab')
+          return p
+        },
+        { replace: true }
+      )
+    }
+  }, [tabParam, setSearchParams])
+
+  const setActiveTab = useCallback(
+    (tab) => {
+      if (!VALID_TABS.has(tab)) return
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          if (tab === 'dashboard') p.delete('tab')
+          else p.set('tab', tab)
+          return p
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
   const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthYear())
   const [showAddModal, setShowAddModal] = useState(false)
   const [transactionFilters, setTransactionFilters] = useState(INITIAL_FILTERS)
