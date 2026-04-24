@@ -49,7 +49,10 @@ function mapTransaction(t) {
     installmentGroupId: t.installment_group_id ?? null,
     // 🆕 Onda 3 (FK pra template recurrences); recurrence_group string foi removido na Onda 7
     recurrenceId: t.recurrence_id ?? null,
-    tags: t.tags ? t.tags.map(tag => tag.name) : [],
+    // Lista GET não embute nome da categoria; UI resolve via allCategories.find(id).
+    isFixed: Boolean(t.recurrence_id),
+    isInstallment: typeof t.total_installments === 'number' && t.total_installments > 1,
+    tags: t.tags ? t.tags.map((tag) => (typeof tag === 'string' ? tag : tag.name)) : [],
     createdAt: t.created_at ? new Date(t.created_at) : null,
     updatedAt: t.updated_at ? new Date(t.updated_at) : null,
   }
@@ -106,10 +109,33 @@ async function buildTransactionPayload(data, apiClient) {
   return payload
 }
 
+/**
+ * Normaliza assinaturas: useTransactions(month, year) | useTransactions(month, year, dateRange)
+ * | useTransactions({ month, year, dateRange?, excludeCardExpenses? })
+ * excludeCardExpenses: false = inclui compras de cartão (lista unificada). Default: false.
+ */
+function normalizeUseTransactionsInput(monthOrOpts, year, dateRange) {
+  if (monthOrOpts !== null && typeof monthOrOpts === 'object' && !Array.isArray(monthOrOpts)) {
+    return {
+      month: monthOrOpts.month,
+      year: monthOrOpts.year,
+      dateRange: monthOrOpts.dateRange ?? null,
+      // Default API: exclui compras de cartão; a página Lançamentos pode passar false
+      excludeCardExpenses: monthOrOpts.excludeCardExpenses !== false,
+    }
+  }
+  return { month: monthOrOpts, year, dateRange: dateRange ?? null, excludeCardExpenses: true }
+}
+
 // Hook para transações — migrado para REST API (GET /api/v1/transactions)
 // dateRange: { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' } | null
 // Nota: month prop é 0-indexed (JS); backend espera 1-indexed
-export function useTransactions(month, year, dateRange) {
+// Parâmetros GET suportados (2026-04, OpenAPI): month, year, exclude_card_expenses,
+// credit_card_id, credit_card_invoice_id, paid_*, — sem q, account_id, date_from, limit.
+export function useTransactions(month, year, dateRangeMaybe) {
+  const opts = normalizeUseTransactionsInput(month, year, dateRangeMaybe)
+  const { month: m, year: y, dateRange, excludeCardExpenses } = opts
+
   const { user } = useAuth()
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -127,10 +153,11 @@ export function useTransactions(month, year, dateRange) {
     try {
       const { apiClient } = await import('../services/apiClient')
 
+      const ex = excludeCardExpenses ? 'true' : 'false'
       let data
       if (dateRange && dateRange.startDate && dateRange.endDate) {
-        // Backend não suporta dateRange: busca todos e filtra client-side
-        const all = await apiClient.get('/api/v1/transactions')
+        // Não existe date_from/date_to no GET: traz tudo (sem excluir cartão se ex=false) e filtra no cliente
+        const all = await apiClient.get(`/api/v1/transactions?exclude_card_expenses=${ex}`)
         const [sy, sm, sd] = dateRange.startDate.split('-').map(Number)
         const [ey, em, ed] = dateRange.endDate.split('-').map(Number)
         const start = new Date(sy, sm - 1, sd, 0, 0, 0)
@@ -140,9 +167,11 @@ export function useTransactions(month, year, dateRange) {
           return d >= start && d <= end
         })
       } else {
-        // month é 0-indexed → backend espera 1-indexed
-        const params = `month=${month + 1}&year=${year}`
-        data = await apiClient.get(`/api/v1/transactions?${params}`)
+        const params = new URLSearchParams()
+        params.set('month', String(m + 1))
+        params.set('year', String(y))
+        params.set('exclude_card_expenses', ex)
+        data = await apiClient.get(`/api/v1/transactions?${params.toString()}`)
       }
 
       setTransactions(data.map(mapTransaction))
@@ -152,7 +181,7 @@ export function useTransactions(month, year, dateRange) {
     } finally {
       setLoading(false)
     }
-  }, [user, month, year, dateRangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, m, y, dateRangeKey, excludeCardExpenses]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLoading(true)

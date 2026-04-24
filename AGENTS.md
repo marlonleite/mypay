@@ -26,3 +26,17 @@ Este repositório segue a mesma doutrina modular que o **Claude Code** usa em `.
 ## Redundância com `~/.cursor/rules/`
 
 Se as mesmas normas já existirem como regras **globais** no seu usuário, o Cursor aplica **global + projeto**. Ajuste ou desative globais se notar instruções duplicadas.
+
+## API `GET /api/v1/transactions` (levantado do OpenAPI local)
+
+Parâmetros de query suportados pelo backend (não há `q`, `account_id`, `category_id`, `date_from`/`date_to` nem `limit`/`offset` na listagem):
+
+- `month` (1–12), `year` — janela calendário.
+- `exclude_card_expenses` (default `true` no back) — se `true`, omite linhas com `credit_card_id`.
+- Filtros de cartão: `credit_card_id`, `credit_card_invoice_id`, `paid_credit_card_id`, `paid_credit_card_invoice_id`.
+
+A página **Lançamentos** (`Transactions.jsx`) chama o hook com `excludeCardExpenses: false` para listar também compras de cartão. Demais ecrãs mantêm o default (excluir cartão), alinhado ao OpenAPI.
+
+**Busca / filtros de tipo, conta, categoria, tag** seguem em **client-side** após o fetch, com `matchTransaction` em `src/utils/searchTransactions.js` (normalização de acentos, tokens de valor com `>`, `R$`, `a..b`, e alguns atalhos de data). Quando o intervalo customizado (date range) está ativo, o hook ainda faz `GET` sem mês/ano e filtra por data no cliente (o backend não expõe `date_from`/`date_to` na listagem).
+
+**URL (refresh):** na aba Lançamentos, `txq`, `txtype`, `txacc`, `txcat` (ids separados por vírgula), `txtag`, `txfrom`/`txto`, `txopen=1` sincronizam com o estado de busca e filtros.

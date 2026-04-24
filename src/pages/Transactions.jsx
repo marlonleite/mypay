@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Plus,
   ArrowUpRight,
@@ -42,6 +43,12 @@ import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { matchTransaction } from '../utils/searchTransactions'
+
+const TX_FILTER_TYPES = new Set([
+  'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
+])
 
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
@@ -61,7 +68,7 @@ export default function Transactions({
     addTransaction,
     updateTransaction,
     deleteTransaction,
-  } = useTransactions(month, year, dateRange)
+  } = useTransactions({ month, year, dateRange, excludeCardExpenses: false })
 
   const {
     logTransactionCreate,
@@ -87,6 +94,9 @@ export default function Transactions({
   const { tags: existingTags } = useTags()
 
   const fileInputRef = useRef(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const didHydrateTxUrl = useRef(false)
+  const debouncedSearch = useDebouncedValue(searchTerm, 300)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
@@ -159,20 +169,72 @@ export default function Transactions({
     )
   }, [tagInput, existingTags, formData.tags])
 
-  // Filtrar transações
+  // Hidrata filtros/busca/datas a partir de query (ex.: ?txq=&txtype=… &tab=transactions)
+  useLayoutEffect(() => {
+    if (didHydrateTxUrl.current) return
+    const has =
+      (searchParams.get('txq') && searchParams.get('txq').length > 0) ||
+      (searchParams.get('txtype') && searchParams.get('txtype') !== 'all') ||
+      (searchParams.get('txacc') && searchParams.get('txacc') !== 'all') ||
+      (searchParams.get('txcat') && searchParams.get('txcat').length > 0) ||
+      (searchParams.get('txtag') && searchParams.get('txtag').length > 0) ||
+      (searchParams.get('txfrom') && searchParams.get('txto')) ||
+      searchParams.get('txopen') === '1'
+    if (!has) {
+      didHydrateTxUrl.current = true
+      return
+    }
+    const q = searchParams.get('txq') || ''
+    if (q) onSearchTermChange(q)
+    const ty = searchParams.get('txtype')
+    const acc = searchParams.get('txacc') || 'all'
+    onFiltersChange({
+      type: ty && TX_FILTER_TYPES.has(ty) ? ty : 'all',
+      account: acc !== 'all' && acc ? acc : 'all',
+      category: searchParams.get('txcat') ? searchParams.get('txcat').split(',').filter(Boolean) : [],
+      tag: searchParams.get('txtag') ? searchParams.get('txtag').split(',').filter(Boolean) : [],
+    })
+    const f = searchParams.get('txfrom')
+    const t0 = searchParams.get('txto')
+    if (f && t0) setDateRange({ startDate: f, endDate: t0 })
+    if (searchParams.get('txopen') === '1') onShowFiltersChange(true)
+    didHydrateTxUrl.current = true
+  }, [searchParams, onSearchTermChange, onFiltersChange, onShowFiltersChange, setDateRange])
+
+  // Sincroniza busca e filtros na URL (refresh permanecem)
+  useEffect(() => {
+    if (!didHydrateTxUrl.current) return
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        if (searchTerm?.trim()) p.set('txq', searchTerm.trim())
+        else p.delete('txq')
+        if (filters.type && filters.type !== 'all') p.set('txtype', filters.type)
+        else p.delete('txtype')
+        if (filters.account && filters.account !== 'all') p.set('txacc', filters.account)
+        else p.delete('txacc')
+        if (filters.category.length > 0) p.set('txcat', filters.category.join(','))
+        else p.delete('txcat')
+        if (filters.tag.length > 0) p.set('txtag', filters.tag.join(','))
+        else p.delete('txtag')
+        if (dateRange?.startDate && dateRange?.endDate) {
+          p.set('txfrom', dateRange.startDate)
+          p.set('txto', dateRange.endDate)
+        } else {
+          p.delete('txfrom')
+          p.delete('txto')
+        }
+        if (showFilters) p.set('txopen', '1')
+        else p.delete('txopen')
+        return p
+      },
+      { replace: true }
+    )
+  }, [searchTerm, filters, dateRange, showFilters, setSearchParams])
+
+  // Filtrar transações (período vem de useTransactions; busca: debouncada, acentos/valor/data vê matchTransaction)
   const filteredTransactions = useMemo(() => {
     let result = transactions
-
-    // Filtro por período customizado
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      const startDate = new Date(dateRange.startDate + 'T00:00:00')
-      const endDate = new Date(dateRange.endDate + 'T23:59:59')
-      result = result.filter(t => {
-        // t.date pode ser um Date object (do Firestore) ou string
-        const transactionDate = t.date instanceof Date ? t.date : new Date(t.date + 'T12:00:00')
-        return transactionDate >= startDate && transactionDate <= endDate
-      })
-    }
 
     // Filtro por tipo
     if (filters.type !== 'all') {
@@ -196,18 +258,9 @@ export default function Transactions({
       result = result.filter(t => t.accountId === filters.account)
     }
 
-    // Filtro por categoria (suporta multi-select, IDs do Firestore e slugs Organizze)
+    // Filtro por categoria (IDs; GET não embute nome)
     if (filters.category.length > 0) {
-      const categoryMatchers = filters.category.map(catId => {
-        const cat = allCategories.find(c => c.id === catId)
-        const slug = cat ? cat.name.toLowerCase().replace(/ /g, '_') : null
-        return { id: catId, slug }
-      })
-      result = result.filter(t =>
-        categoryMatchers.some(m =>
-          t.category === m.id || (m.slug && t.category === m.slug)
-        )
-      )
+      result = result.filter(t => t.categoryId && filters.category.includes(t.categoryId))
     }
 
     // Filtro por tag (multi-select)
@@ -217,21 +270,31 @@ export default function Transactions({
       )
     }
 
-    // Filtro por busca
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      result = result.filter(t =>
-        t.description?.toLowerCase().includes(term) ||
-        t.category?.toLowerCase().includes(term) ||
-        t.tags?.some(tag => tag.toLowerCase().includes(term))
+    if (debouncedSearch?.trim()) {
+      result = result.filter((t) =>
+        matchTransaction(t, debouncedSearch, { categories: allCategories, accounts })
       )
     }
 
     return result
-  }, [transactions, searchTerm, filters, dateRange])
+  }, [transactions, debouncedSearch, filters, allCategories, accounts])
+
+  const sortedForGroup = useMemo(() => {
+    return [...filteredTransactions].sort((a, b) => {
+      const da = a.date instanceof Date ? a.date : new Date(a.date)
+      const db = b.date instanceof Date ? b.date : new Date(b.date)
+      return db - da
+    })
+  }, [filteredTransactions])
 
   // Verificar se há filtros ativos
-  const hasActiveFilters = filters.type !== 'all' || filters.account !== 'all' || filters.category.length > 0 || filters.tag.length > 0
+  const hasActiveFilters =
+    filters.type !== 'all' ||
+    filters.account !== 'all' ||
+    filters.category.length > 0 ||
+    filters.tag.length > 0 ||
+    Boolean(searchTerm?.trim()) ||
+    Boolean(dateRange?.startDate && dateRange?.endDate)
 
   // Calcular lançamentos pendentes passados (vencidos)
   const overdueTransactions = useMemo(() => {
@@ -251,6 +314,20 @@ export default function Transactions({
   }, [transactions])
 
   // Labels dos filtros
+  const clearAllListFilters = () => {
+    onFiltersChange({ type: 'all', account: 'all', category: [], tag: [] })
+    onSearchTermChange('')
+    setDateRange(null)
+    setShowFilters(false)
+  }
+
+  const removeTypeFilter = () => onFiltersChange({ ...filters, type: 'all' })
+  const removeAccountFilter = () => onFiltersChange({ ...filters, account: 'all' })
+  const removeCategoryFilter = (id) =>
+    onFiltersChange({ ...filters, category: filters.category.filter((c) => c !== id) })
+  const removeTagFilter = (tag) =>
+    onFiltersChange({ ...filters, tag: filters.tag.filter((x) => x !== tag) })
+
   const getTypeLabel = () => {
     const labels = {
       all: 'Tipo',
@@ -266,10 +343,10 @@ export default function Transactions({
     return labels[filters.type] || 'Tipo'
   }
 
-  // Agrupar por data
+  // Agrupar por data (ordenado do mais recente ao mais antigo)
   const groupedTransactions = useMemo(() => {
-    return groupByDate(filteredTransactions)
-  }, [filteredTransactions])
+    return groupByDate(sortedForGroup)
+  }, [sortedForGroup])
 
   // Calcular saldos (realizado vs previsto) - usa transações filtradas
   const balanceSummary = useMemo(() => {
@@ -510,7 +587,7 @@ export default function Transactions({
     setFormData({
       description: transaction.description,
       amount: transaction.amount,
-      category: transaction.category,
+      category: transaction.categoryId || transaction.category || '',
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date),
       notes: transaction.notes || '',
@@ -535,7 +612,7 @@ export default function Transactions({
     setFormData({
       description: transaction.description,
       amount: transaction.amount,
-      category: transaction.category,
+      category: transaction.categoryId || transaction.category || '',
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date), // Preserva data original
       notes: transaction.notes || '',
@@ -956,12 +1033,12 @@ export default function Transactions({
                 >
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
+                    style={{ backgroundColor: `${getCategoryColor(transaction.categoryId)}20` }}
                   >
                     {transaction.type === TRANSACTION_TYPES.INCOME ? (
-                      <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                      <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.categoryId) }} />
                     ) : (
-                      <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                      <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.categoryId) }} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0 overflow-hidden">
@@ -1024,13 +1101,92 @@ export default function Transactions({
         </button>
       </div>
 
+      {/* Chips de filtros ativos */}
+      {hasActiveFilters && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {searchTerm?.trim() && (
+            <button
+              type="button"
+              onClick={() => onSearchTermChange('')}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-200 border border-violet-500/30"
+            >
+              <Search className="w-3 h-3" />
+              &quot;{searchTerm.trim()}&quot;
+              <X className="w-3.5 h-3.5 opacity-80" />
+            </button>
+          )}
+          {dateRange?.startDate && dateRange?.endDate && (
+            <button
+              type="button"
+              onClick={() => setDateRange(null)}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+            >
+              {dateRange.startDate} → {dateRange.endDate}
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {filters.type !== 'all' && (
+            <button
+              type="button"
+              onClick={removeTypeFilter}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+            >
+              {getTypeLabel()}
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {filters.account !== 'all' && (
+            <button
+              type="button"
+              onClick={removeAccountFilter}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+            >
+              {getAccountName(filters.account)}
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {filters.category.map((cid) => {
+            const cat = allCategories.find((c) => c.id === cid)
+            return (
+              <button
+                key={cid}
+                type="button"
+                onClick={() => removeCategoryFilter(cid)}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+              >
+                {cat ? cat.name : 'Categoria'}
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )
+          })}
+          {filters.tag.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => removeTagFilter(tag)}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+            >
+              {tag}
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={clearAllListFilters}
+            className="text-xs font-medium text-violet-400 hover:text-violet-300"
+          >
+            Limpar tudo
+          </button>
+        </div>
+      )}
+
       {/* Filter Bar */}
       {showFilters && (
         <div className="flex flex-wrap gap-2 p-3 bg-dark-900 rounded-2xl">
           {/* Limpar filtros */}
           {hasActiveFilters && (
             <button
-              onClick={() => setFilters({ type: 'all', account: 'all', category: [], tag: [] })}
+              onClick={clearAllListFilters}
               className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
             >
               <X className="w-4 h-4" />
@@ -1198,12 +1354,12 @@ export default function Transactions({
                     {/* Ícone da categoria com cor */}
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${getCategoryColor(transaction.category)}20` }}
+                      style={{ backgroundColor: `${getCategoryColor(transaction.categoryId)}20` }}
                     >
                       {transaction.type === TRANSACTION_TYPES.INCOME ? (
-                        <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                        <ArrowUpRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.categoryId) }} />
                       ) : (
-                        <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.category) }} />
+                        <ArrowDownRight className="w-3.5 h-3.5" style={{ color: getCategoryColor(transaction.categoryId) }} />
                       )}
                     </div>
 
@@ -1240,7 +1396,7 @@ export default function Transactions({
                         }`}
                         style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       >
-                        {getCategoryName(transaction.category)}
+                        {getCategoryName(transaction.categoryId)}
                         {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
                       </p>
                       {normalizeTags(transaction.tags).length > 0 && (
