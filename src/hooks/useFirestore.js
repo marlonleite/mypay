@@ -23,7 +23,21 @@ function useEventInvalidation(entities, callback) {
 // Pós Fase B-Refactor (Organizze): transactions é tabela UNIFICADA — receitas,
 // despesas, compras de cartão, pagamentos de fatura, pares de transferência e
 // ocorrências de recorrência vivem aqui (FKs novas indicam o tipo).
+function parseInstallmentIndex(raw, defaultValue = 1) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) return defaultValue
+  return Math.floor(n)
+}
+
+function parseTotalInstallments(raw) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) return 1
+  return Math.floor(n)
+}
+
 function mapTransaction(t) {
+  const totalInst = parseTotalInstallments(t?.total_installments)
+  const inst = parseInstallmentIndex(t?.installment, 1)
   return {
     id: t.id,
     description: t.description,
@@ -37,21 +51,18 @@ function mapTransaction(t) {
     paid: t.is_paid,
     isTransfer: t.is_transfer,
     oppositeTransactionId: t.opposite_transaction_id ?? null,
-    // 🆕 Onda 1+6 (compra de cartão)
     creditCardId: t.credit_card_id ?? null,
     creditCardInvoiceId: t.credit_card_invoice_id ?? null,
-    // 🆕 Onda 1+4 (pagamento de fatura)
     paidCreditCardId: t.paid_credit_card_id ?? null,
     paidCreditCardInvoiceId: t.paid_credit_card_invoice_id ?? null,
-    // 🆕 Onda 1 (parcelamento — antes só em card_expenses)
-    installment: typeof t.installment === 'number' ? t.installment : 1,
-    totalInstallments: typeof t.total_installments === 'number' ? t.total_installments : 1,
+    // Installment plan: one DB row = one installment; group via installment_group_id
+    installment: totalInst > 1 ? Math.min(inst, totalInst) : 1,
+    totalInstallments: totalInst,
     installmentGroupId: t.installment_group_id ?? null,
-    // 🆕 Onda 3 (FK pra template recurrences); recurrence_group string foi removido na Onda 7
     recurrenceId: t.recurrence_id ?? null,
-    // Lista GET não embute nome da categoria; UI resolve via allCategories.find(id).
+    // isFixed = legacy name; UI "recorrente" uses recurrence_id (not text heuristics)
     isFixed: Boolean(t.recurrence_id),
-    isInstallment: typeof t.total_installments === 'number' && t.total_installments > 1,
+    isInstallment: totalInst > 1,
     tags: t.tags ? t.tags.map((tag) => (typeof tag === 'string' ? tag : tag.name)) : [],
     createdAt: t.created_at ? new Date(t.created_at) : null,
     updatedAt: t.updated_at ? new Date(t.updated_at) : null,
@@ -112,7 +123,9 @@ async function buildTransactionPayload(data, apiClient) {
 /**
  * Normaliza assinaturas: useTransactions(month, year) | useTransactions(month, year, dateRange)
  * | useTransactions({ month, year, dateRange?, excludeCardExpenses? })
- * excludeCardExpenses: false = inclui compras de cartão (lista unificada). Default: false.
+ * excludeCardExpenses: true (default) = GET com exclude_card_expenses=true, omite
+ * despesas de fatura (credit_card_id). Pagamentos (paid_*) seguem na lista. Só
+ * a página Lançamentos passa false para lista unificada.
  */
 function normalizeUseTransactionsInput(monthOrOpts, year, dateRange) {
   if (monthOrOpts !== null && typeof monthOrOpts === 'object' && !Array.isArray(monthOrOpts)) {
@@ -675,6 +688,8 @@ export function useRecurrences({ includeArchived = false } = {}) {
 // usar `useCreditCardInvoices` (F5) e fazer JOIN via `creditCardInvoiceId`.
 function mapTransactionAsCardExpense(t) {
   const date = t.date ? new Date(t.date + 'T12:00:00') : null
+  const totalInst = parseTotalInstallments(t?.total_installments)
+  const inst = parseInstallmentIndex(t?.installment, 1)
   return {
     id: t.id,
     cardId: t.credit_card_id,
@@ -687,8 +702,8 @@ function mapTransactionAsCardExpense(t) {
     // Aproximação até F5 expor invoice's starting/closing dates:
     billMonth: date ? date.getMonth() : null,   // 0-indexed (JS)
     billYear: date ? date.getFullYear() : null,
-    installment: typeof t.installment === 'number' ? t.installment : 1,
-    totalInstallments: typeof t.total_installments === 'number' ? t.total_installments : 1,
+    installment: totalInst > 1 ? Math.min(inst, totalInst) : 1,
+    totalInstallments: totalInst,
     installmentGroupId: t.installment_group_id ?? null,
     tags: t.tags ? t.tags.map(tag => tag.name) : [],
     notes: t.notes ?? null,
@@ -1489,9 +1504,10 @@ export function useBillPayments(month, year) {
       const params = new URLSearchParams()
       if (typeof month === 'number') params.set('month', String(month + 1))
       if (typeof year === 'number') params.set('year', String(year))
+      params.set('exclude_card_expenses', 'true')
       const qs = params.toString()
-      const data = await apiClient.get(`/api/v1/transactions${qs ? `?${qs}` : ''}`)
-      const billPayments = data.filter(t => t.paid_credit_card_id)
+      const data = await apiClient.get(`/api/v1/transactions?${qs}`)
+      const billPayments = data.filter(t => t.paid_credit_card_id && !t.credit_card_id)
       setPayments(billPayments.map(mapTransactionAsBillPayment))
     } catch (err) {
       console.error('Error fetching bill payments:', err)

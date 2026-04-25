@@ -7,14 +7,19 @@ import {
   Trash2,
   DollarSign,
   Repeat,
-  Calendar,
+  Layers2,
   X,
   Paperclip,
   Loader
 } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { usePrivacy } from '../../contexts/PrivacyContext'
-import { CATEGORY_COLORS, TRANSACTION_TYPES, MONTHS } from '../../utils/constants'
+import { TRANSACTION_TYPES } from '../../utils/constants'
+import {
+  isRecurrenceLinkedTransaction,
+  isInstallmentPlanTransaction,
+  formatInstallmentFraction
+} from '../../utils/transactionSemantics'
 
 export default function TransactionDetail({
   transaction,
@@ -28,6 +33,7 @@ export default function TransactionDetail({
   getCategoryName,
   getAccountName,
   getCategoryColor,
+  getCardName,
   deleting = false
 }) {
   const { formatCurrency } = usePrivacy()
@@ -74,11 +80,11 @@ export default function TransactionDetail({
           {/* Ícone da categoria */}
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center mb-3"
-            style={{ backgroundColor: isIncome ? '#10b98120' : `${getCategoryColor(transaction.category)}20` }}
+            style={{ backgroundColor: isIncome ? '#10b98120' : `${getCategoryColor(transaction.categoryId)}20` }}
           >
             <DollarSign
               className="w-8 h-8"
-              style={{ color: isIncome ? '#10b981' : getCategoryColor(transaction.category) }}
+              style={{ color: isIncome ? '#10b981' : getCategoryColor(transaction.categoryId) }}
             />
           </div>
 
@@ -92,17 +98,23 @@ export default function TransactionDetail({
             {isIncome ? '+' : '-'} {formatCurrency(transaction.amount)}
           </p>
 
-          {/* Badge de recorrência */}
-          {transaction.isFixed && (
-            <span className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-dark-700 rounded-full text-sm text-dark-300">
-              <Repeat className="w-3.5 h-3.5" />
-              fixa mensal
+          {/* Recorrência (recurrence_id) e parcelas (installment / total_installments) — dados da API */}
+          {isInstallmentPlanTransaction(transaction) && (
+            <span
+              className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-dark-700 rounded-full text-sm text-dark-300"
+              title="Grupo: installment_group_id"
+            >
+              <Layers2 className="w-3.5 h-3.5" />
+              Parcela {formatInstallmentFraction(transaction)}
             </span>
           )}
-          {transaction.isInstallment && (
-            <span className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-dark-700 rounded-full text-sm text-dark-300">
-              <Calendar className="w-3.5 h-3.5" />
-              {transaction.recurrenceIndex}/{transaction.recurrenceTotal}x
+          {isRecurrenceLinkedTransaction(transaction) && (
+            <span
+              className="inline-flex items-center gap-1.5 mt-3 px-3 py-1 bg-dark-700 rounded-full text-sm text-dark-300"
+              title="Template: GET /api/v1/recurrences/{id}"
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              Recorrente
             </span>
           )}
 
@@ -163,17 +175,63 @@ export default function TransactionDetail({
         <div className="flex-1 grid grid-cols-2 gap-4 content-start">
           <div>
             <p className="text-xs text-dark-500 mb-1">Categoria</p>
-            <p className="text-sm text-white">{getCategoryName(transaction.category)}</p>
+            <p className="text-sm text-white">{getCategoryName(transaction.categoryId)}</p>
           </div>
 
           <div>
             <p className="text-xs text-dark-500 mb-1">Conta</p>
-            <p className="text-sm text-white">{getAccountName(transaction.accountId)}</p>
+            <p className="text-sm text-white">
+              {transaction.creditCardId
+                ? (getCardName
+                  ? `Fatura: ${getCardName(transaction.creditCardId)} (sem débito em CC)`
+                  : 'Compra na fatura do cartão (sem débito em CC)')
+                : getAccountName(transaction.accountId)}
+            </p>
           </div>
 
           <div>
             <p className="text-xs text-dark-500 mb-1">Data</p>
             <p className="text-sm text-white">{formatDate(transaction.date)}</p>
+          </div>
+
+          {isInstallmentPlanTransaction(transaction) && (
+            <div>
+              <p className="text-xs text-dark-500 mb-1">Parcela</p>
+              <p className="text-sm text-white font-mono">
+                {formatInstallmentFraction(transaction)}
+              </p>
+            </div>
+          )}
+
+          {transaction.installmentGroupId && (
+            <div>
+              <p className="text-xs text-dark-500 mb-1">Grupo de parcelas (installment_group_id)</p>
+              <p
+                className="text-sm text-white font-mono break-all"
+                title={transaction.installmentGroupId}
+              >
+                {transaction.installmentGroupId}
+              </p>
+            </div>
+          )}
+
+          {transaction.recurrenceId && (
+            <div>
+              <p className="text-xs text-dark-500 mb-1">Recorrência (ID)</p>
+              <p
+                className="text-sm text-white font-mono break-all"
+                title={transaction.recurrenceId}
+              >
+                {transaction.recurrenceId}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs text-dark-500 mb-1">ID da transação</p>
+            <p className="text-sm text-dark-300 font-mono break-all" title={transaction.id}>
+              {transaction.id}
+            </p>
           </div>
 
           <div>

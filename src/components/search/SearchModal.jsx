@@ -27,7 +27,11 @@ export default function SearchModal({ onNavigate }) {
 
   // Hooks de dados - buscar do mês atual e alguns meses anteriores
   const now = new Date()
-  const { transactions } = useTransactions(now.getMonth(), now.getFullYear())
+  const { transactions } = useTransactions({
+    month: now.getMonth(),
+    year: now.getFullYear(),
+    excludeCardExpenses: false
+  })
   const { cards } = useCards()
   const { accounts } = useAccounts()
   const { categories } = useCategories()

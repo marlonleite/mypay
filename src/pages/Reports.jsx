@@ -75,11 +75,11 @@ export default function Reports({ month, year, onMonthChange }) {
   const categoryData = useMemo(() => {
     const data = {}
 
-    // Add transactions
+    // Add transactions (mapTransaction expõe categoryId, não category)
     filteredTransactions
       .filter(t => t.type === TRANSACTION_TYPES.EXPENSE)
       .forEach(t => {
-        const catId = t.category
+        const catId = t.categoryId
         if (!data[catId]) {
           const cat = categories.find(c => c.id === catId)
           data[catId] = {

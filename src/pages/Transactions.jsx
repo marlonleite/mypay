@@ -22,7 +22,8 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
-  AlertCircle
+  AlertCircle,
+  Layers2
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
@@ -36,7 +37,7 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import CategorySelector from '../components/transactions/CategorySelector'
-import { useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
+import { useTransactions, useCategories, useAccounts, useTags, useCards } from '../hooks/useFirestore'
 import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
@@ -45,10 +46,20 @@ import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERI
 import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { matchTransaction } from '../utils/searchTransactions'
+import {
+  matchesTransactionSourceFilter,
+  isRecurrenceLinkedTransaction,
+  isInstallmentPlanTransaction,
+  formatInstallmentFraction
+} from '../utils/transactionSemantics'
 
 const TX_FILTER_TYPES = new Set([
   'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
 ])
+
+const TX_FILTER_SOURCES = new Set(['all', 'account', 'card', 'bill_payment'])
+/** Padrão em Lançamentos: só movimentos de conta (exclui credit_card_id; inclui paid_credit_card_id). */
+const DEFAULT_TX_SOURCE = 'account'
 
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
@@ -62,13 +73,24 @@ export default function Transactions({
   const setSearchTerm = onSearchTermChange
   const setShowFilters = onShowFiltersChange
 
+  // API: exclude_card_expenses=true remove compras (credit_card_id). Pagamentos de fatura (paid_*) seguem.
+  // Só traz faturas de cartão no JSON quando a origem pede: "Todas" ou "Despesas na fatura do cartão" (aba Cartão é outra tela).
+  const needCardPurchaseRows =
+    (filters.source ?? DEFAULT_TX_SOURCE) === 'all' ||
+    (filters.source ?? DEFAULT_TX_SOURCE) === 'card'
+
   const {
     transactions,
     loading,
     addTransaction,
     updateTransaction,
     deleteTransaction,
-  } = useTransactions({ month, year, dateRange, excludeCardExpenses: false })
+  } = useTransactions({
+    month,
+    year,
+    dateRange,
+    excludeCardExpenses: !needCardPurchaseRows
+  })
 
   const {
     logTransactionCreate,
@@ -92,6 +114,7 @@ export default function Transactions({
   } = useAccounts()
 
   const { tags: existingTags } = useTags()
+  const { cards } = useCards()
 
   const fileInputRef = useRef(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -160,6 +183,11 @@ export default function Transactions({
   // Contas ativas
   const activeAccounts = useMemo(() => getActiveAccounts(), [accounts])
 
+  const getCardName = (cardId) => {
+    if (!cardId) return ''
+    return cards.find(c => c.id === cardId)?.name || 'Cartão'
+  }
+
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
     if (!tagInput.trim()) return existingTags.filter(t => !formData.tags.includes(t))
@@ -175,6 +203,7 @@ export default function Transactions({
     const has =
       (searchParams.get('txq') && searchParams.get('txq').length > 0) ||
       (searchParams.get('txtype') && searchParams.get('txtype') !== 'all') ||
+      searchParams.has('txsrc') ||
       (searchParams.get('txacc') && searchParams.get('txacc') !== 'all') ||
       (searchParams.get('txcat') && searchParams.get('txcat').length > 0) ||
       (searchParams.get('txtag') && searchParams.get('txtag').length > 0) ||
@@ -187,9 +216,11 @@ export default function Transactions({
     const q = searchParams.get('txq') || ''
     if (q) onSearchTermChange(q)
     const ty = searchParams.get('txtype')
+    const src = searchParams.get('txsrc')
     const acc = searchParams.get('txacc') || 'all'
     onFiltersChange({
       type: ty && TX_FILTER_TYPES.has(ty) ? ty : 'all',
+      source: src && TX_FILTER_SOURCES.has(src) ? src : DEFAULT_TX_SOURCE,
       account: acc !== 'all' && acc ? acc : 'all',
       category: searchParams.get('txcat') ? searchParams.get('txcat').split(',').filter(Boolean) : [],
       tag: searchParams.get('txtag') ? searchParams.get('txtag').split(',').filter(Boolean) : [],
@@ -211,6 +242,7 @@ export default function Transactions({
         else p.delete('txq')
         if (filters.type && filters.type !== 'all') p.set('txtype', filters.type)
         else p.delete('txtype')
+        p.set('txsrc', (filters.source ?? DEFAULT_TX_SOURCE) || DEFAULT_TX_SOURCE)
         if (filters.account && filters.account !== 'all') p.set('txacc', filters.account)
         else p.delete('txacc')
         if (filters.category.length > 0) p.set('txcat', filters.category.join(','))
@@ -246,11 +278,17 @@ export default function Transactions({
           case 'expense': return t.type === TRANSACTION_TYPES.EXPENSE
           case 'expense_paid': return t.type === TRANSACTION_TYPES.EXPENSE && t.paid !== false
           case 'expense_pending': return t.type === TRANSACTION_TYPES.EXPENSE && t.paid === false
-          case 'fixed': return t.isFixed
-          case 'installment': return t.isInstallment
+          case 'fixed': return isRecurrenceLinkedTransaction(t)
+          case 'installment': return isInstallmentPlanTransaction(t)
           default: return true
         }
       })
+    }
+
+    // Origem: conta vs compra na fatura vs pagamento de fatura (FKs; ver transactionSemantics)
+    const sourceFilter = filters.source ?? DEFAULT_TX_SOURCE
+    if (sourceFilter !== 'all') {
+      result = result.filter(t => matchesTransactionSourceFilter(t, sourceFilter))
     }
 
     // Filtro por conta
@@ -290,6 +328,7 @@ export default function Transactions({
   // Verificar se há filtros ativos
   const hasActiveFilters =
     filters.type !== 'all' ||
+    (filters.source ?? DEFAULT_TX_SOURCE) !== DEFAULT_TX_SOURCE ||
     filters.account !== 'all' ||
     filters.category.length > 0 ||
     filters.tag.length > 0 ||
@@ -300,28 +339,33 @@ export default function Transactions({
   const overdueTransactions = useMemo(() => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    const sourceFilter = filters.source ?? DEFAULT_TX_SOURCE
 
-    return transactions.filter(t => {
-      if (t.paid !== false) return false // Só não pagos
-      const transactionDate = t.date instanceof Date ? t.date : new Date(t.date)
-      transactionDate.setHours(0, 0, 0, 0)
-      return transactionDate < today // Data no passado
-    }).sort((a, b) => {
-      const dateA = a.date instanceof Date ? a.date : new Date(a.date)
-      const dateB = b.date instanceof Date ? b.date : new Date(b.date)
-      return dateA - dateB // Mais antigos primeiro
-    })
-  }, [transactions])
+    return transactions
+      .filter(t => {
+        if (t.paid !== false) return false // Só não pagos
+        const transactionDate = t.date instanceof Date ? t.date : new Date(t.date)
+        transactionDate.setHours(0, 0, 0, 0)
+        return transactionDate < today // Data no passado
+      })
+      .filter(t => (sourceFilter === 'all' ? true : matchesTransactionSourceFilter(t, sourceFilter)))
+      .sort((a, b) => {
+        const dateA = a.date instanceof Date ? a.date : new Date(a.date)
+        const dateB = b.date instanceof Date ? b.date : new Date(b.date)
+        return dateA - dateB // Mais antigos primeiro
+      })
+  }, [transactions, filters.source])
 
   // Labels dos filtros
   const clearAllListFilters = () => {
-    onFiltersChange({ type: 'all', account: 'all', category: [], tag: [] })
+    onFiltersChange({ type: 'all', source: DEFAULT_TX_SOURCE, account: 'all', category: [], tag: [] })
     onSearchTermChange('')
     setDateRange(null)
     setShowFilters(false)
   }
 
   const removeTypeFilter = () => onFiltersChange({ ...filters, type: 'all' })
+  const removeSourceFilter = () => onFiltersChange({ ...filters, source: DEFAULT_TX_SOURCE })
   const removeAccountFilter = () => onFiltersChange({ ...filters, account: 'all' })
   const removeCategoryFilter = (id) =>
     onFiltersChange({ ...filters, category: filters.category.filter((c) => c !== id) })
@@ -337,10 +381,20 @@ export default function Transactions({
       expense: 'Despesas',
       expense_paid: 'Despesas pagas',
       expense_pending: 'Despesas pendentes',
-      fixed: 'Lançamentos fixos',
+      fixed: 'Recorrentes',
       installment: 'Parcelados'
     }
     return labels[filters.type] || 'Tipo'
+  }
+
+  const getSourceLabel = () => {
+    const labels = {
+      all: 'Todas as origens',
+      account: 'Conta (sem compra fatura)',
+      card: 'Despesas na fatura do cartão',
+      bill_payment: 'Pagamentos de fatura'
+    }
+    return labels[filters.source ?? DEFAULT_TX_SOURCE] || 'Origem'
   }
 
   // Agrupar por data (ordenado do mais recente ao mais antigo)
@@ -413,6 +467,24 @@ export default function Transactions({
   const getAccountName = (accountId) => {
     const account = accounts.find(a => a.id === accountId)
     return account?.name || 'Sem conta'
+  }
+
+  /** Categoria + origem (FKs: fatura, pag. fatura, conta) — não inferir por texto. */
+  const getTransactionContextSubtitle = (transaction) => {
+    const base = getCategoryName(transaction.categoryId)
+    if (transaction.creditCardId) {
+      return `${base} • Fatura: ${getCardName(transaction.creditCardId)}`
+    }
+    if (transaction.paidCreditCardId) {
+      const bank = transaction.accountId ? getAccountName(transaction.accountId) : null
+      return `${base} • Pag. fatura: ${getCardName(transaction.paidCreditCardId)}${
+        bank ? ` • ${bank}` : ''
+      }`
+    }
+    if (transaction.accountId) {
+      return `${base} • ${getAccountName(transaction.accountId)}`
+    }
+    return base
   }
 
   const getCategoryColor = (categoryId) => {
@@ -1052,8 +1124,7 @@ export default function Transactions({
                       className="text-xs text-red-700 dark:text-red-200/80"
                       style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >
-                      {formatDate(transaction.date)}
-                      {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
+                      {formatDate(transaction.date)} • {getTransactionContextSubtitle(transaction)}
                     </p>
                   </div>
                   <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${
@@ -1132,6 +1203,16 @@ export default function Transactions({
               className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
             >
               {getTypeLabel()}
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {(filters.source ?? DEFAULT_TX_SOURCE) !== DEFAULT_TX_SOURCE && (
+            <button
+              type="button"
+              onClick={removeSourceFilter}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-medium bg-dark-700 text-dark-200"
+            >
+              {getSourceLabel()}
               <X className="w-3.5 h-3.5" />
             </button>
           )}
@@ -1216,7 +1297,7 @@ export default function Transactions({
                   { value: 'expense', label: 'Despesas' },
                   { value: 'expense_paid', label: 'Despesas pagas' },
                   { value: 'expense_pending', label: 'Despesas pendentes' },
-                  { value: 'fixed', label: 'Lançamentos fixos' },
+                  { value: 'fixed', label: 'Recorrentes' },
                   { value: 'installment', label: 'Parcelados' }
                 ].map(opt => (
                   <button
@@ -1233,6 +1314,47 @@ export default function Transactions({
                   >
                     {opt.label}
                     {filters.type === opt.value && <Check className="w-4 h-4 inline ml-2" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Filtro Origem (FKs cartão / pagamento fatura) */}
+          <div className="relative">
+            <button
+              onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'source' ? null : 'source')}
+              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${
+                (filters.source ?? DEFAULT_TX_SOURCE) !== DEFAULT_TX_SOURCE
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-dark-700 text-dark-300 hover:text-white'
+              }`}
+            >
+              {getSourceLabel()}
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {activeFilterDropdown === 'source' && (
+              <div className="absolute top-full left-0 mt-1 bg-dark-900 border border-dark-600 rounded-xl shadow-lg py-1 min-w-[220px] z-50 max-h-60 overflow-y-auto">
+                {[
+                  { value: 'all', label: 'Todas as origens' },
+                  { value: 'account', label: 'Conta (sem compra na fatura)' },
+                  { value: 'card', label: 'Despesas na fatura do cartão' },
+                  { value: 'bill_payment', label: 'Pagamentos de fatura' }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setFilters({ ...filters, source: opt.value })
+                      setActiveFilterDropdown(null)
+                    }}
+                    className={`w-full px-4 py-2 text-sm text-left transition-colors ${
+                      (filters.source ?? DEFAULT_TX_SOURCE) === opt.value
+                        ? 'text-violet-400 bg-violet-500/10'
+                        : 'text-dark-300 hover:bg-dark-700 hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                    {(filters.source ?? DEFAULT_TX_SOURCE) === opt.value && <Check className="w-4 h-4 inline ml-2" />}
                   </button>
                 ))}
               </div>
@@ -1376,13 +1498,17 @@ export default function Transactions({
                         >
                           {transaction.description}
                         </span>
-                        {transaction.totalInstallments > 1 && (
-                          <span className="text-[9px] text-dark-500 bg-dark-800 px-1 rounded flex-shrink-0">
-                            {transaction.installment}/{transaction.totalInstallments}
+                        {isInstallmentPlanTransaction(transaction) && (
+                          <span
+                            className="text-[9px] text-dark-500 bg-dark-800 px-1 rounded flex-shrink-0 inline-flex items-center gap-0.5"
+                            title="Parcela (installment / total_installments)"
+                          >
+                            <Layers2 className="w-2 h-2 opacity-80" />
+                            {formatInstallmentFraction(transaction)}
                           </span>
                         )}
-                        {transaction.isFixed && (
-                          <Repeat className="w-2.5 h-2.5 text-violet-400 flex-shrink-0" />
+                        {isRecurrenceLinkedTransaction(transaction) && (
+                          <Repeat className="w-2.5 h-2.5 text-violet-400 flex-shrink-0" title="Recorrente (recurrence_id)" />
                         )}
                         {(transaction.attachments?.length > 0 || transaction.attachment) && (
                           <Paperclip className="w-2.5 h-2.5 text-dark-400 flex-shrink-0" />
@@ -1396,8 +1522,7 @@ export default function Transactions({
                         }`}
                         style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       >
-                        {getCategoryName(transaction.categoryId)}
-                        {transaction.accountId && ` • ${getAccountName(transaction.accountId)}`}
+                        {getTransactionContextSubtitle(transaction)}
                       </p>
                       {normalizeTags(transaction.tags).length > 0 && (
                         <div className="flex gap-1 mt-0.5 flex-wrap">
@@ -2026,6 +2151,7 @@ export default function Transactions({
         getCategoryName={getCategoryName}
         getAccountName={getAccountName}
         getCategoryColor={getCategoryColor}
+        getCardName={getCardName}
         deleting={deleting === selectedTransaction?.id}
       />
 
@@ -2039,7 +2165,9 @@ export default function Transactions({
       >
         <div className="space-y-4">
           <p className="text-dark-300">
-            Este lançamento faz parte de um grupo de {editingTransaction?.isFixed ? 'lançamentos fixos' : 'parcelas'}.
+            Este lançamento faz parte de um grupo de {editingTransaction?.recurrenceId
+              ? 'recorrência (recurrence_id)'
+              : 'parcelas (installment_group_id)'}.
             O que deseja editar?
           </p>
 
@@ -2090,7 +2218,9 @@ export default function Transactions({
       >
         <div className="space-y-4">
           <p className="text-dark-300">
-            Este lançamento faz parte de um grupo de {transactionToDelete?.isFixed ? 'despesas fixas' : 'parcelas'}.
+            Este lançamento faz parte de um grupo de {transactionToDelete?.recurrenceId
+              ? 'recorrência (recurrence_id)'
+              : 'parcelas (installment_group_id)'}.
             O que deseja fazer?
           </p>
 

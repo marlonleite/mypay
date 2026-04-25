@@ -26,7 +26,14 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useUndo } from './contexts/UndoContext'
 import { getCurrentMonthYear } from './utils/helpers'
 
-const INITIAL_FILTERS = { type: 'all', account: 'all', category: [], tag: [] }
+const INITIAL_FILTERS = {
+  type: 'all',
+  // Lançamentos: por padrão omitir compras na fatura (credit_card_id); manter contas e pag. fatura
+  source: 'account',
+  account: 'all',
+  category: [],
+  tag: []
+}
 
 const VALID_TABS = new Set([
   'dashboard',
