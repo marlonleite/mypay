@@ -35,16 +35,48 @@ function parseTotalInstallments(raw) {
   return Math.floor(n)
 }
 
+/**
+ * Normaliza `date` da API (YYYY-MM-DD ou ISO completo) → Date ao meio-dia local + string YYYY-MM-DD.
+ * Evita concatenação `date + 'T12:00:00'` quando `date` já inclui horário (string inválida).
+ */
+function parseTransactionApiDate(raw) {
+  if (raw == null || raw === '') return null
+  if (typeof raw === 'string') {
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (m) {
+      const dateIso = m[1]
+      return { dateIso, date: new Date(`${dateIso}T12:00:00`) }
+    }
+    const parsed = new Date(raw)
+    return Number.isNaN(parsed.getTime())
+      ? null
+      : {
+          dateIso: `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`,
+          date: parsed,
+        }
+  }
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    const yyyy = raw.getFullYear()
+    const mm = String(raw.getMonth() + 1).padStart(2, '0')
+    const dd = String(raw.getDate()).padStart(2, '0')
+    const dateIso = `${yyyy}-${mm}-${dd}`
+    return { dateIso, date: new Date(`${dateIso}T12:00:00`) }
+  }
+  return null
+}
+
 function mapTransaction(t) {
   const totalInst = parseTotalInstallments(t?.total_installments)
   const inst = parseInstallmentIndex(t?.installment, 1)
+  const parsedDate = parseTransactionApiDate(t?.date)
   return {
     id: t.id,
     description: t.description,
     amount: parseFloat(t.amount),
     type: t.type,
-    // "T12:00:00" garante interpretação local (evita UTC shift)
-    date: t.date ? new Date(t.date + 'T12:00:00') : null,
+    date: parsedDate?.date ?? null,
+    /** Dia civil como na API (YYYY-MM-DD); útil para cortes que devem espelhar o servidor. */
+    dateIso: parsedDate?.dateIso ?? null,
     accountId: t.account_id ?? null,
     categoryId: t.category_id ?? null,
     notes: t.notes ?? null,
@@ -69,8 +101,8 @@ function mapTransaction(t) {
   }
 }
 
-// Resolve tag names → UUIDs via API
-async function resolveTagIds(tagNames, apiClient) {
+// Resolve tag names → UUIDs via API (exported for recurrence bulk fields).
+export async function resolveTagIds(tagNames, apiClient) {
   if (!tagNames || tagNames.length === 0) return []
   const allTags = await apiClient.get('/api/v1/tags')
   return tagNames
@@ -160,7 +192,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     if (!user) {
       setTransactions([])
       setLoading(false)
-      return
+      return []
     }
 
     try {
@@ -176,8 +208,9 @@ export function useTransactions(month, year, dateRangeMaybe) {
         const start = new Date(sy, sm - 1, sd, 0, 0, 0)
         const end = new Date(ey, em - 1, ed, 23, 59, 59)
         data = all.filter(t => {
-          const d = new Date(t.date + 'T12:00:00')
-          return d >= start && d <= end
+          const parsed = parseTransactionApiDate(t.date)
+          const d = parsed?.date
+          return d != null && d >= start && d <= end
         })
       } else {
         const params = new URLSearchParams()
@@ -187,10 +220,13 @@ export function useTransactions(month, year, dateRangeMaybe) {
         data = await apiClient.get(`/api/v1/transactions?${params.toString()}`)
       }
 
-      setTransactions(data.map(mapTransaction))
+      const mapped = data.map(mapTransaction)
+      setTransactions(mapped)
+      return mapped
     } catch (err) {
       console.error('Error fetching transactions:', err)
       setError('Erro ao carregar transações')
+      return []
     } finally {
       setLoading(false)
     }
@@ -222,18 +258,32 @@ export function useTransactions(month, year, dateRangeMaybe) {
     return mapTransaction(updated)
   }
 
-  const deleteTransaction = async (id) => {
+  /**
+   * @param {string} id
+   * @param {{ scope?: 'all'|'from_date', fromDate?: string|Date }} [options]
+   * Recorrência: DELETE com JSON — scope `all` (série inteira) ou `from_date` (+ opcional `from_date` ISO).
+   */
+  const deleteTransaction = async (id, options = {}) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    await apiClient.delete(`/api/v1/transactions/${id}`)
+    let body
+    if (options.scope === 'all') {
+      body = { scope: 'all' }
+    } else if (options.scope === 'from_date') {
+      body = { scope: 'from_date' }
+      if (options.fromDate != null && options.fromDate !== '') {
+        body.from_date =
+          options.fromDate instanceof Date
+            ? options.fromDate.toISOString().slice(0, 10)
+            : options.fromDate
+      }
+    }
+    await apiClient.delete(`/api/v1/transactions/${id}`, body)
     await fetchTransactions()
   }
 
   // ❌ updateRecurrenceGroup / deleteRecurrenceGroup REMOVIDOS na Onda 7 do refactor.
-  // O backend não tem mais coluna `recurrence_group` (string) nem endpoints batch
-  // `/transactions/recurrence/{group}`. Recurrence vive em `recurrences` (template) +
-  // FK `recurrence_id` em transactions. Edição em massa de "fixed" deve ir pelo
-  // template (PUT /api/v1/recurrences/{id}) — ver hook `useRecurrences` (F6).
+  // Recorrência em série: PUT /api/v1/recurrences/{id} com scope + fields (resposta { recurrence, applied }).
 
   return {
     transactions,
@@ -242,6 +292,8 @@ export function useTransactions(month, year, dateRangeMaybe) {
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    /** Re-fetch lista atual; retorna transações mapeadas (útil após criar template de recorrência). */
+    refreshTransactions: fetchTransactions,
   }
 }
 
@@ -541,6 +593,66 @@ export const RECURRENCE_FREQUENCIES = [
 ]
 
 // Transform: API response (snake_case) → frontend shape (camelCase).
+/** PUT /recurrences/{id} pode retornar envelope { recurrence, applied }. */
+function mapRecurrenceApplied(a) {
+  if (!a || typeof a !== 'object') return null
+  return {
+    scope: a.scope ?? null,
+    fromDate: a.from_date ?? null,
+    transactionsUpdated: a.transactions_updated ?? 0,
+    fieldsUpdated: Array.isArray(a.fields_updated) ? a.fields_updated : [],
+    warnings: Array.isArray(a.warnings) ? a.warnings : [],
+  }
+}
+
+function unwrapRecurrencePutResponse(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { recurrence: null, applied: null }
+  }
+  if ('recurrence' in raw && raw.recurrence != null) {
+    return {
+      recurrence: mapRecurrence(raw.recurrence),
+      applied: raw.applied ? mapRecurrenceApplied(raw.applied) : null,
+    }
+  }
+  return { recurrence: mapRecurrence(raw), applied: null }
+}
+
+/** Mesmo envelope para archive/unarchive se o backend padronizar. */
+function unwrapRecurrenceEntityRaw(raw) {
+  if (!raw || typeof raw !== 'object') return mapRecurrence(raw)
+  if ('recurrence' in raw && raw.recurrence != null) return mapRecurrence(raw.recurrence)
+  return mapRecurrence(raw)
+}
+
+/** Normaliza `fields` do PUT em massa (camelCase → snake_case + tag_ids). */
+async function normalizeRecurrenceBulkFields(fields, apiClient, { scope } = {}) {
+  if (!fields || typeof fields !== 'object') return {}
+  const out = {}
+  if (fields.description !== undefined) out.description = fields.description
+  if (fields.amount !== undefined) out.amount = fields.amount
+  if (fields.type !== undefined) out.type = fields.type
+  const cat = fields.category_id ?? fields.categoryId
+  if (cat !== undefined && cat !== null && cat !== '') out.category_id = cat
+  const acc = fields.account_id ?? fields.accountId
+  if (acc !== undefined && acc !== null && acc !== '') out.account_id = acc
+  if (fields.frequency !== undefined) out.frequency = fields.frequency
+  const dop = fields.day_of_period ?? fields.dayOfPeriod
+  if (dop !== undefined && dop !== null) out.day_of_period = dop
+  let startRaw = fields.start_date ?? fields.startDate
+  if (startRaw instanceof Date) startRaw = startRaw.toISOString().slice(0, 10)
+  if (startRaw !== undefined && scope !== 'from_date') out.start_date = startRaw
+  let endRaw = fields.end_date ?? fields.endDate
+  if (endRaw instanceof Date) endRaw = endRaw.toISOString().slice(0, 10)
+  if (endRaw !== undefined) out.end_date = endRaw
+  if (fields.notes !== undefined) out.notes = fields.notes
+  if (fields.tag_ids !== undefined) out.tag_ids = fields.tag_ids
+  else if (fields.tags?.length) {
+    out.tag_ids = await resolveTagIds(fields.tags, apiClient)
+  }
+  return out
+}
+
 function mapRecurrence(r) {
   return {
     id: r.id,
@@ -638,29 +750,53 @@ export function useRecurrences({ includeArchived = false } = {}) {
     return mapRecurrence(created)
   }
 
+  /**
+   * Atualiza template / série.
+   * - Legado: body achatado (amount, description, …) → equivale a template_only.
+   * - Novo: { scope: 'template_only'|'from_date'|'all', fromDate?, fields?: {...} }
+   * Retorno: { recurrence, applied } com applied=null se API legado só devolver entidade.
+   */
   const updateRecurrence = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const updated = await apiClient.put(`/api/v1/recurrences/${id}`, buildRecurrencePayload(data))
+
+    let body
+    if (data.scope !== undefined && data.scope !== null) {
+      body = { scope: data.scope }
+      if (data.scope === 'from_date') {
+        const fd = data.fromDate ?? data.from_date
+        if (!fd) throw new Error('fromDate obrigatório quando scope é from_date')
+        body.from_date = fd instanceof Date ? fd.toISOString().slice(0, 10) : fd
+      }
+      if (data.fields && typeof data.fields === 'object' && Object.keys(data.fields).length > 0) {
+        body.fields = await normalizeRecurrenceBulkFields(data.fields, apiClient, {
+          scope: data.scope,
+        })
+      }
+    } else {
+      body = buildRecurrencePayload(data)
+    }
+
+    const raw = await apiClient.put(`/api/v1/recurrences/${id}`, body)
     await fetchRecurrences()
-    return mapRecurrence(updated)
+    return unwrapRecurrencePutResponse(raw)
   }
 
   // Backend não tem DELETE — só archive (preserva ocorrências já materializadas).
   const archiveRecurrence = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const updated = await apiClient.put(`/api/v1/recurrences/${id}/archive`, {})
+    const raw = await apiClient.put(`/api/v1/recurrences/${id}/archive`, {})
     await fetchRecurrences()
-    return mapRecurrence(updated)
+    return unwrapRecurrenceEntityRaw(raw)
   }
 
   const unarchiveRecurrence = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const updated = await apiClient.put(`/api/v1/recurrences/${id}/unarchive`, {})
+    const raw = await apiClient.put(`/api/v1/recurrences/${id}/unarchive`, {})
     await fetchRecurrences()
-    return mapRecurrence(updated)
+    return unwrapRecurrenceEntityRaw(raw)
   }
 
   const refresh = fetchRecurrences

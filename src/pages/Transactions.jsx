@@ -37,7 +37,14 @@ import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import TransactionDetail from '../components/transactions/TransactionDetail'
 import CategorySelector from '../components/transactions/CategorySelector'
-import { useTransactions, useCategories, useAccounts, useTags, useCards } from '../hooks/useFirestore'
+import {
+  useTransactions,
+  useCategories,
+  useAccounts,
+  useTags,
+  useCards,
+  useRecurrences,
+} from '../hooks/useFirestore'
 import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
@@ -60,6 +67,21 @@ const TX_FILTER_TYPES = new Set([
 const TX_FILTER_SOURCES = new Set(['all', 'account', 'card', 'bill_payment'])
 /** Padrão em Lançamentos: só movimentos de conta (exclui credit_card_id; inclui paid_credit_card_id). */
 const DEFAULT_TX_SOURCE = 'account'
+
+/** Frequências onde o backend usa `day_of_period` (dia do mês). */
+const RECURRENCE_MONTHLY_LIKE_FREQUENCIES = new Set([
+  'monthly',
+  'bimonthly',
+  'quarterly',
+  'semiannual',
+  'annual',
+])
+
+/** Dia civil local para cortes "desta data em diante" em exclusões em série. */
+function transactionDayStamp(d) {
+  const x = d instanceof Date ? d : new Date(d)
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+}
 
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
@@ -85,6 +107,7 @@ export default function Transactions({
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    refreshTransactions,
   } = useTransactions({
     month,
     year,
@@ -115,6 +138,7 @@ export default function Transactions({
 
   const { tags: existingTags } = useTags()
   const { cards } = useCards()
+  const { addRecurrence, updateRecurrence } = useRecurrences()
 
   const fileInputRef = useRef(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -127,7 +151,7 @@ export default function Transactions({
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState(null)
   const [editModeModalOpen, setEditModeModalOpen] = useState(false)
-  const [editMode, setEditMode] = useState('single') // 'single' ou 'all'
+  const [editMode, setEditMode] = useState('single') // 'single' | 'all' | 'from_forward'
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
   const [transactionType, setTransactionType] = useState(TRANSACTION_TYPES.EXPENSE)
@@ -135,7 +159,8 @@ export default function Transactions({
   const [showOverduePanel, setShowOverduePanel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savingCategory, setSavingCategory] = useState(false)
-  const [deleting, setDeleting] = useState(null)
+  /** Durante DELETE: qual transação e qual modo — evita spinner nos 3 botões ao mesmo tempo. */
+  const [deleteProgress, setDeleteProgress] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
 
@@ -792,6 +817,25 @@ export default function Transactions({
     addTag(tag)
   }
 
+  /** Feedback opcional após PUT /recurrences/{id} em massa (applied.warnings, transactions_updated). */
+  const notifyRecurrenceApplied = (applied) => {
+    if (!applied) return
+    const lines = []
+    if (applied.transactionsUpdated > 0) {
+      lines.push(`${applied.transactionsUpdated} lançamento(s) atualizado(s).`)
+    }
+    if (applied.warnings?.length) lines.push(...applied.warnings)
+    if (lines.length > 0) window.alert(lines.join('\n\n'))
+  }
+
+  /** Backend só materializa recorrências ao listar com month+year; precisamos disparar após criar template. */
+  const primeMaterializationForCalendarMonth = async (isoDateStr) => {
+    const [y, mo] = isoDateStr.split('-').map(Number)
+    const { apiClient } = await import('../services/apiClient')
+    const ex = needCardPurchaseRows ? 'false' : 'true'
+    await apiClient.get(`/api/v1/transactions?month=${mo}&year=${y}&exclude_card_expenses=${ex}`)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.description || !formData.amount || !formData.date) return
@@ -812,17 +856,31 @@ export default function Transactions({
       }
 
       if (editingTransaction) {
-        // Endpoint batch /transactions/recurrence/{group} foi removido na Onda 7
-        // do refactor backend. Edição em massa agora itera client-side pelo grupo
-        // (installmentGroupId pra parcelas, recurrenceId pra ocorrências de template).
-        const groupKey = editingTransaction.installmentGroupId
-          ? { field: 'installmentGroupId', value: editingTransaction.installmentGroupId }
-          : editingTransaction.recurrenceId
-            ? { field: 'recurrenceId', value: editingTransaction.recurrenceId }
-            : null
+        const recurrenceBulk =
+          editingTransaction.recurrenceId &&
+          (editMode === 'all' || editMode === 'from_forward')
 
-        if (editMode === 'all' && groupKey) {
-          // Editar todos do grupo — aplica alterações comuns (exceto date, amount, paid)
+        if (recurrenceBulk) {
+          const scope = editMode === 'all' ? 'all' : 'from_date'
+          const payload = {
+            scope,
+            fields: {
+              description: data.description,
+              amount: data.amount,
+              category_id: data.category || null,
+              account_id: data.accountId || null,
+              type: transactionType,
+              ...(data.notes ? { notes: data.notes } : {}),
+              ...(data.tags?.length ? { tags: data.tags } : {}),
+            },
+          }
+          if (scope === 'from_date') {
+            payload.fromDate = formatDateForInput(editingTransaction.date)
+          }
+          const { applied } = await updateRecurrence(editingTransaction.recurrenceId, payload)
+          await refreshTransactions()
+          notifyRecurrenceApplied(applied)
+        } else if (editMode === 'all' && editingTransaction.installmentGroupId) {
           const commonUpdates = {
             description: data.description,
             category: data.category,
@@ -830,12 +888,14 @@ export default function Transactions({
             notes: data.notes,
             tags: data.tags
           }
-          const groupTransactions = transactions.filter(t => t[groupKey.field] === groupKey.value)
+          const groupTransactions = transactions.filter(
+            t => t.installmentGroupId === editingTransaction.installmentGroupId
+          )
           for (const txn of groupTransactions) {
             await updateTransaction(txn.id, commonUpdates)
           }
         } else {
-          // Editar apenas este
+          // Editar apenas este (ou parcela única sem modo em massa)
           await updateTransaction(editingTransaction.id, data)
           // Registrar atividade de atualização
           logTransactionUpdate(
@@ -894,34 +954,58 @@ export default function Transactions({
           }
         }
 
-        // Verificar tipo de recorrência
-        // Pós-refactor backend (Ondas 1+7): `recurrence_group` (string) foi removido;
-        // grupos agora usam `installment_group_id` (UUID). Recurrência template real
-        // (recurrences entity) será adicionada em F6 — por ora, "fixed" cria N transactions
-        // explícitas com o mesmo installment_group_id, equivalente ao comportamento antigo.
+        // Recorrência fixa: template em POST /api/v1/recurrences; ocorrências são materializadas
+        // pelo backend ao listar transações por mês/ano (ver TransactionUseCase.list_transactions).
         if (formData.recurrenceType === 'fixed') {
-          // Despesa fixa - criar 12 lançamentos com frequência selecionada
-          const baseDate = new Date(formData.date)
-          const installmentGroupId = crypto.randomUUID()
-          let firstResult = null
+          const isoDate = typeof formData.date === 'string'
+            ? formData.date
+            : formatDateForInput(formData.date)
+          const freq = formData.fixedFrequency
+          const dayPart = parseInt(isoDate.slice(8, 10), 10)
+          const created = await addRecurrence({
+            description: data.description,
+            amount: Number(data.amount),
+            type: transactionType === TRANSACTION_TYPES.INCOME ? 'income' : 'expense',
+            accountId: data.accountId || null,
+            categoryId: data.category || null,
+            frequency: freq,
+            dayOfPeriod: RECURRENCE_MONTHLY_LIKE_FREQUENCIES.has(freq) ? dayPart : undefined,
+            startDate: isoDate,
+            endDate: null,
+          })
 
-          for (let i = 0; i < 12; i++) {
-            const transactionDate = addDateInterval(baseDate, formData.fixedFrequency, i)
-            // Lançamentos futuros ficam como pendente
-            const isPaid = !isFutureDate(transactionDate) && formData.paid
+          await primeMaterializationForCalendarMonth(isoDate)
+          const txs = await refreshTransactions()
 
-            const result = await addTransaction({
-              ...data,
-              date: formatDateForInput(transactionDate),
-              paid: isPaid,
-              installmentGroupId,
-              installment: i + 1,
-              totalInstallments: 12,
+          const sameSeries = txs.filter(t => t.recurrenceId === created.id)
+          const firstOccurrence = sameSeries.find(t => formatDateForInput(t.date) === isoDate)
+            ?? [...sameSeries].sort((a, b) => a.date - b.date)[0]
+
+          if (firstOccurrence?.id && (data.notes || (data.tags && data.tags.length > 0))) {
+            await updateTransaction(firstOccurrence.id, {
+              description: firstOccurrence.description,
+              amount: firstOccurrence.amount,
+              categoryId: firstOccurrence.categoryId,
+              accountId: firstOccurrence.accountId,
+              date: formatDateForInput(firstOccurrence.date),
+              type: firstOccurrence.type,
+              notes: data.notes ?? null,
+              tags: data.tags?.length ? data.tags : null,
+              paid: firstOccurrence.paid,
+              isTransfer: firstOccurrence.isTransfer,
+              oppositeTransactionId: firstOccurrence.oppositeTransactionId,
+              recurrenceId: firstOccurrence.recurrenceId,
+              installment: firstOccurrence.installment,
+              totalInstallments: firstOccurrence.totalInstallments,
+              installmentGroupId: firstOccurrence.installmentGroupId,
+              creditCardId: firstOccurrence.creditCardId,
+              creditCardInvoiceId: firstOccurrence.creditCardInvoiceId,
+              paidCreditCardId: firstOccurrence.paidCreditCardId,
+              paidCreditCardInvoiceId: firstOccurrence.paidCreditCardInvoiceId,
             })
-            if (i === 0) firstResult = result
           }
 
-          await uploadPendingAttachmentsTo(firstResult?.id)
+          await uploadPendingAttachmentsTo(firstOccurrence?.id)
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
           // Parcelado com período selecionado
           const numInstallments = parseInt(formData.installments) || 1
@@ -979,26 +1063,40 @@ export default function Transactions({
       setDeleteModalOpen(true)
     } else {
       // Se não tem grupo, exclui direto
-      confirmDelete(transaction.id, false)
+      confirmDelete(transaction.id, 'single')
     }
   }
 
-  const confirmDelete = async (id, deleteAll = false) => {
+  /**
+   * @param {'single'|'all'|'from_forward'} deleteMode
+   */
+  const confirmDelete = async (id, deleteMode = 'single') => {
     try {
-      setDeleting(id)
+      setDeleteProgress({ id, mode: deleteMode })
 
       // Encontrar transação para log
       const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
 
-      if (deleteAll && transactionToDelete) {
-        // Endpoint batch foi removido na Onda 7 do refactor; deleta cada ocorrência
-        // do grupo client-side. Encontra pela mesma chave (installment_group_id ou
-        // recurrence_id) que abriu o modal.
-        const groupKey = transactionToDelete.installmentGroupId
-          ? { field: 'installmentGroupId', value: transactionToDelete.installmentGroupId }
-          : { field: 'recurrenceId', value: transactionToDelete.recurrenceId }
-        const groupTransactions = transactions.filter(t => t[groupKey.field] === groupKey.value)
+      if (deleteMode === 'all' && transactionToDelete?.recurrenceId) {
+        await deleteTransaction(transactionToDelete.id, { scope: 'all' })
+      } else if (deleteMode === 'from_forward' && transactionToDelete?.recurrenceId) {
+        // Sem `from_date` no body: backend usa txn.date no Postgres (evita mismatch TZ/format).
+        await deleteTransaction(transactionToDelete.id, { scope: 'from_date' })
+      } else if (deleteMode === 'all' && transactionToDelete?.installmentGroupId) {
+        const groupTransactions = transactions.filter(
+          t => t.installmentGroupId === transactionToDelete.installmentGroupId
+        )
         for (const txn of groupTransactions) {
+          await deleteTransaction(txn.id)
+        }
+      } else if (deleteMode === 'from_forward' && transactionToDelete?.installmentGroupId) {
+        const anchor = transactionDayStamp(transactionToDelete.date)
+        const forwardTransactions = transactions.filter(
+          t =>
+            t.installmentGroupId === transactionToDelete.installmentGroupId &&
+            transactionDayStamp(t.date) >= anchor
+        )
+        for (const txn of forwardTransactions) {
           await deleteTransaction(txn.id)
         }
       } else {
@@ -1016,7 +1114,7 @@ export default function Transactions({
     } catch (error) {
       console.error('Error deleting transaction:', error)
     } finally {
-      setDeleting(null)
+      setDeleteProgress(null)
     }
   }
 
@@ -1881,15 +1979,8 @@ export default function Transactions({
                       ))}
                     </select>
                     <p className="text-xs text-dark-400 mt-2">
-                      Serão criadas 12 {transactionType === TRANSACTION_TYPES.INCOME ? 'receitas' : 'despesas'}
-                      {formData.fixedFrequency === 'daily' && ' (12 dias).'}
-                      {formData.fixedFrequency === 'weekly' && ' (12 semanas).'}
-                      {formData.fixedFrequency === 'biweekly' && ' (6 meses).'}
-                      {formData.fixedFrequency === 'monthly' && ' (1 ano).'}
-                      {formData.fixedFrequency === 'bimonthly' && ' (2 anos).'}
-                      {formData.fixedFrequency === 'quarterly' && ' (3 anos).'}
-                      {formData.fixedFrequency === 'semiannual' && ' (6 anos).'}
-                      {formData.fixedFrequency === 'annual' && ' (12 anos).'}
+                      É criado um modelo de recorrência no servidor; as ocorrências entram nos lançamentos
+                      quando você abre cada mês no calendário (sem limite fixo de parcelas na criação).
                     </p>
                   </div>
                 )}
@@ -2152,7 +2243,7 @@ export default function Transactions({
         getAccountName={getAccountName}
         getCategoryColor={getCategoryColor}
         getCardName={getCardName}
-        deleting={deleting === selectedTransaction?.id}
+        deleting={deleteProgress?.id === selectedTransaction?.id}
       />
 
       {/* Modal de Modo de Edição */}
@@ -2180,6 +2271,16 @@ export default function Transactions({
               Editar apenas este lançamento
             </Button>
 
+            {editingTransaction?.recurrenceId && (
+              <Button
+                onClick={() => proceedToEdit(editingTransaction, 'from_forward')}
+                variant="secondary"
+                fullWidth
+              >
+                Desta data em diante (template + lançamentos com data ≥ esta)
+              </Button>
+            )}
+
             <Button
               onClick={() => proceedToEdit(editingTransaction, 'all')}
               variant="primary"
@@ -2188,7 +2289,7 @@ export default function Transactions({
               Editar todos do grupo ({transactions.filter(t =>
                 (editingTransaction?.installmentGroupId && t.installmentGroupId === editingTransaction.installmentGroupId) ||
                 (editingTransaction?.recurrenceId && t.recurrenceId === editingTransaction.recurrenceId)
-              ).length} lançamentos)
+              ).length} lançamentos visíveis)
             </Button>
 
             <Button
@@ -2201,8 +2302,9 @@ export default function Transactions({
           </div>
 
           <p className="text-xs text-dark-500">
-            Ao editar todos, serão atualizados: descrição, categoria, conta, observação e tags.
-            Data, valor e status de pagamento permanecem individuais.
+            Recorrência: alterações em série usam{' '}
+            <code className="text-dark-400">PUT /recurrences</code> com escopo (todos ou desta data em diante).
+            Parcelas: continua atualização por lançamento no período visível.
           </p>
         </div>
       </Modal>
@@ -2226,24 +2328,45 @@ export default function Transactions({
 
           <div className="space-y-2">
             <Button
-              onClick={() => confirmDelete(transactionToDelete?.id, false)}
+              onClick={() => confirmDelete(transactionToDelete?.id, 'single')}
               variant="secondary"
               fullWidth
-              loading={deleting === transactionToDelete?.id}
+              loading={deleteProgress?.mode === 'single'}
             >
               Excluir apenas este lançamento
             </Button>
 
+            {(transactionToDelete?.recurrenceId || transactionToDelete?.installmentGroupId) && (
+              <Button
+                onClick={() => confirmDelete(transactionToDelete?.id, 'from_forward')}
+                variant="secondary"
+                fullWidth
+                loading={deleteProgress?.mode === 'from_forward'}
+              >
+                {transactionToDelete?.recurrenceId
+                  ? 'Excluir desta data em diante (na base)'
+                  : `Excluir desta data em diante (${transactions.filter(t => {
+                    const sameGroup =
+                      transactionToDelete?.installmentGroupId &&
+                      t.installmentGroupId === transactionToDelete.installmentGroupId
+                    if (!sameGroup) return false
+                    return transactionDayStamp(t.date) >= transactionDayStamp(transactionToDelete.date)
+                  }).length} no período visível)`}
+              </Button>
+            )}
+
             <Button
-              onClick={() => confirmDelete(transactionToDelete?.id, true)}
+              onClick={() => confirmDelete(transactionToDelete?.id, 'all')}
               variant="danger"
               fullWidth
-              loading={deleting === transactionToDelete?.id}
+              loading={deleteProgress?.mode === 'all'}
             >
-              Excluir todos do grupo ({transactions.filter(t =>
-                (transactionToDelete?.installmentGroupId && t.installmentGroupId === transactionToDelete.installmentGroupId) ||
-                (transactionToDelete?.recurrenceId && t.recurrenceId === transactionToDelete.recurrenceId)
-              ).length} lançamentos)
+              {transactionToDelete?.recurrenceId
+                ? 'Excluir toda a série de recorrência'
+                : `Excluir todos do grupo (${transactions.filter(t =>
+                  transactionToDelete?.installmentGroupId &&
+                  t.installmentGroupId === transactionToDelete.installmentGroupId
+                ).length} lançamentos visíveis)`}
             </Button>
 
             <Button
@@ -2257,6 +2380,12 @@ export default function Transactions({
               Cancelar
             </Button>
           </div>
+
+          <p className="text-xs text-dark-500">
+            {transactionToDelete?.recurrenceId
+              ? 'Recorrência: exclusão em série usa DELETE no servidor e afeta todas as ocorrências correspondentes na base.'
+              : 'Parcelas: exclusão em série remove apenas lançamentos já carregados neste período.'}
+          </p>
         </div>
       </Modal>
     </div>

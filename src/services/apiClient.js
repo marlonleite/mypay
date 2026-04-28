@@ -40,5 +40,6 @@ export const apiClient = {
   post: (path, body) => request('POST', path, body),
   put: (path, body) => request('PUT', path, body),
   patch: (path, body) => request('PATCH', path, body),
-  delete: (path) => request('DELETE', path),
+  /** DELETE com body opcional (ex.: exclusão em série `scope` em transactions). */
+  delete: (path, body) => request('DELETE', path, body),
 }
