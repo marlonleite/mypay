@@ -27,9 +27,24 @@ Este repositório segue a mesma doutrina modular que o **Claude Code** usa em `.
 
 Se as mesmas normas já existirem como regras **globais** no seu usuário, o Cursor aplica **global + projeto**. Ajuste ou desative globais se notar instruções duplicadas.
 
+## API — performance e comunicação (mypay-api)
+
+Referência canônica no backend: seção **Comunicação rápida com o front** no `README` do repositório **mypay-api** (ajuste o path/URL se for fork privado).
+
+- **Recorrências / futuro:** `GET /api/v1/transactions` **não** materializa recorrências na hora. Linhas futuras entram após `POST .../jobs/materialize-upcoming` (cron) e/ou mutação de recorrência no backend. O front não agenda jobs; em períodos futuros, lista pode depender do próximo job — tratar vazio transitório como timing, não necessariamente bug.
+- **Paginação (opcional):** `limit`, `cursor` (próxima página). Resposta da primeira página sem cursor; páginas seguintes reutilizam o cursor do response anterior. Header **`X-Next-Cursor`** quando há próxima página. Telas com muitas linhas: preferir scroll infinito ou “carregar mais” em vez de buscar tudo de uma vez.
+- **Listagens estáveis:** categorias, tags, contas, settings costumam responder com **ETag** e **Cache-Control: private** (TTL curto). Um cliente HTTP único; com cache de biblioteca, subir `staleTime` nesses GETs e invalidar após create/update/delete; se enviar **If-None-Match**, o servidor pode responder **304**. Gzip já vem do browser.
+- **Montagem de telas:** disparar GETs independentes (contas, categorias, tags, …) em **paralelo** (`Promise.all` / queries paralelas), não em cascata sequencial.
+- **CORS:** app e API em origens diferentes exigem `CORS_ORIGINS` no `.env` da API com a origem exata do front (`https://app...`, sem path). É ops/backend; o time de front precisa informar a URL de origem correta.
+- **Fora do escopo do front:** cron `materialize-upcoming`, `weekly-overdue-email`, `JOB_SECRET`, deploy da API, proxy.
+
+### Checklist rápido (Network)
+
+Paralelismo nos GETs iniciais; transações longas com `limit` + `cursor` + `X-Next-Cursor`; menos refetch ao navegar (cache em listagens estáveis); sem regressão ao esperar transações futuras após mudança de recorrência (validar timing vs cron).
+
 ## API `GET /api/v1/transactions` (levantado do OpenAPI local)
 
-Parâmetros de query suportados pelo backend (não há `q`, `account_id`, `category_id`, `date_from`/`date_to` nem `limit`/`offset` na listagem):
+Parâmetros de query suportados pelo backend (não há `q`, `account_id`, `category_id`, `date_from`/`date_to` na listagem; **paginação opcional:** `limit`, `cursor` — ver seção acima):
 
 - `month` (1–12), `year` — janela calendário.
 - `exclude_card_expenses` (default `true` no back) — se `true`, omite linhas com `credit_card_id`.
