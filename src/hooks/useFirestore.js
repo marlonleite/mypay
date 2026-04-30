@@ -1007,7 +1007,7 @@ export function useAllCardExpenses() {
   // Filter view sobre /transactions
   useEventInvalidation(['transaction'], fetchAll)
 
-  return { expenses, loading }
+  return { expenses, loading, refresh: fetchAll }
 }
 
 // Transform: snake_case API response → camelCase frontend shape

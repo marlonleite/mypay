@@ -36,13 +36,24 @@ import LimitProgressBar from '../components/ui/LimitProgressBar'
 import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
-import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
+import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useAllCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
 // uploadComprovante removido pós F-Cards-attachments — comprovantes vão via
 // attachmentService.uploadAttachment (em handlePayBill) após backend retornar
 // o id da transaction.
+
+// Mirrors credit_card_invoice aggregate: expense -> +amount, income -> -amount
+// (same as SqlAlchemyCreditCardInvoiceRepository signed_expense case).
+function ledgerOwedDeltaForCardExpense(e) {
+  const raw = Number(e.amount) || 0
+  return e.type === TRANSACTION_TYPES.INCOME ? -raw : raw
+}
+
+function sumCardBillLedger(expensesList) {
+  return expensesList.reduce((sum, e) => sum + ledgerOwedDeltaForCardExpense(e), 0)
+}
 
 export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const { formatCurrency } = usePrivacy()
@@ -54,7 +65,10 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     deleteCard
   } = useCards()
 
-  const { expenses: allExpenses, loading: loadingExpenses } = useAllCardExpenses()
+  const cardIds = useMemo(() => cards.map(c => c.id), [cards])
+  const { invoicesByCard } = useAllCreditCardInvoices(cardIds)
+
+  const { expenses: allExpenses, loading: loadingExpenses, refresh: refreshAllCardExpenses } = useAllCardExpenses()
   const { accounts, loading: loadingAccounts } = useAccounts()
   const {
     isBillPaid,
@@ -174,26 +188,50 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return isDateInMonth(expense.date, billMonth, billYear)
   }
 
-  // Calcular totais por cartão (despesas - receitas/estornos)
+  // Item está fora do ciclo da fatura quando a data da compra cai antes do
+  // starting_date ou depois do closing_date da invoice atual. Usado pra sinalizar
+  // visualmente que o lançamento foi vinculado à fatura por outro critério (ex.:
+  // edição manual de billMonth/billYear ou parcela com data deslocada).
+  const getInvoicePeriodFlag = (expense) => {
+    if (!currentInvoice?.startingDate || !currentInvoice?.closingDate) return null
+    if (!expense?.date) return null
+    const d = expense.date instanceof Date ? expense.date : new Date(expense.date)
+    if (Number.isNaN(d.getTime())) return null
+    if (d < currentInvoice.startingDate) return 'before'
+    if (d > currentInvoice.closingDate) return 'after'
+    return null
+  }
+
+  const formatInvoicePeriodLabel = () => {
+    if (!currentInvoice?.startingDate || !currentInvoice?.closingDate) return ''
+    return `${formatDate(currentInvoice.startingDate)} → ${formatDate(currentInvoice.closingDate)}`
+  }
+
+  // Totais na lista: mesma regra da fatura em detalhe — se existe invoice no
+  // mês/ano (vencimento), soma só lançamentos com creditCardInvoiceId dessa
+  // invoice; senão fallback billMonth/data (legado / sem invoice materializada).
   const cardTotals = useMemo(() => {
     const totals = {}
     cards.forEach(card => {
-      const cardItems = allExpenses.filter(e =>
-        e.cardId === card.id && isExpenseInBill(e, month, year)
+      const invoices = invoicesByCard[card.id] || []
+      const inv = invoices.find(i =>
+        i.dueDate &&
+        i.dueDate.getMonth() === month &&
+        i.dueDate.getFullYear() === year
       )
-      // Despesas somam, receitas (estornos) subtraem
-      totals[card.id] = cardItems.reduce((sum, e) => {
-        const amount = e.amount || 0
-        return e.type === TRANSACTION_TYPES.INCOME ? sum - amount : sum + amount
-      }, 0)
+      const cardItems = inv
+        ? allExpenses.filter(e => e.cardId === card.id && e.creditCardInvoiceId === inv.id)
+        : allExpenses.filter(e => e.cardId === card.id && isExpenseInBill(e, month, year))
+      totals[card.id] = sumCardBillLedger(cardItems)
     })
     return totals
-  }, [cards, allExpenses, month, year])
+  }, [cards, allExpenses, month, year, invoicesByCard])
 
   // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
   const currentInvoice = findInvoiceByDueMonth(month, year)
   const {
     expenses: invoiceExpenses = [],
+    loading: loadingInvoiceExpenses,
     addCardExpense,
     updateCardExpense,
     deleteCardExpense,
@@ -207,6 +245,24 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       .filter(e => e.cardId === selectedCard.id && isExpenseInBill(e, month, year))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
   }, [invoiceExpenses, allExpenses, selectedCard, currentInvoice, month, year])
+
+  // Full invoice / period total for logic (pagamento, limite, saldo bloqueado).
+  const selectedCardExpenseTotal = useMemo(
+    () => sumCardBillLedger(selectedCardExpenses),
+    [selectedCardExpenses]
+  )
+
+  // Total da fatura em exibição: mesmas linhas que `selectedCardExpenses` (filtro
+  // por credit_card_invoice_id quando há invoice). Campo `invoice.amount` na API
+  // pode ficar defasado após DELETE/PUT até recomputar — somar o ledger evita
+  // total "travado" enquanto a lista já decrementou.
+  const invoiceFullChargeTotal = useMemo(() => {
+    if (currentInvoice != null) {
+      if (loadingInvoiceExpenses) return Number(currentInvoice.amount) || 0
+      return selectedCardExpenseTotal
+    }
+    return selectedCardExpenseTotal
+  }, [currentInvoice, selectedCardExpenseTotal, loadingInvoiceExpenses])
 
   // Categorias para filtro de lançamentos (expense + income)
   const expenseFilterCategories = useMemo(() => {
@@ -245,8 +301,23 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return result
   }, [selectedCardExpenses, expenseSearch, expenseCategoryFilter, allCategories])
 
+  const filteredCardExpenseTotal = useMemo(
+    () => sumCardBillLedger(filteredCardExpenses),
+    [filteredCardExpenses]
+  )
+
+  const invoiceListFilterActive = Boolean(
+    (typeof expenseSearch === 'string' && expenseSearch.trim().length > 0)
+    || expenseCategoryFilter.length > 0
+  )
+
+  // Summary hero: quando usuário filtra lista, topo reflete só o que vê (+ total completo auxiliar).
+  const modalHeroBillTotal = invoiceListFilterActive
+    ? filteredCardExpenseTotal
+    : invoiceFullChargeTotal
+
   // Fatura paga = lançamentos bloqueados (read-only)
-  const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0
+  const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0
 
   const loading = loadingCards || loadingExpenses || loadingAccounts || loadingCategories
 
@@ -328,7 +399,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   }
 
   const openPayBillModal = () => {
-    const billAmount = cardTotals[selectedCard?.id] || 0
+    const billAmount = invoiceFullChargeTotal
     const previousBalance = getPreviousBalance(selectedCard?.id)
     const totalDue = billAmount + previousBalance
 
@@ -485,9 +556,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
         })
       } else {
         // Criar novo lançamento — vincula à fatura sendo visualizada.
-        // Backend gera N parcelas server-side via total_installments.
+        // Quando há `currentInvoice`, força `credit_card_invoice_id` no payload
+        // pra que o backend NÃO faça auto-resolve via `date` (evita item sumir
+        // pra fatura adjacente quando a data cai fora do ciclo do cartão).
+        // Sem `currentInvoice` (fatura ainda não materializada), deixamos o
+        // backend resolver via `ensure_invoice_for_period`.
         await addCardExpense({
           cardId: selectedCard.id,
+          creditCardInvoiceId: currentInvoice?.id,
           type: expenseForm.type,
           description: expenseForm.description,
           amount: expenseForm.amount,
@@ -501,6 +577,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       }
 
       setModalType('details')
+      await refreshAllCardExpenses()
+      await refreshInvoices()
     } catch (error) {
       console.error('Error saving expense:', error)
     } finally {
@@ -511,6 +589,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const handleDeleteExpense = async (expenseId) => {
     try {
       await deleteCardExpense(expenseId)
+      await refreshAllCardExpenses()
+      await refreshInvoices()
     } catch (error) {
       console.error('Error deleting expense:', error)
     }
@@ -529,7 +609,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       return
     }
 
-    const billAmount = invoice.amount
+    const billAmount = invoiceFullChargeTotal
     const previousBalance = invoice.previousBalance
     const totalDue = billAmount + previousBalance
     const paymentAmount = paymentForm.amount || 0
@@ -897,7 +977,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-8 h-8 text-white/80" />
-                {selectedCard && isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+                {selectedCard && isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0 && (
                   <span className="px-2 py-1 text-xs font-medium bg-white/20 text-white rounded-lg flex items-center gap-1">
                     <Check className="w-3 h-3" />
                     PAGA
@@ -905,10 +985,30 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                 )}
               </div>
               <div className="text-right">
-                <p className="text-xs text-white/60">Fatura {MONTHS[month]}</p>
-                <p className="text-2xl font-bold text-white">
-                  {formatCurrency(cardTotals[selectedCard?.id] || 0)}
+                <p className="text-xs text-white/60">
+                  {invoiceListFilterActive
+                    ? `Filtrado (${filteredCardExpenses.length}/${selectedCardExpenses.length}) · ${MONTHS[month]}`
+                    : `Fatura ${MONTHS[month]}`}
                 </p>
+                <p className="text-2xl font-bold text-white">
+                  {formatCurrency(modalHeroBillTotal)}
+                </p>
+                {currentInvoice?.startingDate && currentInvoice?.closingDate && (
+                  <p className="text-[11px] text-white/55 mt-0.5">
+                    Ciclo {formatInvoicePeriodLabel()}
+                  </p>
+                )}
+                {invoiceListFilterActive && selectedCardExpenses.length > 0 && (
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Total da fatura: {formatCurrency(invoiceFullChargeTotal)}
+                  </p>
+                )}
+                {!invoiceListFilterActive && selectedCardExpenses.length > 0 && (
+                  <p className="text-xs text-white/45 mt-0.5">
+                    {selectedCardExpenses.length}{' '}
+                    lançamento{selectedCardExpenses.length !== 1 ? 's' : ''}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between text-sm text-white/80">
@@ -923,7 +1023,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             {selectedCard?.limit > 0 && (
               <div className="mt-3 pt-3 border-t border-white/20">
                 <LimitProgressBar
-                  used={cardTotals[selectedCard?.id] || 0}
+                  used={invoiceFullChargeTotal}
                   limit={selectedCard.limit}
                   size="md"
                   showLabel={true}
@@ -973,7 +1073,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                   Importar Fatura
                 </Button>
               </div>
-              {selectedCard && !isBillPaid(selectedCard.id) && cardTotals[selectedCard.id] > 0 && (
+              {selectedCard && !isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0 && (
                 <Button onClick={openPayBillModal} icon={Check} variant="success" fullWidth>
                   Pagar Fatura
                 </Button>
@@ -1048,6 +1148,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
               <p className="text-xs text-dark-400 font-medium">Lançamentos do mês</p>
               {filteredCardExpenses.map((expense) => {
                 const isIncome = expense.type === TRANSACTION_TYPES.INCOME
+                const periodFlag = getInvoicePeriodFlag(expense)
+                const periodBadgeLabel =
+                  periodFlag === 'before' ? 'antes do ciclo'
+                  : periodFlag === 'after' ? 'após o ciclo'
+                  : null
+                const periodBadgeTitle = periodFlag
+                  ? `Vinculado a esta fatura — ciclo ${formatInvoicePeriodLabel()}`
+                  : ''
                 return (
                   <div
                     key={expense.id}
@@ -1072,6 +1180,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                             ({expense.installment}/{expense.totalInstallments})
                           </span>
                         )}
+                        {periodBadgeLabel && (
+                          <span
+                            className="ml-1.5 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/15 text-amber-300 rounded align-middle"
+                            title={periodBadgeTitle}
+                          >
+                            {periodBadgeLabel}
+                          </span>
+                        )}
                       </p>
                       {normalizeTags(expense.tags).length > 0 && (
                         <div className="flex gap-1 mt-1">
@@ -1087,7 +1203,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                       )}
                     </div>
                     <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
-                      {isIncome ? '+' : '-'}{formatCurrency(expense.amount)}
+                      {isIncome ? '+' : '-'}{formatCurrency(Math.abs(Number(expense.amount) || 0))}
                     </p>
                     {!isBillLocked && (
                       <>
@@ -1397,7 +1513,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-dark-400">Gastos do mês</span>
-                <span className="text-white">{formatCurrency(cardTotals[selectedCard?.id] || 0)}</span>
+                <span className="text-white">{formatCurrency(invoiceFullChargeTotal)}</span>
               </div>
 
               {selectedCard && getPreviousBalance(selectedCard.id) > 0 && (
@@ -1410,7 +1526,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
               <div className="flex justify-between pt-2 border-t border-dark-700 font-bold">
                 <span className="text-white">Total a pagar</span>
                 <span className="text-orange-400">
-                  {formatCurrency((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0))}
+                  {formatCurrency(invoiceFullChargeTotal + (selectedCard ? getPreviousBalance(selectedCard.id) : 0))}
                 </span>
               </div>
             </div>
@@ -1438,12 +1554,12 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                 required
               />
 
-              {paymentForm.amount && paymentForm.amount < ((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
+              {paymentForm.amount && paymentForm.amount < (invoiceFullChargeTotal + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) && (
                 <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <p className="text-xs text-amber-400">
                     Pagamento parcial. O saldo restante de{' '}
                     <span className="font-bold">
-                      {formatCurrency(((cardTotals[selectedCard?.id] || 0) + (selectedCard ? getPreviousBalance(selectedCard.id) : 0)) - (paymentForm.amount || 0))}
+                      {formatCurrency(invoiceFullChargeTotal + (selectedCard ? getPreviousBalance(selectedCard.id) : 0) - (paymentForm.amount || 0))}
                     </span>
                     {' '}será transferido para a próxima fatura.
                   </p>
