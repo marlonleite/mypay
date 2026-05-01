@@ -66,7 +66,7 @@ export const apiClient = {
    * @param {{ headers?: Record<string, string> }} [options]
    */
   post: (path, body, options = {}) =>
-    requestJson('POST', path, body, options.headers || {}),
+    requestJson('POST', path, body, options.headers || {}).then((r) => r.body),
   put: (path, body) => requestJson('PUT', path, body).then((r) => r.body),
   patch: (path, body) => requestJson('PATCH', path, body).then((r) => r.body),
   /** DELETE com body opcional (ex.: exclusão em série `scope` em transactions). */
