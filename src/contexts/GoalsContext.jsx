@@ -12,8 +12,8 @@ const GoalsContext = createContext()
  * - investment: Investir um valor por mês
  *
  * Pós Fase E migration: lê/escreve via REST API (/api/v1/goals).
- * Backend faz soft delete (deleted_at) — `archiveGoal` é uma mudança lógica
- * de status, não delete.
+ * Backend faz hard delete — `archiveGoal` é uma mudança lógica
+ * de status (active/completed/archived), não delete.
  */
 
 // Transform: API response (snake_case + decimal-as-string) → frontend shape (camelCase + Date).
@@ -145,7 +145,7 @@ export function GoalsProvider({ children }) {
     return mapGoal(updated)
   }, [user, fetchGoals])
 
-  // Deletar meta (soft delete no backend)
+  // Deletar meta (hard delete no backend; histórico fica em activities).
   const deleteGoal = useCallback(async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
@@ -153,7 +153,7 @@ export function GoalsProvider({ children }) {
     await fetchGoals()
   }, [user, fetchGoals])
 
-  // Arquivar meta (status='archived' — mudança lógica, não soft delete)
+  // Arquivar meta (status='archived' — mudança lógica, não delete)
   const archiveGoal = useCallback(async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')

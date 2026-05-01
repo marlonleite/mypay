@@ -1503,7 +1503,7 @@ export function useTransfers(month, year) {
     return mapTransfer(created)
   }
 
-  // Excluir transferência — backend faz cascade soft delete nas 2 transactions vinculadas.
+  // Excluir transferência — backend faz cascade hard delete nas 2 transactions vinculadas.
   // Aceita o objeto transfer inteiro (compat com Accounts.jsx) ou um id direto.
   const deleteTransfer = async (transferOrId) => {
     if (!user) throw new Error('Usuário não autenticado')
@@ -1606,7 +1606,7 @@ export function useBudgets(month, year) {
     return mapBudget(updated)
   }
 
-  // Excluir orçamento (hard delete — sem soft delete em budgets)
+  // Excluir orçamento (hard delete)
   const deleteBudget = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
@@ -1789,7 +1789,7 @@ export function useBillPayments(month, year) {
     return mapTransactionAsBillPayment(created)
   }
 
-  // Excluir pagamento (estorno) — soft delete da transaction.
+  // Excluir pagamento (estorno) — hard delete da transaction.
   const deleteBillPayment = async (id) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')

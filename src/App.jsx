@@ -20,10 +20,8 @@ import Settings from './pages/Settings'
 import Goals from './pages/Goals'
 import Activities from './pages/Activities'
 import SearchModal from './components/search/SearchModal'
-import UndoToast from './components/ui/UndoToast'
 import OnboardingWizard from './components/onboarding/OnboardingWizard'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { useUndo } from './contexts/UndoContext'
 import { getCurrentMonthYear } from './utils/helpers'
 
 const INITIAL_FILTERS = {
@@ -93,7 +91,6 @@ function AppContent() {
   const [transactionDateRange, setTransactionDateRange] = useState(null)
   const { toggleSearch } = useSearch()
   const { toggleShowValues } = usePrivacy()
-  const { undo, canUndo } = useUndo()
 
   const handleMonthChange = (month, year) => {
     setSelectedMonth({ month, year })
@@ -111,19 +108,11 @@ function AppContent() {
     // _params pode conter IDs para destacar/abrir itens específicos (futura implementação)
   }, [])
 
-  // Handler para undo
-  const handleUndo = useCallback(() => {
-    if (canUndo) {
-      undo()
-    }
-  }, [canUndo, undo])
-
   // Atalhos de teclado globais
   useKeyboardShortcuts({
     'mod+k': toggleSearch,
     'mod+n': handleAddNew,
     'mod+h': toggleShowValues,
-    'mod+z': handleUndo
   })
 
   const renderContent = () => {
@@ -210,7 +199,6 @@ function AppContent() {
         {renderContent()}
       </Layout>
       <SearchModal onNavigate={handleSearchNavigate} />
-      <UndoToast />
       <OnboardingWizard />
     </>
   )

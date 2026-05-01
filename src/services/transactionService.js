@@ -19,7 +19,7 @@ export async function batchDeleteTransactions(payload) {
   return body
 }
 
-/** Modo fatura: soft delete das compras na fatura (não remove linhas de pagamento). `results` vem vazio. */
+/** Modo fatura: remove as compras da fatura (não remove linhas de pagamento). `results` vem vazio. */
 export async function batchDeleteCardInvoicePurchases(creditCardInvoiceId) {
   return batchDeleteTransactions({ credit_card_invoice_id: creditCardInvoiceId })
 }

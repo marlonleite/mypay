@@ -775,7 +775,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       setSaving(true)
 
       // No novo modelo, payment.id == transaction.id (são a mesma row).
-      // deleteBillPayment já faz soft delete da transaction.
+      // deleteBillPayment já faz hard delete da transaction.
       await deleteBillPayment(payment.id)
       await refreshInvoices()
 
