@@ -339,8 +339,14 @@ export default function Transactions({
       )
     }
 
+    // Filtro por importação (?import_id=...) — vindo do badge "Importada" no detalhe.
+    const importIdParam = searchParams.get('import_id')
+    if (importIdParam) {
+      result = result.filter((t) => t.importId === importIdParam)
+    }
+
     return result
-  }, [transactions, debouncedSearch, filters, allCategories, accounts])
+  }, [transactions, debouncedSearch, filters, allCategories, accounts, searchParams])
 
   const sortedForGroup = useMemo(() => {
     return [...filteredTransactions].sort((a, b) => {
@@ -1169,6 +1175,32 @@ export default function Transactions({
         onDateRangeChange={setDateRange}
       />
 
+      {/* Filtro por importação ativo (?import_id=...) */}
+      {searchParams.get('import_id') && (
+        <div className="bg-blue-500/15 border border-blue-500/40 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
+            <span className="text-sm text-blue-100">
+              Filtrando por importação{' '}
+              <code className="font-mono text-xs bg-blue-500/20 px-1.5 py-0.5 rounded">
+                {searchParams.get('import_id').slice(0, 8)}…
+              </code>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('import_id')
+              setSearchParams(next, { replace: true })
+            }}
+            className="text-xs text-blue-300 hover:text-white transition-colors"
+          >
+            Limpar filtro
+          </button>
+        </div>
+      )}
+
       {/* Banner de Lançamentos Pendentes/Vencidos */}
       {overdueTransactions.length > 0 && (
         <div className="bg-red-500/15 border border-red-500/40 rounded-xl overflow-hidden shadow-lg shadow-red-500/10">
@@ -1607,6 +1639,9 @@ export default function Transactions({
                         )}
                         {isRecurrenceLinkedTransaction(transaction) && (
                           <Repeat className="w-2.5 h-2.5 text-violet-400 flex-shrink-0" title="Recorrente (recurrence_id)" />
+                        )}
+                        {transaction.importId && (
+                          <FileText className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" title="Importada de fatura/extrato (import_id)" />
                         )}
                         {(transaction.attachments?.length > 0 || transaction.attachment) && (
                           <Paperclip className="w-2.5 h-2.5 text-dark-400 flex-shrink-0" />

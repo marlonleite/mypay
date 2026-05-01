@@ -92,6 +92,8 @@ function mapTransaction(t) {
     totalInstallments: totalInst,
     installmentGroupId: t.installment_group_id ?? null,
     recurrenceId: t.recurrence_id ?? null,
+    // Wave 6: import que originou esta linha (NULL = manual). Para badge na UI.
+    importId: t.import_id ?? null,
     // isFixed = legacy name; UI "recorrente" uses recurrence_id (not text heuristics)
     isFixed: Boolean(t.recurrence_id),
     isInstallment: totalInst > 1,
@@ -859,6 +861,7 @@ function mapTransactionAsCardExpense(t) {
     installment: totalInst > 1 ? Math.min(inst, totalInst) : 1,
     totalInstallments: totalInst,
     installmentGroupId: t.installment_group_id ?? null,
+    importId: t.import_id ?? null,
     tags: t.tags ? t.tags.map(tag => tag.name) : [],
     notes: t.notes ?? null,
     createdAt: t.created_at ? new Date(t.created_at) : null,

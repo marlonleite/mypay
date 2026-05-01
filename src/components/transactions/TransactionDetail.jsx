@@ -227,6 +227,19 @@ export default function TransactionDetail({
             </div>
           )}
 
+          {transaction.importId && (
+            <div>
+              <p className="text-xs text-dark-500 mb-1">Importação</p>
+              <a
+                href={`/documents?import_id=${transaction.importId}`}
+                className="text-sm text-violet-400 hover:text-violet-300 font-mono break-all"
+                title={`Vindo da importação ${transaction.importId}`}
+              >
+                {transaction.importId.slice(0, 8)}…
+              </a>
+            </div>
+          )}
+
           <div>
             <p className="text-xs text-dark-500 mb-1">ID da transação</p>
             <p className="text-sm text-dark-300 font-mono break-all" title={transaction.id}>

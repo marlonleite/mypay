@@ -350,6 +350,13 @@ export default function FaturaResult({
             linha.
           </p>
         )}
+        {selectedCard && targetCreditCardInvoiceId && (
+          <p className="mt-2 text-xs text-blue-200/90 leading-snug">
+            Todas as linhas selecionadas serão lançadas nesta fatura — inclusive as com data fora do mês de
+            fechamento (parcelas atrasadas, IOF, conversão de câmbio). É o comportamento correto: a fatura
+            agrupa as compras pelo ciclo, não pela data de cada linha.
+          </p>
+        )}
       </div>
 
       {/* Toolbar select all */}
