@@ -20,6 +20,7 @@ import Settings from './pages/Settings'
 import Goals from './pages/Goals'
 import Activities from './pages/Activities'
 import SearchModal from './components/search/SearchModal'
+import ToastContainer from './components/ui/Toast'
 import OnboardingWizard from './components/onboarding/OnboardingWizard'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { getCurrentMonthYear } from './utils/helpers'
@@ -199,6 +200,7 @@ function AppContent() {
         {renderContent()}
       </Layout>
       <SearchModal onNavigate={handleSearchNavigate} />
+      <ToastContainer />
       <OnboardingWizard />
     </>
   )

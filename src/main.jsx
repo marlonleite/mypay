@@ -7,6 +7,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { PrivacyProvider } from './contexts/PrivacyContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { SearchProvider } from './contexts/SearchContext'
+import { ToastProvider } from './contexts/ToastContext'
 import { GoalsProvider } from './contexts/GoalsContext'
 import { OnboardingProvider } from './contexts/OnboardingContext'
 import './index.css'
@@ -19,11 +20,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <PrivacyProvider>
             <NotificationProvider>
               <SearchProvider>
-                <GoalsProvider>
-                  <OnboardingProvider>
-                    <App />
-                  </OnboardingProvider>
-                </GoalsProvider>
+                <ToastProvider>
+                  <GoalsProvider>
+                    <OnboardingProvider>
+                      <App />
+                    </OnboardingProvider>
+                  </GoalsProvider>
+                </ToastProvider>
               </SearchProvider>
             </NotificationProvider>
           </PrivacyProvider>

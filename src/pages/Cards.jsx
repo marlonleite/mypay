@@ -41,6 +41,7 @@ import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useAllCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
+import { useToast } from '../contexts/ToastContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
 import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
 // uploadComprovante removido pós F-Cards-attachments — comprovantes vão via
@@ -60,6 +61,7 @@ function sumCardBillLedger(expensesList) {
 
 export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const { formatCurrency } = usePrivacy()
+  const { toast } = useToast()
   const {
     cards,
     loading: loadingCards,
@@ -496,8 +498,10 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
 
     try {
       await deleteCard(cardId)
+      toast.success('Cartão excluído.')
     } catch (error) {
       console.error('Error deleting card:', error)
+      toast.error(`Não foi possível excluir o cartão: ${error?.message || 'erro desconhecido'}`)
     }
   }
 
