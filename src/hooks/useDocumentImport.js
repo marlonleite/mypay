@@ -91,6 +91,9 @@ export function useImportHistory() {
       total_installments: data.totalInstallments || 1,
       installment_group_id: data.installmentGroupId ?? null,
     }
+    if (data.creditCardInvoiceId != null && data.creditCardInvoiceId !== '') {
+      payload.credit_card_invoice_id = data.creditCardInvoiceId
+    }
     if (tag_ids && tag_ids.length > 0) payload.tag_ids = tag_ids
 
     return await apiClient.post('/api/v1/transactions', payload)

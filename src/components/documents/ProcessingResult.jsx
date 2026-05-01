@@ -38,6 +38,8 @@ export default function ProcessingResult({
   accounts = [],
   tags: availableTags = [],
   file = null,
+  /** Nome do arquivo quando a revisão veio do histórizo (sem `File` local). */
+  sourceFileName = null,
   saving = false,
   categories: firestoreCategories = [],
   getMainCategories
@@ -88,14 +90,14 @@ export default function ProcessingResult({
   useEffect(() => {
     const active = cards.filter((c) => c && !c.archived)
     if (active.length === 0) return
-    const fileName = file?.name ?? null
+    const fileName = file?.name ?? sourceFileName ?? null
     setSelectedCard((prev) => {
       if (prev) return prev
       if (active.length === 1) return active[0].id
       const guessed = fileName ? guessCardIdFromFileName(fileName, active) : null
       return guessed || ''
     })
-  }, [cards, file])
+  }, [cards, file, sourceFileName])
 
   // Campos extras para pré-visualização
   const [notes, setNotes] = useState('')

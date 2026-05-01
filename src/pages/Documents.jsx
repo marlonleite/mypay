@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Sparkles,
   Loader2,
@@ -6,6 +6,7 @@ import {
   AlertCircle,
   RotateCcw,
   Lock,
+  X,
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
@@ -17,7 +18,19 @@ import FaturaResult from '../components/documents/FaturaResult'
 import ImportHistory from '../components/documents/ImportHistory'
 import { useCards, useTransactions, useCategories, useAccounts, useTags } from '../hooks/useFirestore'
 import { useImportHistory } from '../hooks/useDocumentImport'
-import { processDocument } from '../services/documentService'
+import {
+  processDocument,
+  applyDocumentImport,
+  buildCardExpenseBatchItem,
+  buildCategoryNameToIdMap,
+  buildTagNameToIdMap,
+  buildInvoiceCardExpenseApiItem,
+  resolveCategoryIdForApply,
+  DOCUMENT_IMPORT_APPLY_MAX_ITEMS,
+  getImportDetail,
+} from '../services/documentService'
+import { buildTransactionPayload, resolveCreditCardInvoiceIdForDueMonth } from '../hooks/useFirestore'
+import { apiClient } from '../services/apiClient'
 import { DOCUMENT_TYPES } from '../utils/constants'
 import Input from '../components/ui/Input'
 
@@ -53,6 +66,14 @@ export default function Documents({ month, year }) {
   /** Senha só em memória; limpa após cada envio e no reset (não persistir). */
   const [pdfPassword, setPdfPassword] = useState('')
   const [processHint, setProcessHint] = useState(null)
+  const [faturaPruneSelection, setFaturaPruneSelection] = useState(null)
+  const [faturaApplyBanner, setFaturaApplyBanner] = useState(null)
+  /** Texto de progresso durante importação em lote (FaturaResult). */
+  const [faturaImportProgress, setFaturaImportProgress] = useState(null)
+  /** Aviso ao tocar em item do histórico (preview da IA não é persistida). */
+  const [recentImportHint, setRecentImportHint] = useState(null)
+  const uploadAreaRef = useRef(null)
+  const [loadingImportDetail, setLoadingImportDetail] = useState(false)
 
   // Hooks
   const { cards } = useCards()
@@ -66,10 +87,12 @@ export default function Documents({ month, year }) {
   const handleFileSelect = (selectedFile) => {
     setFile(selectedFile)
     setStatus('preview')
+    setReviewImport(null)
     setError(null)
     setExtractedData(null)
     setPdfPassword('')
     setProcessHint(null)
+    setRecentImportHint(null)
   }
 
   const handleRemoveFile = () => {
@@ -79,6 +102,7 @@ export default function Documents({ month, year }) {
     setExtractedData(null)
     setPdfPassword('')
     setProcessHint(null)
+    setRecentImportHint(null)
   }
 
   const handleProcess = async () => {
@@ -135,7 +159,25 @@ export default function Documents({ month, year }) {
         }]
       }
 
-      await addTransaction(transactionWithComprovante)
+      const importId = extractedData?.import_id
+      if (importId) {
+        const forPayload = { ...transactionWithComprovante }
+        delete forPayload.attachments
+        const payload = await buildTransactionPayload(forPayload, apiClient)
+        const idempotencyKey = crypto.randomUUID()
+        const r = await applyDocumentImport(importId, [payload], { idempotencyKey })
+        if (r.failed > 0) {
+          const msg =
+            r.results[0]?.error?.message ||
+            r.results[0]?.error?.type ||
+            'Não foi possível salvar o lançamento'
+          throw new Error(msg)
+        }
+      } else {
+        await addTransaction(transactionWithComprovante)
+      }
+
+      refreshImports()
       setStatus('success')
 
       setTimeout(() => {
@@ -144,7 +186,7 @@ export default function Documents({ month, year }) {
 
     } catch (err) {
       console.error('Erro ao criar transação:', err)
-      setError('Erro ao salvar transação. Tente novamente.')
+      setError(err.message || 'Erro ao salvar transação. Tente novamente.')
     } finally {
       setSaving(false)
     }
@@ -154,9 +196,32 @@ export default function Documents({ month, year }) {
     setSaving(true)
 
     try {
+      const creditCardInvoiceId = await resolveCreditCardInvoiceIdForDueMonth(
+        expenseData.cardId,
+        month,
+        year
+      )
+      const expenseWithInvoice = { ...expenseData, creditCardInvoiceId }
+
       // Card_expense não persiste attachments (decisão 2026-04-15);
       // o PDF da fatura fica linkado ao import_record (criado pelo backend).
-      await addCardExpense(expenseData)
+      const importId = extractedData?.import_id
+      if (importId) {
+        const item = await buildCardExpenseBatchItem(expenseWithInvoice)
+        const idempotencyKey = crypto.randomUUID()
+        const r = await applyDocumentImport(importId, [item], { idempotencyKey })
+        if (r.failed > 0) {
+          const msg =
+            r.results[0]?.error?.message ||
+            r.results[0]?.error?.type ||
+            'Não foi possível salvar a despesa do cartão'
+          throw new Error(msg)
+        }
+      } else {
+        await addCardExpense(expenseWithInvoice)
+      }
+
+      refreshImports()
       setStatus('success')
 
       setTimeout(() => {
@@ -165,50 +230,182 @@ export default function Documents({ month, year }) {
 
     } catch (err) {
       console.error('Erro ao criar despesa do cartão:', err)
-      setError('Erro ao salvar despesa do cartão. Tente novamente.')
+      setError(err.message || 'Erro ao salvar despesa do cartão. Tente novamente.')
     } finally {
       setSaving(false)
     }
   }
 
   const handleBatchCardExpenses = async (expenses) => {
+    if (!expenses?.length) return
     setSaving(true)
+    setError(null)
+    setFaturaApplyBanner(null)
+    setFaturaImportProgress('Preparando importação…')
 
     try {
-      // Salvar em chunks de BATCH_CHUNK_SIZE (sem anexo — fatura será anexada no pagamento)
-      for (let i = 0; i < expenses.length; i += BATCH_CHUNK_SIZE) {
-        const chunk = expenses.slice(i, i + BATCH_CHUNK_SIZE)
-        await Promise.all(
-          chunk.map(expense => addCardExpense(expense))
+      const importId = extractedData?.import_id
+
+      if (importId && expenses.length > DOCUMENT_IMPORT_APPLY_MAX_ITEMS) {
+        throw new Error(
+          `Máximo de ${DOCUMENT_IMPORT_APPLY_MAX_ITEMS} linhas por envio. Reduza a seleção.`
         )
       }
 
-      // Backend já criou import_record automaticamente em /documents/process.
-      // Não precisa addImport client-side.
+      if (importId) {
+        // Uma única chamada apply = lote completo (fatura como um todo); ver plano batch no mypay-api.
+        const idempotencyKey = crypto.randomUUID()
+        setFaturaImportProgress('Carregando tags e montando o lote…')
+        const tagsList = await apiClient.get('/api/v1/tags')
+        const tagIdByName = buildTagNameToIdMap(tagsList)
+        const nameToIdMap = buildCategoryNameToIdMap(allCategories)
 
+        const enriched = expenses.map((e) => ({
+          ...e,
+          _clientLineId: crypto.randomUUID(),
+        }))
+
+        const items = enriched.map((e) => {
+          const category_id = resolveCategoryIdForApply({
+            categoryId: e.category,
+            suggestedName: e.categoria_sugerida,
+            nameToIdMap,
+            categories: allCategories,
+            type: e.type === 'income' ? 'income' : 'expense',
+          })
+          return buildInvoiceCardExpenseApiItem(e, {
+            category_id,
+            client_line_id: e._clientLineId,
+            tagIdByName,
+            credit_card_invoice_id: e.creditCardInvoiceId || undefined,
+          })
+        })
+
+        const n = expenses.length
+        setFaturaImportProgress(
+          `Enviando ${n} lançamento${n !== 1 ? 's' : ''} ao servidor…`
+        )
+        const applyResponse = await applyDocumentImport(importId, items, {
+          atomic: false,
+          idempotencyKey,
+        })
+
+        if (applyResponse.failed === 0) {
+          refreshImports()
+          setFaturaPruneSelection(null)
+          setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)
+          setStatus('success')
+          setTimeout(() => {
+            handleReset()
+          }, 2000)
+          return
+        }
+
+        const succeededLineIds = []
+        for (const r of applyResponse.results) {
+          if (r.id && r.client_line_id) {
+            const ex = enriched.find((x) => x._clientLineId === r.client_line_id)
+            if (ex?.lineId) succeededLineIds.push(ex.lineId)
+          }
+        }
+        if (succeededLineIds.length > 0) {
+          setFaturaPruneSelection({ lineIds: succeededLineIds, token: Date.now() })
+        }
+
+        const retryExpenses = enriched
+          .filter((e) =>
+            applyResponse.results.some((r) => r.error && r.client_line_id === e._clientLineId)
+          )
+          .map(({ _clientLineId, ...rest }) => rest)
+
+        const failedLines = applyResponse.results
+          .filter((r) => r.error)
+          .map((r) => {
+            const ex = enriched.find((x) => x._clientLineId === r.client_line_id)
+            return {
+              lineId: ex?.lineId,
+              description: ex?.description || '—',
+              message: r.error?.message || r.error?.type || 'Erro',
+            }
+          })
+
+        setFaturaApplyBanner({
+          succeeded: applyResponse.succeeded,
+          failed: applyResponse.failed,
+          failedLines,
+          onRetry: () => {
+            setFaturaApplyBanner(null)
+            handleBatchCardExpenses(retryExpenses)
+          },
+        })
+        refreshImports()
+        return
+      }
+
+      // Sem import_id (legado): mantém chunks de N× POST /transactions
+      const totalLegacy = expenses.length
+      const nChunks = Math.ceil(totalLegacy / BATCH_CHUNK_SIZE) || 1
+      const fallbackInvoiceId = await resolveCreditCardInvoiceIdForDueMonth(
+        expenses[0]?.cardId,
+        month,
+        year
+      )
+      for (let i = 0; i < expenses.length; i += BATCH_CHUNK_SIZE) {
+        const chunkIdx = Math.floor(i / BATCH_CHUNK_SIZE) + 1
+        const end = Math.min(i + BATCH_CHUNK_SIZE, totalLegacy)
+        setFaturaImportProgress(
+          nChunks > 1
+            ? `Enviando lote ${chunkIdx} de ${nChunks} (${end}/${totalLegacy} lançamentos)…`
+            : `Enviando ${totalLegacy} lançamento${totalLegacy !== 1 ? 's' : ''}…`
+        )
+        const chunk = expenses.slice(i, i + BATCH_CHUNK_SIZE)
+        await Promise.all(
+          chunk.map((expense) =>
+            addCardExpense({
+              ...expense,
+              creditCardInvoiceId: expense.creditCardInvoiceId ?? fallbackInvoiceId ?? undefined,
+            })
+          )
+        )
+      }
+
+      refreshImports()
       setSuccessMessage(`${expenses.length} despesas importadas com sucesso!`)
       setStatus('success')
 
       setTimeout(() => {
         handleReset()
       }, 2000)
-
     } catch (err) {
       console.error('Erro ao importar despesas em batch:', err)
-      setError('Erro ao importar despesas. Algumas podem ter sido salvas parcialmente.')
+      setError(err.message || 'Erro ao importar despesas. Algumas podem ter sido salvas parcialmente.')
     } finally {
       setSaving(false)
+      setFaturaImportProgress(null)
     }
   }
 
-  // Pós-migração IA: review de import antigo não tem mais o JSON extraído
-  // localmente (ficava em Firestore via addImport). Backend só guarda
-  // metadata (file_name, items_imported, total_amount). Pra "reabrir" um
-  // import o usuário precisa re-importar o arquivo.
-  // Mantemos o handler como no-op interativo: abre o picker novamente.
-  const handleReview = (_importItem) => {
-    setReviewImport(null)
-    setStatus('idle')
+  /** Reabre revisão a partir do GET /documents/imports/{id} quando o backend expõe o payload. */
+  const handleReview = async (importItem) => {
+    if (!importItem?.id) return
+    setReviewImport(importItem)
+    setRecentImportHint(null)
+    setError(null)
+    setStatus('processing')
+    setLoadingImportDetail(true)
+    try {
+      const extracted = await getImportDetail(importItem.id)
+      setExtractedData(extracted)
+      setFaturaPruneSelection(null)
+      setFaturaApplyBanner(null)
+      setStatus('result')
+    } catch (err) {
+      console.error('Erro ao carregar importação:', err)
+      setError(err.message || 'Não foi possível carregar esta importação.')
+      setStatus('error')
+    } finally {
+      setLoadingImportDetail(false)
+    }
   }
 
   const handleReprocess = () => {
@@ -232,16 +429,29 @@ export default function Documents({ month, year }) {
     setReviewImport(null)
     setPdfPassword('')
     setProcessHint(null)
+    setFaturaPruneSelection(null)
+    setFaturaApplyBanner(null)
+    setFaturaImportProgress(null)
+    setRecentImportHint(null)
+    setLoadingImportDetail(false)
   }
 
   const handleRetry = () => {
-    setStatus('preview')
     setError(null)
-    if (isPdfFile(file)) {
-      setProcessHint(
-        'Se o PDF estiver protegido por senha, informe abaixo e processe novamente.'
-      )
+    if (file) {
+      setStatus('preview')
+      if (isPdfFile(file)) {
+        setProcessHint(
+          'Se o PDF estiver protegido por senha, informe abaixo e processe novamente.'
+        )
+      }
+      return
     }
+    if (reviewImport?.id) {
+      void handleReview(reviewImport)
+      return
+    }
+    setStatus('idle')
   }
 
   return (
@@ -257,6 +467,7 @@ export default function Documents({ month, year }) {
         </div>
       </div>
 
+      <div ref={uploadAreaRef} className="space-y-3 scroll-mt-4">
       {/* Seletor de tipo de documento */}
       {(status === 'idle' || status === 'preview') && (
         <Select
@@ -265,6 +476,20 @@ export default function Documents({ month, year }) {
           onChange={(e) => setDocumentType(e.target.value)}
           options={DOCUMENT_TYPES.map(t => ({ value: t.id, label: t.name }))}
         />
+      )}
+
+      {status === 'idle' && recentImportHint && (
+        <div className="flex gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 text-sm text-violet-100">
+          <p className="min-w-0 flex-1 leading-snug">{recentImportHint}</p>
+          <button
+            type="button"
+            onClick={() => setRecentImportHint(null)}
+            className="shrink-0 p-1 rounded-lg text-violet-300/80 hover:text-white hover:bg-violet-500/20"
+            aria-label="Fechar aviso"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
 
       {/* Upload / Preview */}
@@ -303,9 +528,10 @@ export default function Documents({ month, year }) {
           </Button>
         </div>
       )}
+      </div>
 
       {/* Processing */}
-      {status === 'processing' && (
+      {(status === 'processing' || loadingImportDetail) && (
         <Card className="py-12">
           <div className="flex flex-col items-center justify-center text-center">
             <div className="relative">
@@ -314,8 +540,12 @@ export default function Documents({ month, year }) {
               </div>
               <div className="absolute inset-0 rounded-full border-2 border-violet-500/30 animate-ping" />
             </div>
-            <p className="text-white font-medium mt-4">Analisando documento...</p>
-            <p className="text-sm text-dark-400 mt-1">Isso pode levar alguns segundos</p>
+            <p className="text-white font-medium mt-4">
+              {loadingImportDetail ? 'Carregando importação…' : 'Analisando documento…'}
+            </p>
+            <p className="text-sm text-dark-400 mt-1">
+              {loadingImportDetail ? 'Buscando dados no servidor' : 'Isso pode levar alguns segundos'}
+            </p>
           </div>
         </Card>
       )}
@@ -326,7 +556,7 @@ export default function Documents({ month, year }) {
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
               <p className="text-sm text-white font-medium truncate">{reviewImport.fileName}</p>
-              <p className="text-xs text-dark-400">Dados extraídos anteriormente</p>
+              <p className="text-xs text-dark-400">Dados do servidor · importação salva</p>
             </div>
             <Button onClick={handleReprocess} icon={RotateCcw} variant="secondary" size="sm">
               Reprocessar
@@ -348,7 +578,10 @@ export default function Documents({ month, year }) {
             saving={saving}
             month={month}
             year={year}
-            fileName={file?.name ?? null}
+            fileName={file?.name ?? reviewImport?.fileName ?? null}
+            selectionPruneRequest={faturaPruneSelection}
+            applyWarningBanner={faturaApplyBanner}
+            importProgress={faturaImportProgress}
           />
         ) : (
           <ProcessingResult
@@ -360,6 +593,7 @@ export default function Documents({ month, year }) {
             accounts={accounts}
             tags={tags}
             file={file}
+            sourceFileName={reviewImport?.fileName ?? null}
             saving={saving}
             categories={allCategories}
             getMainCategories={getMainCategories}

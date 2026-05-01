@@ -8,7 +8,17 @@ const headerVariants = {
   transfer: 'bg-gradient-to-r from-blue-600 to-blue-500 border-none'
 }
 
-export default function Modal({ isOpen, onClose, title, children, hideHeader = false, headerVariant = 'default' }) {
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  hideHeader = false,
+  headerVariant = 'default',
+  closeOnBackdropClick = true,
+  closeOnEscape = true,
+  disableHeaderClose = false,
+}) {
   // Prevent body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -23,12 +33,13 @@ export default function Modal({ isOpen, onClose, title, children, hideHeader = f
 
   // Close on escape key
   useEffect(() => {
+    if (!closeOnEscape) return undefined
     const handleEscape = (e) => {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
-  }, [onClose])
+  }, [onClose, closeOnEscape])
 
   if (!isOpen) return null
 
@@ -36,8 +47,8 @@ export default function Modal({ isOpen, onClose, title, children, hideHeader = f
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/70 backdrop-blur-sm ${!closeOnBackdropClick ? 'cursor-default' : ''}`}
+        onClick={closeOnBackdropClick ? onClose : undefined}
       />
 
       {/* Modal */}
@@ -47,8 +58,11 @@ export default function Modal({ isOpen, onClose, title, children, hideHeader = f
           <div className={`flex items-center justify-between px-5 py-4 transition-all duration-300 ${headerVariants[headerVariant] || headerVariants.default}`}>
             <h2 className="text-lg font-semibold text-white">{title}</h2>
             <button
-              onClick={onClose}
-              className={`p-2 rounded-xl transition-colors ${
+              type="button"
+              onClick={disableHeaderClose ? undefined : onClose}
+              disabled={disableHeaderClose}
+              title={disableHeaderClose ? 'Aguarde a operação em andamento' : undefined}
+              className={`p-2 rounded-xl transition-colors disabled:opacity-40 disabled:pointer-events-none ${
                 headerVariant === 'default'
                   ? 'text-dark-400 hover:text-white hover:bg-dark-700'
                   : 'text-white/70 hover:text-white hover:bg-white/20'
@@ -62,8 +76,11 @@ export default function Modal({ isOpen, onClose, title, children, hideHeader = f
         {/* Close button when header is hidden */}
         {hideHeader && (
           <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-xl transition-colors z-10"
+            type="button"
+            onClick={disableHeaderClose ? undefined : onClose}
+            disabled={disableHeaderClose}
+            title={disableHeaderClose ? 'Aguarde a operação em andamento' : undefined}
+            className="absolute top-4 right-4 p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-xl transition-colors z-10 disabled:opacity-40 disabled:pointer-events-none"
           >
             <X className="w-5 h-5" />
           </button>

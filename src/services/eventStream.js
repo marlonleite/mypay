@@ -2,6 +2,10 @@ import { auth } from '../firebase/config'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
+/** `VITE_ENABLE_SSE=0` — sem conexão a `/api/v1/events` (evita CORS/500 ruidosos no dev local). */
+const SSE_ENABLED = import.meta.env.VITE_ENABLE_SSE !== '0'
+const SSE_MAX_RECONNECT = Math.max(1, Number(import.meta.env.VITE_SSE_MAX_RECONNECT ?? 6))
+
 /**
  * SSE client pra `/api/v1/events` com pub/sub por entidade.
  *
@@ -139,6 +143,14 @@ async function connectionLoop() {
 
     if (!runLoopActive) break
 
+    if (reconnectAttempts >= SSE_MAX_RECONNECT) {
+      console.info(
+        'SSE: reconexão interrompida após várias falhas. Ajuste CORS/`/api/v1/events` na API ou use VITE_ENABLE_SSE=0 no .env.'
+      )
+      runLoopActive = false
+      break
+    }
+
     // Backoff exponencial até SSE_RECONNECT_MAX_MS
     reconnectAttempts++
     const delay = Math.min(
@@ -157,6 +169,7 @@ async function connectionLoop() {
 export function connect() {
   const user = auth.currentUser
   if (!user) return
+  if (!SSE_ENABLED) return
 
   // Já conectado/conectando ao mesmo usuário? no-op.
   if ((connected || connecting) && currentUserUid === user.uid) return
@@ -167,6 +180,7 @@ export function connect() {
   }
 
   currentUserUid = user.uid
+  reconnectAttempts = 0
   runLoopActive = true
   connectionLoop()
 }

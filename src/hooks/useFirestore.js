@@ -114,7 +114,7 @@ export async function resolveTagIds(tagNames, apiClient) {
 // Pós Fase B-Refactor (Organizze): aceita campos novos do modelo unificado.
 // Constraint do backend: credit_card_invoice_id requer credit_card_id;
 // paid_credit_card_id e paid_credit_card_invoice_id devem vir juntos.
-async function buildTransactionPayload(data, apiClient) {
+export async function buildTransactionPayload(data, apiClient) {
   const tag_ids = data.tags !== undefined
     ? await resolveTagIds(data.tags, apiClient)
     : undefined
@@ -513,6 +513,24 @@ export function useCreditCardInvoices(cardId) {
   }
 }
 
+/**
+ * GET faturas do cartão e retorna o id da invoice cujo vencimento cai em month/year
+ * (month 0-indexed, mesmo critério que Cartões / useCreditCardInvoices.findInvoiceByDueMonth).
+ * Usado onde não há hook (ex.: import único em Documents).
+ */
+export async function resolveCreditCardInvoiceIdForDueMonth(cardId, month, year) {
+  if (!cardId || typeof month !== 'number' || typeof year !== 'number') return null
+  const { apiClient } = await import('../services/apiClient')
+  const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+  if (!Array.isArray(data)) return null
+  for (const i of data) {
+    if (!i.due_date || typeof i.due_date !== 'string') continue
+    const d = new Date(i.due_date + 'T12:00:00')
+    if (d.getMonth() === month && d.getFullYear() === year) return i.id
+  }
+  return null
+}
+
 // Busca invoices de múltiplos cartões em paralelo. Usado por Accounts.jsx
 // para mostrar o saldo devedor real (invoice.balance computed) de cada cartão.
 export function useAllCreditCardInvoices(cardIds) {
@@ -849,7 +867,8 @@ function mapTransactionAsCardExpense(t) {
 }
 
 // camelCase (frontend, shape legado de card_expense) → payload /transactions com credit_card_id.
-// Backend auto-resolve `credit_card_invoice_id` se omitido (Onda 6 — invoice_resolution.ensure_invoice_for_period).
+// Envie creditCardInvoiceId na fatura aberta (mês de vencimento do app) para o backend
+// não depender só da date (Onda 6 — invoice_resolution como fallback se omitido).
 async function buildCardExpenseAsTransactionPayload(data, apiClient) {
   const tag_ids = data.tags !== undefined
     ? await resolveTagIds(data.tags, apiClient)
@@ -883,7 +902,7 @@ async function buildCardExpenseAsTransactionPayload(data, apiClient) {
 
 // Hook para despesas do cartão — agora FILTER VIEW sobre /api/v1/transactions
 // (post-refactor: tabela `card_expenses` foi DROPPED na Onda 6).
-// Interface preservada: { expenses, loading, error, addCardExpense, updateCardExpense, deleteCardExpense }.
+// Interface preservada: { expenses, loading, error, addCardExpense, updateCardExpense, deleteCardExpense, deleteCardExpensesBatch, refresh }.
 export function useCardExpenses(cardId, month, year, invoiceId) {
   const { user } = useAuth()
   const [expenses, setExpenses] = useState([])
@@ -952,11 +971,50 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     return mapTransactionAsCardExpense(updated)
   }
 
-  const deleteCardExpense = async (id) => {
+  const deleteCardExpense = async (id, options = {}) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
     await apiClient.delete(`/api/v1/transactions/${id}`)
-    await fetchExpenses()
+    if (!options.skipRefetch) {
+      await fetchExpenses()
+    }
+  }
+
+  /**
+   * POST /api/v1/transactions/batch-delete com transaction_ids.
+   * Dedup, chunks de até TRANSACTION_BATCH_DELETE_MAX_IDS, um refetch no fim salvo skipRefetch.
+   * @param {string[]} transactionIds
+   * @param {{ skipRefetch?: boolean, onChunk?: (p: { chunk: number, chunkTotal: number }) => void }} [options]
+   */
+  const deleteCardExpensesBatch = async (transactionIds, options = {}) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { skipRefetch, onChunk } = options
+    const { batchDeleteTransactions, TRANSACTION_BATCH_DELETE_MAX_IDS } = await import(
+      '../services/transactionService'
+    )
+    const ids = [...new Set((transactionIds || []).filter(Boolean))]
+    if (ids.length === 0) {
+      return { results: [], deleted_count: 0, failed_count: 0 }
+    }
+    const allResults = []
+    let deleted_count = 0
+    let failed_count = 0
+    const chunkTotal = Math.ceil(ids.length / TRANSACTION_BATCH_DELETE_MAX_IDS)
+    for (let c = 0; c < chunkTotal; c++) {
+      const slice = ids.slice(
+        c * TRANSACTION_BATCH_DELETE_MAX_IDS,
+        (c + 1) * TRANSACTION_BATCH_DELETE_MAX_IDS
+      )
+      onChunk?.({ chunk: c + 1, chunkTotal })
+      const body = await batchDeleteTransactions({ transaction_ids: slice })
+      allResults.push(...(body.results || []))
+      deleted_count += body.deleted_count ?? 0
+      failed_count += body.failed_count ?? 0
+    }
+    if (!skipRefetch) {
+      await fetchExpenses()
+    }
+    return { results: allResults, deleted_count, failed_count }
   }
 
   return {
@@ -965,7 +1023,9 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     error,
     addCardExpense,
     updateCardExpense,
-    deleteCardExpense
+    deleteCardExpense,
+    deleteCardExpensesBatch,
+    refresh: fetchExpenses,
   }
 }
 

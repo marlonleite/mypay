@@ -16,7 +16,9 @@ export default function ImportHistory({ imports = [], onReview }) {
   }
 
   const getStatusBadge = (status) => {
-    if (status === 'completed') {
+    // Backend: `processed` = IA extraiu; `applied` = lançamentos confirmados via apply;
+    // `completed` = legado / migração. Antes só `completed` virava Importado — `processed` ficava errado.
+    if (status === 'completed' || status === 'applied') {
       return (
         <span className="flex items-center gap-1 text-xs text-emerald-400">
           <CheckCircle className="w-3 h-3" />
@@ -25,9 +27,9 @@ export default function ImportHistory({ imports = [], onReview }) {
       )
     }
     return (
-      <span className="flex items-center gap-1 text-xs text-yellow-400">
+      <span className="flex items-center gap-1 text-xs text-yellow-400" title="Extraído pela IA — confirme os lançamentos na tela de importação">
         <Clock className="w-3 h-3" />
-        Pendente
+        Aguardando importar
       </span>
     )
   }
@@ -70,9 +72,13 @@ export default function ImportHistory({ imports = [], onReview }) {
               </div>
               {onReview && (
                 <button
-                  onClick={() => onReview(item)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onReview(item)
+                  }}
                   className="p-1.5 text-dark-500 hover:text-violet-400 hover:bg-dark-700 rounded-lg transition-colors"
-                  title="Revisar dados extraídos"
+                title="Abrir revisão (carrega dados salvos no servidor)"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>

@@ -1,9 +1,11 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   Plus,
   CreditCard,
   Trash2,
   Edit2,
+  CheckSquare,
+  Square,
   ChevronRight,
   Calendar,
   Receipt,
@@ -20,7 +22,8 @@ import {
   Filter,
   AlertTriangle,
   Lock,
-  Scan
+  Scan,
+  Loader2
 } from 'lucide-react'
 // useAuth removido após F8 — Cards.jsx não acessa mais user.uid pra Firestore.
 import Card from '../components/ui/Card'
@@ -119,6 +122,11 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const [expenseSearch, setExpenseSearch] = useState('')
   const [showExpenseFilters, setShowExpenseFilters] = useState(false)
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState([])
+
+  const [bulkExpenseSelectMode, setBulkExpenseSelectMode] = useState(false)
+  const [bulkSelectedExpenseIds, setBulkSelectedExpenseIds] = useState([])
+  /** null | { kind: 'delete', chunk, chunkTotal } | { kind: 'refresh' } — bloqueia fechar o modal e mostra progresso */
+  const [bulkDeleteStatus, setBulkDeleteStatus] = useState(null)
 
   // Nova categoria
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
@@ -235,7 +243,32 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     addCardExpense,
     updateCardExpense,
     deleteCardExpense,
+    deleteCardExpensesBatch,
+    refresh: refreshInvoiceExpenses,
   } = useCardExpenses(selectedCard?.id, month, year, currentInvoice?.id)
+
+  useEffect(() => {
+    if (modalType !== 'details') {
+      setBulkExpenseSelectMode(false)
+      setBulkSelectedExpenseIds([])
+    }
+  }, [modalType])
+
+  useEffect(() => {
+    setBulkExpenseSelectMode(false)
+    setBulkSelectedExpenseIds([])
+  }, [selectedCard?.id])
+
+  const setBulkSelectionMode = (on) => {
+    setBulkExpenseSelectMode(on)
+    if (!on) setBulkSelectedExpenseIds([])
+  }
+
+  const toggleBulkExpenseSelect = (id) => {
+    setBulkSelectedExpenseIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
 
   // Despesas do cartão selecionado — vêm do hook invoice-based quando há invoice.
   const selectedCardExpenses = useMemo(() => {
@@ -301,6 +334,10 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     return result
   }, [selectedCardExpenses, expenseSearch, expenseCategoryFilter, allCategories])
 
+  const selectAllFilteredExpenses = () => {
+    setBulkSelectedExpenseIds(filteredCardExpenses.map((e) => e.id))
+  }
+
   const filteredCardExpenseTotal = useMemo(
     () => sumCardBillLedger(filteredCardExpenses),
     [filteredCardExpenses]
@@ -318,6 +355,13 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
 
   // Fatura paga = lançamentos bloqueados (read-only)
   const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0
+
+  const bulkDeleteBusy = bulkDeleteStatus != null
+
+  const handleDetailsModalClose = () => {
+    if (bulkDeleteBusy) return
+    setModalType(null)
+  }
 
   const loading = loadingCards || loadingExpenses || loadingAccounts || loadingCategories
 
@@ -357,6 +401,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   }
 
   const openNewExpenseModal = () => {
+    setBulkSelectionMode(false)
     setEditingItem(null)
     const expenseCats = getMainCategories(TRANSACTION_TYPES.EXPENSE)
     setExpenseForm({
@@ -375,6 +420,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   }
 
   const openEditExpenseModal = (expense) => {
+    setBulkSelectionMode(false)
     setEditingItem(expense)
     // Converter data para formato de input
     const expenseDate = expense.date instanceof Date
@@ -552,7 +598,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
           date: expenseForm.date,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: expenseForm.billMonth,
-          billYear: expenseForm.billYear
+          billYear: expenseForm.billYear,
+          creditCardInvoiceId: currentInvoice?.id ?? editingItem.creditCardInvoiceId,
         })
       } else {
         // Criar novo lançamento — vincula à fatura sendo visualizada.
@@ -591,8 +638,57 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       await deleteCardExpense(expenseId)
       await refreshAllCardExpenses()
       await refreshInvoices()
+      setBulkSelectedExpenseIds((prev) => prev.filter((id) => id !== expenseId))
     } catch (error) {
       console.error('Error deleting expense:', error)
+    }
+  }
+
+  const handleBulkDeleteExpenses = async () => {
+    const ids = [...new Set(bulkSelectedExpenseIds.filter(Boolean))]
+    if (ids.length === 0) return
+    const n = ids.length
+    if (
+      !confirm(
+        `Excluir ${n} lançamento${n !== 1 ? 's' : ''}? Isso remove cada item da fatura (não dá para desfazer daqui).`
+      )
+    ) {
+      return
+    }
+    try {
+      const { results, failed_count: failedCount } = await deleteCardExpensesBatch(ids, {
+        skipRefetch: true,
+        onChunk: ({ chunk, chunkTotal }) => {
+          setBulkDeleteStatus({ kind: 'delete', chunk, chunkTotal })
+        },
+      })
+      setBulkDeleteStatus({ kind: 'refresh' })
+      await refreshInvoiceExpenses()
+      await refreshAllCardExpenses()
+      await refreshInvoices()
+
+      const failedIds = new Set(
+        (results || []).filter((r) => !r.deleted).map((r) => r.id)
+      )
+      if (failedCount > 0) {
+        setBulkSelectedExpenseIds((prev) => prev.filter((id) => failedIds.has(id)))
+        const msgs = (results || [])
+          .filter((r) => !r.deleted)
+          .map((r) => r.error?.message || r.id)
+        const preview = msgs.slice(0, 5).join('; ')
+        const more = msgs.length > 5 ? ` (+${msgs.length - 5})` : ''
+        alert(
+          `${failedCount} de ${n} não ${failedCount === 1 ? 'pôde ser excluído' : 'puderam ser excluídos'}.${preview ? `\n${preview}${more}` : ''}`
+        )
+      } else {
+        setBulkSelectionMode(false)
+      }
+    } catch (error) {
+      console.error('Bulk delete failed:', error)
+      const msg = error?.message || 'Erro ao excluir em lote'
+      alert(msg)
+    } finally {
+      setBulkDeleteStatus(null)
     }
   }
 
@@ -968,8 +1064,11 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       {/* Card Details Modal */}
       <Modal
         isOpen={modalType === 'details'}
-        onClose={() => setModalType(null)}
+        onClose={handleDetailsModalClose}
         title={selectedCard?.name || 'Detalhes do Cartão'}
+        closeOnBackdropClick={!bulkDeleteBusy}
+        closeOnEscape={!bulkDeleteBusy}
+        disableHeaderClose={bulkDeleteBusy}
       >
         <div className="space-y-4">
           {/* Card Summary */}
@@ -1130,6 +1229,70 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             </>
           )}
 
+          {!isBillLocked && selectedCardExpenses.length > 0 && filteredCardExpenses.length > 0 && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={bulkDeleteBusy}
+                onClick={() =>
+                  bulkExpenseSelectMode ? setBulkSelectionMode(false) : setBulkSelectionMode(true)
+                }
+                className={`text-xs font-medium px-3 py-2 rounded-xl border transition-colors disabled:opacity-40 disabled:pointer-events-none ${
+                  bulkExpenseSelectMode
+                    ? 'border-violet-500/50 bg-violet-500/10 text-violet-300'
+                    : 'border-dark-600 text-dark-300 hover:text-white hover:bg-dark-800'
+                }`}
+              >
+                {bulkExpenseSelectMode ? 'Cancelar seleção' : 'Selecionar vários'}
+              </button>
+              {bulkExpenseSelectMode && (
+                <>
+                  <button
+                    type="button"
+                    disabled={bulkDeleteBusy}
+                    onClick={selectAllFilteredExpenses}
+                    className="text-xs font-medium px-3 py-2 rounded-xl border border-dark-600 text-dark-300 hover:text-white hover:bg-dark-800 disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    Todos na lista
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkSelectedExpenseIds.length === 0 || bulkDeleteBusy}
+                    onClick={handleBulkDeleteExpenses}
+                    className="inline-flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border border-red-500/40 text-red-400 hover:bg-red-500/15 disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    {bulkDeleteBusy ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
+                        <span>Excluindo...</span>
+                      </>
+                    ) : (
+                      `Excluir (${bulkSelectedExpenseIds.length})`
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+            {bulkDeleteBusy && bulkDeleteStatus && (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-violet-500/10 border border-violet-500/25 text-sm text-violet-200"
+              >
+                <Loader2 className="w-4 h-4 shrink-0 animate-spin text-violet-400" aria-hidden />
+                <span>
+                  {bulkDeleteStatus.kind === 'delete'
+                    ? bulkDeleteStatus.chunkTotal > 1
+                      ? `Excluindo lote ${bulkDeleteStatus.chunk} de ${bulkDeleteStatus.chunkTotal}...`
+                      : 'Excluindo lançamentos...'
+                    : 'Atualizando a lista...'}
+                </span>
+              </div>
+            )}
+            </>
+          )}
           {/* Expenses List */}
           {selectedCardExpenses.length === 0 ? (
             <EmptyState
@@ -1148,6 +1311,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
               <p className="text-xs text-dark-400 font-medium">Lançamentos do mês</p>
               {filteredCardExpenses.map((expense) => {
                 const isIncome = expense.type === TRANSACTION_TYPES.INCOME
+                const bulkSelected = bulkSelectedExpenseIds.includes(expense.id)
                 const periodFlag = getInvoicePeriodFlag(expense)
                 const periodBadgeLabel =
                   periodFlag === 'before' ? 'antes do ciclo'
@@ -1159,8 +1323,25 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                 return (
                   <div
                     key={expense.id}
-                    className="flex items-center gap-3 p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
+                    className={`flex items-center gap-3 p-3 bg-dark-800/30 rounded-xl border border-dark-700/30 ${
+                      bulkSelected ? 'ring-1 ring-violet-500/35' : ''
+                    }`}
                   >
+                    {bulkExpenseSelectMode && !isBillLocked && (
+                      <button
+                        type="button"
+                        disabled={bulkDeleteBusy}
+                        onClick={() => toggleBulkExpenseSelect(expense.id)}
+                        className="flex-shrink-0 p-0.5 text-violet-400 rounded-lg hover:bg-violet-500/10 disabled:opacity-40 disabled:pointer-events-none"
+                        aria-label={bulkSelected ? 'Desmarcar lançamento' : 'Selecionar lançamento'}
+                      >
+                        {bulkSelected ? (
+                          <CheckSquare className="w-5 h-5" />
+                        ) : (
+                          <Square className="w-5 h-5 text-dark-500" />
+                        )}
+                      </button>
+                    )}
                     <div className="flex-1 min-w-0 overflow-hidden">
                       <div className="flex items-center gap-1.5 overflow-hidden">
                         <span
@@ -1205,7 +1386,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                     <p className={`text-sm font-semibold flex-shrink-0 whitespace-nowrap ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
                       {isIncome ? '+' : '-'}{formatCurrency(Math.abs(Number(expense.amount) || 0))}
                     </p>
-                    {!isBillLocked && (
+                    {!isBillLocked && !bulkExpenseSelectMode && (
                       <>
                         <button
                           onClick={() => openEditExpenseModal(expense)}

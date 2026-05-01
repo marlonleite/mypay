@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileSpreadsheet,
+  Loader2,
 } from 'lucide-react'
 import Button from '../ui/Button'
 import CurrencyInput from '../ui/CurrencyInput'
@@ -18,6 +19,7 @@ import { findBestCategory } from '../../utils/categoryMapping'
 import { MONTHS } from '../../utils/constants'
 import { getCurrentMonthYear, parseLocalDate } from '../../utils/helpers'
 import { guessCardIdFromFileName } from '../../utils/guessCardFromFileName'
+import { useCreditCardInvoices } from '../../hooks/useFirestore'
 
 const VALIDATION_TOLERANCE = 0.02
 
@@ -74,6 +76,12 @@ export default function FaturaResult({
   year,
   /** Nome do ficheiro enviado (ex. fatura_c6_2026-04.pdf) — heurística de cartão. */
   fileName = null,
+  /** Após apply 207: remove line ids da seleção (token muda a cada prune). */
+  selectionPruneRequest = null,
+  /** Resumo de falhas parciais + retry. */
+  applyWarningBanner = null,
+  /** Mensagem de progresso durante importação em lote (controlada pelo parent). */
+  importProgress = null,
 }) {
   const { formatCurrency } = usePrivacy()
 
@@ -110,9 +118,40 @@ export default function FaturaResult({
     })
   }, [cards, fileName])
 
+  const { invoices, loading: invoicesLoading } = useCreditCardInvoices(selectedCard || null)
+
   const [{ billMonth, billYear }, setBillPeriod] = useState(() =>
     resolveInitialBillPeriod(data, month, year)
   )
+
+  /**
+   * Fatura alvo = a escolhida em "Fatura de referência" (billMonth/billYear), não o mês global do app.
+   * 1) Ciclo: data no meio do mês de referência entre starting_date e closing_date (ex.: fatura que fecha em março).
+   * 2) Fallback: due_date no mês/ano escolhido (quem trata o seletor como mês de vencimento).
+   * Sem id, o backend infere invoice pela data de cada linha → itens espalhados em várias faturas.
+   */
+  const targetCreditCardInvoiceId = useMemo(() => {
+    if (!selectedCard || typeof billMonth !== 'number' || typeof billYear !== 'number') return null
+    if (!invoices?.length) return null
+    const midCycle = new Date(billYear, billMonth, 15, 12, 0, 0)
+    const byCycle = invoices.find(
+      (inv) =>
+        inv.startingDate &&
+        inv.closingDate &&
+        midCycle >= inv.startingDate &&
+        midCycle <= inv.closingDate
+    )
+    if (byCycle) return byCycle.id
+    return (
+      invoices.find(
+        (inv) =>
+          inv.dueDate &&
+          inv.dueDate.getMonth() === billMonth &&
+          inv.dueDate.getFullYear() === billYear
+      )?.id ?? null
+    )
+  }, [selectedCard, billMonth, billYear, invoices])
+
   const [selectedIds, setSelectedIds] = useState(() => {
     if (!data?.transacoes?.length) return new Set()
     return new Set(data.transacoes.map(t => t.id))
@@ -165,6 +204,15 @@ export default function FaturaResult({
     )
   }, [])
 
+  useEffect(() => {
+    if (!selectionPruneRequest?.lineIds?.length) return
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      selectionPruneRequest.lineIds.forEach((id) => next.delete(id))
+      return next
+    })
+  }, [selectionPruneRequest?.token])
+
   const handleSave = useCallback(() => {
     if (!selectedCard || selectedCount === 0) return
 
@@ -172,18 +220,22 @@ export default function FaturaResult({
     const expenses = editedTransactions
       .filter(t => selectedIds.has(t.id))
       .map(t => ({
+        lineId: t.id,
         cardId: selectedCard,
         description: t.descricao,
         amount: t.valor || 0,
         date: faturaDate,
         originalDate: t.data,
         category: t.categoryId,
+        categoria_sugerida: t.categoria_sugerida ?? null,
+        type: t.transaction_type === 'income' ? 'income' : 'expense',
         billMonth,
         billYear,
+        creditCardInvoiceId: targetCreditCardInvoiceId,
       }))
 
     onSave(expenses)
-  }, [selectedCard, selectedCount, editedTransactions, selectedIds, billYear, billMonth, onSave])
+  }, [selectedCard, selectedCount, editedTransactions, selectedIds, billYear, billMonth, onSave, targetCreditCardInvoiceId])
 
   // Empty state
   if (!data?.transacoes?.length) {
@@ -291,6 +343,13 @@ export default function FaturaResult({
             className="w-28"
           />
         </div>
+        {selectedCard && !invoicesLoading && invoices.length > 0 && !targetCreditCardInvoiceId && (
+          <p className="mt-2 text-xs text-amber-200/90 leading-snug">
+            Não há fatura neste cartão para o período selecionado (ciclo ou vencimento). Ajuste o mês/ano ou abra
+            Cartões e confira as faturas — sem vínculo, o servidor pode lançar cada compra na fatura pela data da
+            linha.
+          </p>
+        )}
       </div>
 
       {/* Toolbar select all */}
@@ -403,14 +462,68 @@ export default function FaturaResult({
         })}
       </div>
 
+      {applyWarningBanner && (
+        <div className="px-4 pt-3 border-t border-dark-800">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+            <p className="text-amber-200 font-medium">
+              {applyWarningBanner.succeeded} linha(s) salvas; {applyWarningBanner.failed} falhou(aram).
+              Corrija as categorias ou dados e use o botão abaixo para reenviar só o que falhou (nova tentativa).
+            </p>
+            <ul className="mt-2 max-h-36 overflow-y-auto text-dark-300 space-y-1 text-xs">
+              {applyWarningBanner.failedLines.map((l) => (
+                <li key={`${l.lineId}-${l.description}`}>
+                  • {l.description}: {l.message}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3">
+              <Button
+                type="button"
+                onClick={applyWarningBanner.onRetry}
+                variant="secondary"
+                size="sm"
+                disabled={saving}
+              >
+                Tentar só as linhas com erro
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ações */}
       <div className="p-4 border-t border-dark-700 space-y-3">
+        {selectedCount >= 50 && (
+          <p className="text-xs text-amber-200/90 -mt-1">
+            São muitas linhas: não feche o aplicativo até o envio terminar.
+          </p>
+        )}
+        {saving && importProgress && (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            className="flex items-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2.5 text-sm text-violet-200"
+          >
+            <Loader2 className="w-4 h-4 shrink-0 animate-spin text-violet-400" aria-hidden />
+            <span>{importProgress}</span>
+          </div>
+        )}
         <Button
           onClick={handleSave}
           icon={CreditCard}
           fullWidth
           loading={saving}
-          disabled={hasNoCards || selectedCount === 0 || !selectedCard}
+          disabled={
+            saving ||
+            hasNoCards ||
+            selectedCount === 0 ||
+            !selectedCard ||
+            (Boolean(selectedCard) &&
+              !invoicesLoading &&
+              invoices.length > 0 &&
+              !targetCreditCardInvoiceId)
+          }
         >
           Importar {selectedCount} {selectedCount === 1 ? 'despesa' : 'despesas'}
         </Button>
