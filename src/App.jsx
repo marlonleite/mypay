@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { useSearch } from './contexts/SearchContext'
@@ -84,7 +84,21 @@ function AppContent() {
     },
     [setSearchParams]
   )
-  const [selectedMonth, setSelectedMonth] = useState(() => getCurrentMonthYear())
+  // Persiste mês/ano selecionados em URL searchParams (mesma estratégia do
+  // `tab`). URL usa 1-indexed pra leitura humana; internamente mantemos
+  // 0-indexed. Sobrevive refresh, back/forward, e fica compartilhável.
+  const monthParam = searchParams.get('month')
+  const yearParam = searchParams.get('year')
+  const selectedMonth = useMemo(() => {
+    const now = getCurrentMonthYear()
+    const m = monthParam != null ? Number(monthParam) - 1 : NaN
+    const y = yearParam != null ? Number(yearParam) : NaN
+    return {
+      month: Number.isInteger(m) && m >= 0 && m <= 11 ? m : now.month,
+      year: Number.isInteger(y) && y >= 1900 && y <= 2200 ? y : now.year,
+    }
+  }, [monthParam, yearParam])
+
   const [showAddModal, setShowAddModal] = useState(false)
   const [transactionFilters, setTransactionFilters] = useState(INITIAL_FILTERS)
   const [transactionSearchTerm, setTransactionSearchTerm] = useState('')
@@ -93,9 +107,54 @@ function AppContent() {
   const { toggleSearch } = useSearch()
   const { toggleShowValues } = usePrivacy()
 
-  const handleMonthChange = (month, year) => {
-    setSelectedMonth({ month, year })
-  }
+  const handleMonthChange = useCallback(
+    (month, year) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.set('month', String(month + 1))
+          p.set('year', String(year))
+          return p
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
+
+  // Abre o modal de detalhes de um cartão na aba Cartões. Usado por
+  // Lançamentos quando o DELETE de um pagamento de fatura retorna 409
+  // (transação vinculada a fatura paga → usuário precisa Reabrir fatura).
+  const openCardId = searchParams.get('card')
+  const handleOpenCardInvoice = useCallback(
+    (cardId, month, year) => {
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.set('tab', 'cards')
+          p.set('card', cardId)
+          if (typeof month === 'number') p.set('month', String(month + 1))
+          if (typeof year === 'number') p.set('year', String(year))
+          return p
+        },
+        { replace: true }
+      )
+    },
+    [setSearchParams]
+  )
+
+  // Limpa o param `card` da URL — usado pelo Cards.jsx depois de abrir o
+  // modal pra evitar reabertura espontânea ao trocar mês/aba.
+  const clearOpenCardParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        p.delete('card')
+        return p
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
 
   const handleAddNew = () => {
     // Navega para transactions e abre o modal
@@ -143,6 +202,7 @@ function AppContent() {
             onShowFiltersChange={setTransactionShowFilters}
             dateRange={transactionDateRange}
             onDateRangeChange={setTransactionDateRange}
+            onOpenCardInvoice={handleOpenCardInvoice}
           />
         )
       case 'cards':
@@ -152,6 +212,8 @@ function AppContent() {
             year={selectedMonth.year}
             onMonthChange={handleMonthChange}
             onNavigate={setActiveTab}
+            openCardId={openCardId}
+            onConsumeOpenCard={clearOpenCardParam}
           />
         )
       case 'reports':

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Plus,
   CreditCard,
@@ -11,16 +11,10 @@ import {
   Receipt,
   Check,
   Wallet,
-  Paperclip,
   Tag,
   X,
-  FileText,
-  Image as ImageIcon,
-  FileSpreadsheet,
-  File,
   Search,
   Filter,
-  AlertTriangle,
   Lock,
   Scan,
   Loader2
@@ -41,7 +35,6 @@ import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useAllCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
 import InvoiceAttachmentList from '../components/cards/InvoiceAttachmentList'
-import { uploadInvoiceAttachment } from '../services/invoiceAttachmentService'
 import { describeApiError } from '../utils/apiErrors'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { useToast } from '../contexts/ToastContext'
@@ -62,7 +55,7 @@ function sumCardBillLedger(expensesList) {
   return expensesList.reduce((sum, e) => sum + ledgerOwedDeltaForCardExpense(e), 0)
 }
 
-export default function Cards({ month, year, onMonthChange, onNavigate }) {
+export default function Cards({ month, year, onMonthChange, onNavigate, openCardId, onConsumeOpenCard }) {
   const { formatCurrency } = usePrivacy()
   const { toast } = useToast()
   const {
@@ -105,8 +98,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const [selectedCard, setSelectedCard] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState(null)
   const [bankSelectorOpen, setBankSelectorOpen] = useState(false)
 
   // Faturas do cartão selecionado (Onda 2 — entidade própria) + helpers.
@@ -180,9 +171,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     date: new Date().toISOString().split('T')[0],
     amount: null, // Para pagamento parcial
     isPartial: false,
-    attachments: []
   })
-  const paymentFileInputRef = useRef(null)
 
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
@@ -239,6 +228,22 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     })
     return totals
   }, [cards, allExpenses, month, year, invoicesByCard])
+
+  // Status "fatura paga" na lista de cartões: backend (credit_card_invoices.status)
+  // é fonte de verdade. Cai em isBillPaid (transação de pagamento) só quando não
+  // há invoice materializada pra aquele mês/ano (legado / cartões sem invoice).
+  // Sem isso, divergência entre status da invoice e existência da transação no
+  // mês visualizado pode mostrar fatura como aberta mesmo já estando paga.
+  const isCardInvoicePaid = (cardId) => {
+    const invs = invoicesByCard[cardId] || []
+    const inv = invs.find(i =>
+      i.dueDate &&
+      i.dueDate.getMonth() === month &&
+      i.dueDate.getFullYear() === year
+    )
+    if (inv) return inv.status === 'paid'
+    return isBillPaid(cardId)
+  }
 
   // Hook para despesas do cartão selecionado — filtra por invoice quando disponível.
   const currentInvoice = findInvoiceByDueMonth(month, year)
@@ -358,8 +363,13 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     ? filteredCardExpenseTotal
     : invoiceFullChargeTotal
 
-  // Fatura paga = lançamentos bloqueados (read-only)
-  const isBillLocked = selectedCard && isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0
+  // Fatura paga = lançamentos bloqueados (read-only). Backend
+  // (credit_card_invoices.status) é fonte de verdade — `isBillPaid` permanece
+  // como fallback pra cartões/meses sem invoice materializada.
+  const billConsideredPaid =
+    currentInvoice?.status === 'paid' ||
+    (selectedCard != null && isBillPaid(selectedCard.id))
+  const isBillLocked = selectedCard && billConsideredPaid && invoiceFullChargeTotal > 0
 
   const bulkDeleteBusy = bulkDeleteStatus != null
 
@@ -405,6 +415,18 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     setModalType('details')
   }
 
+  // Auto-abre modal de detalhes quando App passa `openCardId` via URL
+  // (?card=<id>). Usado pelo redirect de Lançamentos quando DELETE de
+  // pagamento de fatura retorna 409 — guia o usuário até "Reabrir fatura".
+  useEffect(() => {
+    if (!openCardId || cards.length === 0) return
+    const card = cards.find((c) => c.id === openCardId)
+    if (!card) return
+    openCardDetails(card)
+    onConsumeOpenCard?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openCardId, cards])
+
   const openNewExpenseModal = () => {
     setBulkSelectionMode(false)
     setEditingItem(null)
@@ -420,7 +442,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     })
     setShowTags(false)
     setTagInput('')
-    setUploadError(null)
     setModalType('expense')
   }
 
@@ -445,7 +466,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     })
     setShowTags(expense.tags?.length > 0)
     setTagInput('')
-    setUploadError(null)
     setModalType('expense')
   }
 
@@ -461,7 +481,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       date: formatDateForInput(dueDate),
       amount: totalDue,
       isPartial: false,
-      attachments: []
     })
     setModalType('pay_bill')
   }
@@ -508,46 +527,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     }
   }
 
-  // Selecionar arquivos de comprovante de pagamento (DEFERRED upload).
-  // Pós F-Cards-attachments: arquivos ficam locais como `File` objects;
-  // upload real acontece em `handlePayBill` via `attachmentService.uploadAttachment`
-  // depois que o backend retorna o id da transaction (substituiu o upload
-  // direto ao R2 via uploadComprovante — credenciais R2 saem do bundle).
-  const handlePaymentFileSelect = (e) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    setUploadError(null)
-    const pending = Array.from(files).map(file => ({
-      file,
-      fileName: file.name,
-      fileType: file.type,
-      // URL preview local pra exibir na lista (revogada após upload).
-      url: URL.createObjectURL(file),
-    }))
-
-    setPaymentForm(prev => ({
-      ...prev,
-      attachments: [...prev.attachments, ...pending]
-    }))
-
-    if (paymentFileInputRef.current) {
-      paymentFileInputRef.current.value = ''
-    }
-  }
-
-  const removePaymentAttachment = (index) => {
-    setPaymentForm(prev => {
-      const removed = prev.attachments[index]
-      // Revoga blob URL pra não vazar memória
-      if (removed?.url?.startsWith('blob:')) URL.revokeObjectURL(removed.url)
-      return {
-        ...prev,
-        attachments: prev.attachments.filter((_, i) => i !== index)
-      }
-    })
-  }
-
   // Tags
   const addTag = (tag = tagInput.trim()) => {
     if (tag && !expenseForm.tags.includes(tag)) {
@@ -569,23 +548,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
 
   const selectTagSuggestion = (tag) => {
     addTag(tag)
-  }
-
-  // Ícones de arquivo
-  const getFileIcon = (attachment) => {
-    const type = attachment.type || ''
-    if (type.startsWith('image/')) return ImageIcon
-    if (type === 'application/pdf') return FileText
-    if (type.includes('spreadsheet') || type.includes('excel') || attachment.fileName?.match(/\.(xls|xlsx|csv)$/i)) return FileSpreadsheet
-    return File
-  }
-
-  const getFileIconColor = (attachment) => {
-    const type = attachment.type || ''
-    if (type.startsWith('image/')) return 'text-blue-400'
-    if (type === 'application/pdf') return 'text-red-400'
-    if (type.includes('spreadsheet') || type.includes('excel')) return 'text-emerald-400'
-    return 'text-dark-400'
   }
 
   const handleSaveExpense = async (e) => {
@@ -738,27 +700,9 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
         paidAt: new Date(paymentForm.date + 'T12:00:00'),
       })
 
-      // Wave9: comprovantes ficam na FATURA (sobrevivem ao ciclo pagar→reabrir
-      // →pagar de novo). uploadInvoiceAttachment faz POST multipart em
-      // /credit-card-invoices/{invoice.id}/attachments.
-      if (paymentForm.attachments.length > 0) {
-        setUploading(true)
-        try {
-          for (const att of paymentForm.attachments) {
-            if (att?.file) {
-              try {
-                await uploadInvoiceAttachment(invoice.id, att.file)
-              } catch (err) {
-                console.warn('Erro ao anexar comprovante:', err)
-              } finally {
-                if (att.url?.startsWith('blob:')) URL.revokeObjectURL(att.url)
-              }
-            }
-          }
-        } finally {
-          setUploading(false)
-        }
-      }
+      // Wave9: anexos da fatura são gerenciados ao vivo pelo
+      // <InvoiceAttachmentList /> dentro do modal — uploads acontecem
+      // imediatamente, então não há mais staging pra processar aqui.
 
       // Recompute invoice (balance/payment_amount mudaram)
       await refreshInvoices()
@@ -888,7 +832,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       ) : (
         <div className="space-y-3">
           {cards.map((card) => {
-            const isPaid = isBillPaid(card.id)
+            const isPaid = isCardInvoicePaid(card.id)
             const billTotal = cardTotals[card.id] || 0
 
             return (
@@ -1085,7 +1029,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-8 h-8 text-white/80" />
-                {selectedCard && isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0 && (
+                {selectedCard && billConsideredPaid && invoiceFullChargeTotal > 0 && (
                   <span className="px-2 py-1 text-xs font-medium bg-white/20 text-white rounded-lg flex items-center gap-1">
                     <Check className="w-3 h-3" />
                     PAGA
@@ -1140,29 +1084,36 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             )}
 
             {/* Payment Info */}
-            {selectedCard && isBillPaid(selectedCard.id) && (
-              <div className="mt-3 pt-3 border-t border-white/20 text-sm text-white/80">
-                <div className="flex items-center justify-between">
-                  <p className="flex items-center gap-1">
-                    <Wallet className="w-4 h-4" />
-                    Pago via {getAccountName(getBillPayment(selectedCard.id)?.accountId)} em{' '}
-                    {(() => {
-                      const paidAt = getBillPayment(selectedCard.id)?.paidAt
-                      if (!paidAt) return '--'
-                      const date = paidAt.toDate ? paidAt.toDate() : new Date(paidAt)
-                      return date.toLocaleDateString('pt-BR')
-                    })()}
-                  </p>
-                  <button
-                    onClick={handleCancelPayment}
-                    disabled={saving}
-                    className="text-xs text-red-400 hover:text-red-300 underline disabled:opacity-50"
-                  >
-                    Reabrir fatura
-                  </button>
+            {selectedCard && billConsideredPaid && (() => {
+              // billPayment pode ser null no estado órfão (invoice.status='paid'
+              // sem transação correspondente no mês visualizado). Cai em
+              // currentInvoice.paidAt e omite o nome da conta nesse caso.
+              const billPayment = getBillPayment(selectedCard.id)
+              const accountName = billPayment ? getAccountName(billPayment.accountId) : null
+              const paidAtRaw = billPayment?.paidAt ?? currentInvoice?.paidAt ?? null
+              const paidAtStr = paidAtRaw
+                ? (paidAtRaw.toDate ? paidAtRaw.toDate() : new Date(paidAtRaw)).toLocaleDateString('pt-BR')
+                : '--'
+              return (
+                <div className="mt-3 pt-3 border-t border-white/20 text-sm text-white/80">
+                  <div className="flex items-center justify-between">
+                    <p className="flex items-center gap-1">
+                      <Wallet className="w-4 h-4" />
+                      {accountName
+                        ? `Pago via ${accountName} em ${paidAtStr}`
+                        : `Fatura paga em ${paidAtStr}`}
+                    </p>
+                    <button
+                      onClick={handleCancelPayment}
+                      disabled={saving}
+                      className="text-xs text-red-400 hover:text-red-300 underline disabled:opacity-50"
+                    >
+                      Reabrir fatura
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </div>
 
           {/* Comprovantes da fatura (Wave9) — sobrevivem ao ciclo pagar/reabrir. */}
@@ -1188,7 +1139,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                   Importar Fatura
                 </Button>
               </div>
-              {selectedCard && !isBillPaid(selectedCard.id) && invoiceFullChargeTotal > 0 && (
+              {selectedCard && !billConsideredPaid && invoiceFullChargeTotal > 0 && (
                 <Button onClick={openPayBillModal} icon={Check} variant="success" fullWidth>
                   Pagar Fatura
                 </Button>
@@ -1642,21 +1593,6 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
             </div>
           )}
 
-          {/* Erro de upload */}
-          {uploadError && (
-            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-              <X className="w-4 h-4 flex-shrink-0" />
-              <span>{uploadError}</span>
-              <button
-                type="button"
-                onClick={() => setUploadError(null)}
-                className="ml-auto p-1 hover:text-red-300"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
           {/* Botões de ação rápida — só Tags sobrou após decisão de drop em 2026-04-15 */}
           <div className="flex justify-center gap-6 py-2 border-t border-dark-700">
             <button
@@ -1771,78 +1707,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                 required
               />
 
-              {/* Comprovante de Pagamento */}
-              {uploadError && modalType === 'pay_bill' && (
-                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span className="flex-1">{uploadError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setUploadError(null)}
-                    className="ml-auto p-1 hover:text-red-300"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+              {/* Comprovantes da fatura — uploads imediatos. Os mesmos anexos
+                  aparecem no modal de detalhes (sobrevivem ao ciclo
+                  pagar/reabrir). */}
+              {currentInvoice?.id && (
+                <div className="px-1">
+                  <InvoiceAttachmentList invoiceId={currentInvoice.id} />
                 </div>
               )}
-
-              {paymentForm.attachments.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-dark-300 mb-1.5">
-                    Comprovante
-                  </label>
-                  <div className="space-y-2">
-                    {paymentForm.attachments.map((attachment, index) => {
-                      const FileIcon = getFileIcon(attachment)
-                      return (
-                        <div key={index} className="flex items-center gap-3 p-3 bg-dark-800 rounded-xl">
-                          <FileIcon className={`w-5 h-5 ${getFileIconColor(attachment)}`} />
-                          <a
-                            href={attachment.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            download={attachment.fileName}
-                            className="text-sm text-dark-300 flex-1 truncate hover:text-white transition-colors"
-                          >
-                            {attachment.fileName}
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => removePaymentAttachment(index)}
-                            className="p-1 text-dark-400 hover:text-red-400"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => paymentFileInputRef.current?.click()}
-                disabled={uploading}
-                className={`flex items-center gap-2 w-full p-3 rounded-xl border border-dashed transition-colors ${
-                  paymentForm.attachments.length > 0
-                    ? 'border-violet-500/30 text-violet-400'
-                    : 'border-dark-600 text-dark-400 hover:border-dark-500 hover:text-white'
-                } ${uploading ? 'opacity-50' : ''}`}
-              >
-                <Paperclip className="w-4 h-4" />
-                <span className="text-sm">
-                  {uploading ? 'Enviando...' : 'Anexar comprovante'}
-                </span>
-              </button>
-              <input
-                ref={paymentFileInputRef}
-                type="file"
-                accept="image/*,.pdf,.xls,.xlsx,.csv,.doc,.docx"
-                onChange={handlePaymentFileSelect}
-                multiple
-                className="hidden"
-              />
             </>
           )}
 

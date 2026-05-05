@@ -35,6 +35,10 @@ const FRIENDLY_MAP = [
     message: 'Esta fatura ainda não foi paga.',
   },
   {
+    test: /Invoice has nothing to pay/i,
+    message: 'Esta fatura não tem nada a quitar (sem compras no ciclo nem saldo anterior).',
+  },
+  {
     test: /reopen it before deleting transactions/i,
     message:
       'Há transações em uma fatura paga. Reabra a fatura para excluir lançamentos.',

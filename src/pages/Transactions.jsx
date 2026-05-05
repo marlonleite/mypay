@@ -59,6 +59,8 @@ import {
   isInstallmentPlanTransaction,
   formatInstallmentFraction
 } from '../utils/transactionSemantics'
+import { describeApiError, friendlyApiError } from '../utils/apiErrors'
+import { useToast } from '../contexts/ToastContext'
 
 const TX_FILTER_TYPES = new Set([
   'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
@@ -86,10 +88,12 @@ function transactionDayStamp(d) {
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
   filters, onFiltersChange, searchTerm, onSearchTermChange,
-  showFilters, onShowFiltersChange, dateRange, onDateRangeChange
+  showFilters, onShowFiltersChange, dateRange, onDateRangeChange,
+  onOpenCardInvoice
 }) {
   const { formatCurrency } = usePrivacy()
   const { user } = useAuth()
+  const { toast } = useToast()
   const setDateRange = onDateRangeChange
   const setFilters = onFiltersChange
   const setSearchTerm = onSearchTermChange
@@ -1077,11 +1081,10 @@ export default function Transactions({
    * @param {'single'|'all'|'from_forward'} deleteMode
    */
   const confirmDelete = async (id, deleteMode = 'single') => {
+    // Declarado fora do try pra ficar acessível no catch (redirect 409).
+    const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
     try {
       setDeleteProgress({ id, mode: deleteMode })
-
-      // Encontrar transação para log
-      const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
 
       if (deleteMode === 'all' && transactionToDelete?.recurrenceId) {
         await deleteTransaction(transactionToDelete.id, { scope: 'all' })
@@ -1119,9 +1122,41 @@ export default function Transactions({
       setTransactionToDelete(null)
     } catch (error) {
       console.error('Error deleting transaction:', error)
+      // Wave9: backend bloqueia DELETE direto em pagamento de fatura (transação
+      // com paid_credit_card_invoice_id). Quando isso acontece, redireciona
+      // o usuário pra Cartões com o cartão da fatura aberto — daí ele clica
+      // em "Reabrir fatura" pra desfazer o pagamento.
+      const status = parseHttpStatus(error)
+      const isLinkedBillPayment =
+        status === 409 &&
+        Boolean(transactionToLog?.paidCreditCardInvoiceId) &&
+        Boolean(transactionToLog?.paidCreditCardId)
+      if (isLinkedBillPayment && onOpenCardInvoice) {
+        const txDate = transactionToLog?.date
+          ? (transactionToLog.date instanceof Date ? transactionToLog.date : new Date(transactionToLog.date))
+          : null
+        toast.info(friendlyApiError(error) || 'Esta transação é o pagamento de uma fatura — abra "Reabrir fatura" para excluir.')
+        onOpenCardInvoice(
+          transactionToLog.paidCreditCardId,
+          txDate ? txDate.getMonth() : month,
+          txDate ? txDate.getFullYear() : year,
+        )
+        setDetailModalOpen(false)
+        setSelectedTransaction(null)
+        setDeleteModalOpen(false)
+        setTransactionToDelete(null)
+      } else {
+        toast.error(describeApiError(error, 'Não foi possível excluir o lançamento.'))
+      }
     } finally {
       setDeleteProgress(null)
     }
+  }
+
+  // Extrai o HTTP status code da mensagem do apiClient: "API <method> <path> → <code>: <detail>".
+  function parseHttpStatus(error) {
+    const m = String(error?.message ?? '').match(/→ (\d{3}):/)
+    return m ? Number(m[1]) : null
   }
 
   const handleAddAttachmentsToDetail = async (files) => {
