@@ -40,6 +40,9 @@ import BankIcon from '../components/ui/BankIcon'
 import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useAllCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
+import InvoiceAttachmentList from '../components/cards/InvoiceAttachmentList'
+import { uploadInvoiceAttachment } from '../services/invoiceAttachmentService'
+import { describeApiError } from '../utils/apiErrors'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { useToast } from '../contexts/ToastContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
@@ -83,7 +86,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
     getBillPayments,
     getPreviousBalance,
     addBillPayment,
-    deleteBillPayment
+    reopenBillPayment,
   } = useBillPayments(month, year)
   const { tags: existingTags } = useTags()
   const {
@@ -632,6 +635,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       await refreshInvoices()
     } catch (error) {
       console.error('Error saving expense:', error)
+      toast.error(describeApiError(error, 'Não foi possível salvar o lançamento.'))
     } finally {
       setSaving(false)
     }
@@ -645,6 +649,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       setBulkSelectedExpenseIds((prev) => prev.filter((id) => id !== expenseId))
     } catch (error) {
       console.error('Error deleting expense:', error)
+      toast.error(describeApiError(error, 'Não foi possível excluir o lançamento.'))
     }
   }
 
@@ -724,7 +729,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
 
       // Backend cria a transaction (com paid_credit_card_id + paid_credit_card_invoice_id)
       // atomicamente. Não precisamos mais criar a transação separadamente.
-      const created = await addBillPayment({
+      await addBillPayment({
         cardId: selectedCard.id,
         paidCreditCardInvoiceId: invoice.id,
         accountId: paymentForm.accountId,
@@ -733,17 +738,16 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
         paidAt: new Date(paymentForm.date + 'T12:00:00'),
       })
 
-      // Upload deferido dos comprovantes — backend retornou created.id (a transaction
-      // que representa o pagamento no novo modelo). attachmentService faz POST
-      // multipart pra cada arquivo. Revoga blob URL pra não vazar memória.
-      if (paymentForm.attachments.length > 0 && created?.id) {
+      // Wave9: comprovantes ficam na FATURA (sobrevivem ao ciclo pagar→reabrir
+      // →pagar de novo). uploadInvoiceAttachment faz POST multipart em
+      // /credit-card-invoices/{invoice.id}/attachments.
+      if (paymentForm.attachments.length > 0) {
         setUploading(true)
         try {
-          const { uploadAttachment } = await import('../services/attachmentService')
           for (const att of paymentForm.attachments) {
             if (att?.file) {
               try {
-                await uploadAttachment(created.id, att.file)
+                await uploadInvoiceAttachment(invoice.id, att.file)
               } catch (err) {
                 console.warn('Erro ao anexar comprovante:', err)
               } finally {
@@ -762,6 +766,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
       setModalType('details')
     } catch (error) {
       console.error('Error paying bill:', error)
+      toast.error(describeApiError(error, 'Não foi possível pagar a fatura.'))
     } finally {
       setSaving(false)
     }
@@ -770,21 +775,21 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
   const handleCancelPayment = async () => {
     if (!selectedCard) return
 
-    const payment = getBillPayment(selectedCard.id)
-    if (!payment) return
+    // Wave9: prefere localizar a fatura pelo mês/ano corrente — `getBillPayment`
+    // ainda funciona pra recuperar o id da transação, mas /reopen aceita só
+    // invoice_id. A transação de pagamento é apagada pelo backend.
+    const invoice = findInvoiceByDueMonth(month, year)
+    if (!invoice) return
 
-    if (!confirm('Deseja estornar este pagamento? A transação vinculada também será excluída.')) return
+    if (!confirm('Deseja reabrir esta fatura? O pagamento registrado será desfeito (anexos serão preservados).')) return
 
     try {
       setSaving(true)
-
-      // No novo modelo, payment.id == transaction.id (são a mesma row).
-      // deleteBillPayment já faz hard delete da transaction.
-      await deleteBillPayment(payment.id)
+      await reopenBillPayment(invoice.id)
       await refreshInvoices()
-
     } catch (error) {
-      console.error('Error canceling payment:', error)
+      console.error('Error reopening invoice:', error)
+      toast.error(describeApiError(error, 'Não foi possível reabrir a fatura.'))
     } finally {
       setSaving(false)
     }
@@ -1153,12 +1158,19 @@ export default function Cards({ month, year, onMonthChange, onNavigate }) {
                     disabled={saving}
                     className="text-xs text-red-400 hover:text-red-300 underline disabled:opacity-50"
                   >
-                    Estornar
+                    Reabrir fatura
                   </button>
                 </div>
               </div>
             )}
           </div>
+
+          {/* Comprovantes da fatura (Wave9) — sobrevivem ao ciclo pagar/reabrir. */}
+          {currentInvoice?.id && (
+            <div className="px-1">
+              <InvoiceAttachmentList invoiceId={currentInvoice.id} />
+            </div>
+          )}
 
           {/* Action Buttons */}
           {isBillLocked ? (

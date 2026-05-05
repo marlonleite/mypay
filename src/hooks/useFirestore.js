@@ -431,6 +431,9 @@ function mapCreditCardInvoice(i) {
     dueDate: i.due_date ? new Date(i.due_date + 'T12:00:00') : null,
     startingDate: i.starting_date ? new Date(i.starting_date + 'T12:00:00') : null,
     closingDate: i.closing_date ? new Date(i.closing_date + 'T12:00:00') : null,
+    // Wave9: estado da fatura no fluxo pagar/reabrir.
+    status: i.status === 'paid' ? 'paid' : 'open',
+    paidAt: i.paid_at ? new Date(i.paid_at + 'T12:00:00') : null,
     // Computed fields:
     amount: toNumber(i.amount),                       // soma compras - estornos
     paymentAmount: toNumber(i.payment_amount),        // soma pagamentos alocados
@@ -505,6 +508,33 @@ export function useCreditCardInvoices(cardId) {
   // Re-fetch (útil após criar/pagar transação que afeta computed fields).
   const refresh = fetchInvoices
 
+  // Wave9: pagar a fatura via endpoint dedicado. Cria transação de pagamento
+  // (com paid_credit_card_invoice_id) e marca status='paid'. Retorna
+  // { invoice (raw API), paymentTransactionId } e re-fetch local.
+  const payInvoice = async (invoiceId, input) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { payInvoice: payInvoiceService } = await import('../services/invoiceService')
+    const result = await payInvoiceService(invoiceId, input)
+    await fetchInvoices()
+    return result
+  }
+
+  // Wave9: reabrir a fatura paga. Apaga a transação de pagamento (anexos da
+  // fatura permanecem) e volta status='open'.
+  const reopenInvoice = async (invoiceId) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { reopenInvoice: reopenInvoiceService } = await import('../services/invoiceService')
+    const result = await reopenInvoiceService(invoiceId)
+    await fetchInvoices()
+    return result
+  }
+
+  // Wave9: agregação de gastos por categoria dentro da fatura.
+  const getBreakdown = async (invoiceId) => {
+    const { getInvoiceBreakdown } = await import('../services/invoiceService')
+    return getInvoiceBreakdown(invoiceId)
+  }
+
   return {
     invoices,
     loading,
@@ -512,6 +542,9 @@ export function useCreditCardInvoices(cardId) {
     findInvoiceByDueMonth,
     findInvoiceForDate,
     refresh,
+    payInvoice,
+    reopenInvoice,
+    getBreakdown,
   }
 }
 
@@ -1759,42 +1792,64 @@ export function useBillPayments(month, year) {
     return 0
   }
 
-  // Registrar pagamento de fatura: cria transaction com paid_credit_card_id
-  // + paid_credit_card_invoice_id. Backend valida que ambos vêm juntos.
+  // Registrar pagamento de fatura via endpoint dedicado /pay (Wave9).
+  // O backend cria a transação com paid_credit_card_* e marca a fatura como
+  // status='paid'. Antes (Wave8-) criávamos a transação direto em
+  // /api/v1/transactions; isso ainda funciona mas não atualiza o status da
+  // fatura, então preferimos /pay.
   const addBillPayment = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
-    if (!data.cardId) throw new Error('cardId é obrigatório')
     if (!data.paidCreditCardInvoiceId) {
       throw new Error('paidCreditCardInvoiceId é obrigatório (resolver via useCreditCardInvoices)')
     }
+    if (!data.accountId) throw new Error('accountId é obrigatório')
 
-    const { apiClient } = await import('../services/apiClient')
+    const { payInvoice } = await import('../services/invoiceService')
     const paidAt = data.paidAt instanceof Date
       ? data.paidAt.toISOString().slice(0, 10)
       : (data.paidAt || new Date().toISOString().slice(0, 10))
 
-    const payload = {
-      description: data.description || `Pagamento de fatura`,
+    const result = await payInvoice(data.paidCreditCardInvoiceId, {
+      accountId: data.accountId,
       amount: data.amount,
-      type: 'expense',
       date: paidAt,
-      account_id: data.accountId ?? null,
-      paid_credit_card_id: data.cardId,
-      paid_credit_card_invoice_id: data.paidCreditCardInvoiceId,
-      is_paid: true,
-    }
-
-    const created = await apiClient.post('/api/v1/transactions', payload)
+      categoryId: data.categoryId,
+      description: data.description,
+      notes: data.notes,
+    })
     await fetchPayments()
-    return mapTransactionAsBillPayment(created)
+    return {
+      id: result.paymentTransactionId,
+      cardId: data.cardId ?? null,
+      paidCreditCardInvoiceId: data.paidCreditCardInvoiceId,
+      amount: parseFloat(data.amount),
+      paidAt: new Date(paidAt + 'T12:00:00'),
+      invoice: result.invoice,
+    }
   }
 
-  // Excluir pagamento (estorno) — hard delete da transaction.
-  const deleteBillPayment = async (id) => {
+  // Reabrir fatura (Wave9): apaga a transação de pagamento e volta status='open'.
+  // Substitui o antigo deleteBillPayment, que agora retorna 409 ao tentar
+  // deletar a transação diretamente em /transactions/{id}.
+  const reopenBillPayment = async (invoiceId) => {
     if (!user) throw new Error('Usuário não autenticado')
-    const { apiClient } = await import('../services/apiClient')
-    await apiClient.delete(`/api/v1/transactions/${id}`)
+    if (!invoiceId) throw new Error('invoiceId é obrigatório')
+    const { reopenInvoice } = await import('../services/invoiceService')
+    const result = await reopenInvoice(invoiceId)
     await fetchPayments()
+    return result
+  }
+
+  // Legacy: mantido como alias depreciado caso algum caller ainda passe o id da
+  // transação. Como o backend bloqueia DELETE direto em transação de pagamento
+  // (Wave9), tentamos resolver o invoice_id via lookup e delegar a reopenBillPayment.
+  const deleteBillPayment = async (transactionId) => {
+    const payment = payments.find((p) => p.id === transactionId)
+    const invoiceId = payment?.paidCreditCardInvoiceId
+    if (!invoiceId) {
+      throw new Error('Não foi possível identificar a fatura desse pagamento. Use reopenBillPayment(invoiceId).')
+    }
+    return reopenBillPayment(invoiceId)
   }
 
   return {
@@ -1808,6 +1863,7 @@ export function useBillPayments(month, year) {
     getBillPayments,
     getPreviousBalance,
     addBillPayment,
-    deleteBillPayment
+    deleteBillPayment,
+    reopenBillPayment,
   }
 }
