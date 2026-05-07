@@ -49,7 +49,6 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
-import Select from '../components/ui/Select'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
@@ -63,6 +62,25 @@ import {
 // Nested category list: branch guide + indent (Tailwind tokens)
 const SUBTREE_CONTAINER_MAIN = 'mt-0 ml-4 border-l-2 border-dark-600/80 pl-3 space-y-0'
 const SUBTREE_CONTAINER_NESTED = 'mt-0 ml-2 border-l border-dark-600/50 pl-3 space-y-0'
+
+/** IDs of all descendants of ``rootId`` (excluding ``rootId``). Used to forbid cyclic parent moves. */
+function collectDescendantCategoryIds(rootId, allCategories) {
+  const childrenByParent = new Map()
+  for (const c of allCategories) {
+    if (!c.parentId) continue
+    if (!childrenByParent.has(c.parentId)) childrenByParent.set(c.parentId, [])
+    childrenByParent.get(c.parentId).push(c.id)
+  }
+  const forbidden = new Set()
+  const stack = [...(childrenByParent.get(rootId) || [])]
+  while (stack.length) {
+    const id = stack.pop()
+    if (forbidden.has(id)) continue
+    forbidden.add(id)
+    for (const ch of childrenByParent.get(id) || []) stack.push(ch)
+  }
+  return forbidden
+}
 
 // Mapa de ícones para renderização dinâmica
 const iconMap = {
@@ -125,14 +143,49 @@ export default function Categories() {
     return getArchivedCategories().filter(c => c.type === activeType)
   }, [categories, activeType])
 
-  // Opções para mover (categorias principais do mesmo tipo, exceto a própria)
-  const moveOptions = useMemo(() => {
+  // Destinos para mover: principal (sem pai), depois principais, depois subs (rótulos hierárquicos)
+  const moveTargetOptions = useMemo(() => {
     if (!movingCategory) return []
-    const mainCats = getMainCategories(movingCategory.type)
-      .filter(c => c.id !== movingCategory.id && c.id !== movingCategory.parentId)
+
+    const descendantIds = collectDescendantCategoryIds(movingCategory.id, categories)
+    const forbidden = new Set([movingCategory.id, ...descendantIds])
+
+    const candidates = categories.filter(
+      c =>
+        c.type === movingCategory.type &&
+        !c.archived &&
+        !forbidden.has(c.id)
+    )
+
+    const nameOf = (id) => categories.find(x => x.id === id)?.name || ''
+
+    const mains = candidates.filter(c => !c.parentId)
+    const subs = candidates.filter(c => c.parentId)
+
+    const sortByName = (a, b) =>
+      a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' })
+
+    mains.sort(sortByName)
+    subs.sort((a, b) => {
+      const byParent = nameOf(a.parentId).localeCompare(
+        nameOf(b.parentId),
+        'pt-BR',
+        { sensitivity: 'base' }
+      )
+      if (byParent !== 0) return byParent
+      return sortByName(a, b)
+    })
+
     return [
       { value: '', label: 'Categoria principal (sem pai)' },
-      ...mainCats.map(c => ({ value: c.id, label: c.name }))
+      ...mains.map(c => ({
+        value: c.id,
+        label: `Principal · ${c.name}`
+      })),
+      ...subs.map(c => ({
+        value: c.id,
+        label: `Sub · ${c.name} · em ${nameOf(c.parentId)}`
+      }))
     ]
   }, [movingCategory, categories])
 
@@ -683,15 +736,27 @@ export default function Categories() {
       >
         <div className="space-y-4">
           <p className="text-sm text-dark-400">
-            Escolha para onde mover esta categoria. Selecione uma categoria principal para transformá-la em subcategoria, ou deixe vazio para torná-la uma categoria principal.
+            Torne esta categoria <strong className="text-dark-300 font-medium">principal</strong> (sem pai)
+            ou escolha outra categoria para virar <strong className="text-dark-300 font-medium">subcategoria</strong>{' '}
+            dela — pode ser uma principal ou outra subcategoria (mesmo tipo).
+            A lista mostra o nível em cada linha; use a busca para filtrar.
           </p>
 
-          <Select
-            label="Mover para"
-            value={selectedParentId}
-            onChange={(e) => setSelectedParentId(e.target.value)}
-            options={moveOptions}
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-dark-300">
+              Mover para
+            </label>
+            <SearchableSelect
+              options={moveTargetOptions}
+              value={selectedParentId || ''}
+              emptyValue=""
+              onChange={(val) => setSelectedParentId(typeof val === 'string' ? val : '')}
+              placeholder="Escolha o destino"
+              showResetOption={false}
+              fullWidth
+              searchPlaceholder="Buscar por nome..."
+            />
+          </div>
 
           <div className="flex gap-3 pt-2">
             <Button
