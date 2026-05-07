@@ -6,6 +6,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
+  CornerDownRight,
   FolderInput,
   Tag,
   GitMerge,
@@ -57,6 +58,10 @@ import {
   CATEGORY_ICONS,
   CATEGORY_COLORS
 } from '../utils/constants'
+
+// Nested category list: branch guide + indent (Tailwind tokens)
+const SUBTREE_CONTAINER_MAIN = 'mt-0 ml-4 border-l-2 border-dark-600/80 pl-3 space-y-0'
+const SUBTREE_CONTAINER_NESTED = 'mt-0 ml-2 border-l border-dark-600/50 pl-3 space-y-0'
 
 // Mapa de ícones para renderização dinâmica
 const iconMap = {
@@ -308,19 +313,28 @@ export default function Categories() {
     return CATEGORY_COLORS.find(c => c.id === colorId)?.class || 'bg-violet-500'
   }
 
-  const CategoryItem = ({ category, isSubcategory = false }) => {
+  const CategoryItem = ({ category, depth = 0 }) => {
     const subcategories = getSubcategories(category.id)
     const hasSubcategories = subcategories.length > 0
     const isExpanded = expandedCategories[category.id]
+    const isNested = depth > 0
 
     return (
       <div>
-        <div className={`flex items-center justify-between py-3 ${isSubcategory ? 'pl-8' : ''}`}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {!isSubcategory && hasSubcategories && (
+        <div
+          className={`flex items-center justify-between gap-2 py-3 pr-1 sm:pr-2 ${
+            isNested ? 'rounded-r-xl bg-dark-800/35 pl-2 border border-dark-700/40 border-l-transparent' : ''
+          }`}
+          title={isNested ? 'Subcategoria' : undefined}
+        >
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+            {hasSubcategories ? (
               <button
+                type="button"
                 onClick={() => toggleExpand(category.id)}
-                className="p-1 text-dark-400 hover:text-white transition-colors"
+                className="shrink-0 p-1 rounded-md text-dark-400 hover:text-white hover:bg-dark-700/80 transition-colors"
+                aria-expanded={isExpanded}
+                title={isExpanded ? 'Recolher subcategorias' : 'Expandir subcategorias'}
               >
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4" />
@@ -328,21 +342,48 @@ export default function Categories() {
                   <ChevronRight className="w-4 h-4" />
                 )}
               </button>
-            )}
-            {!isSubcategory && !hasSubcategories && (
-              <div className="w-6" />
+            ) : (
+              <div className="w-6 shrink-0" aria-hidden />
             )}
 
-            <div className={`p-2 rounded-lg ${getColorClass(category.color)}`}>
-              {renderIcon(category.icon, 'w-4 h-4 text-white')}
+            {isNested ? (
+              <span className="shrink-0 text-dark-500" aria-hidden>
+                <CornerDownRight className="w-4 h-4" strokeWidth={2} />
+              </span>
+            ) : null}
+
+            <div
+              className={`shrink-0 rounded-lg ${getColorClass(category.color)} ${
+                isNested ? 'p-1.5' : 'p-2'
+              }`}
+            >
+              {renderIcon(category.icon, isNested ? 'w-3.5 h-3.5 text-white' : 'w-4 h-4 text-white')}
             </div>
 
-            <span className="text-sm text-white font-medium truncate">
-              {category.name}
-            </span>
+            <div className="flex flex-col min-w-0 gap-0.5">
+              <span
+                className={`truncate ${
+                  isNested
+                    ? 'text-sm font-normal text-dark-300'
+                    : `text-sm text-white ${hasSubcategories ? 'font-semibold' : 'font-medium'}`
+                }`}
+              >
+                {category.name}
+              </span>
+              {isNested ? (
+                <span className="text-xs uppercase tracking-wide text-dark-500 font-medium">
+                  Subcategoria
+                </span>
+              ) : hasSubcategories ? (
+                <span className="text-xs text-dark-500">
+                  {subcategories.length}{' '}
+                  {subcategories.length === 1 ? 'subcategoria' : 'subcategorias'}
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             <button
               onClick={() => openEditModal(category)}
               className="p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
@@ -351,15 +392,13 @@ export default function Categories() {
               <Edit2 className="w-4 h-4" />
             </button>
 
-            {!isSubcategory && (
-              <button
-                onClick={() => openNewModal(category)}
-                className="p-1.5 text-dark-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors"
-                title="Adicionar subcategoria"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            )}
+            <button
+              onClick={() => openNewModal(category)}
+              className="p-1.5 text-dark-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors"
+              title="Adicionar subcategoria"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
 
             <button
               onClick={() => openMoveModal(category)}
@@ -395,10 +434,14 @@ export default function Categories() {
           </div>
         </div>
 
-        {/* Subcategorias */}
-        {isExpanded && subcategories.map(sub => (
-          <CategoryItem key={sub.id} category={sub} isSubcategory />
-        ))}
+        {/* Subcategorias — guia vertical + recuo */}
+        {isExpanded && subcategories.length > 0 && (
+          <div className={depth === 0 ? SUBTREE_CONTAINER_MAIN : SUBTREE_CONTAINER_NESTED}>
+            {subcategories.map(sub => (
+              <CategoryItem key={sub.id} category={sub} depth={depth + 1} />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
