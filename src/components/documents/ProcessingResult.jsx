@@ -57,24 +57,19 @@ export default function ProcessingResult({
     return firestoreCategories.filter(c => c.type === 'expense' && !c.parentId)
   }, [firestoreCategories, getMainCategories])
 
-  // Encontra a melhor categoria inicial
-  // Se a IA retornou um ID de categoria Firestore válido, usa direto; senão, fallback para findBestCategory
+  // Encontra a melhor categoria inicial.
+  // Backend retorna nome (main ou sub); sem match, deixa vazio para o user escolher
+  // — fallback cego para a primeira main fazia tudo cair em "Alimentação".
   const initialCategory = useMemo(() => {
     const type = data.tipo_transacao || 'expense'
     const aiSuggested = data.categoria_sugerida
-    const cats = type === 'income' ? incomeCategories : expenseCategories
 
-    // Tenta usar ID direto do Firestore
-    if (aiSuggested && cats.some(c => c.id === aiSuggested)) {
+    if (aiSuggested && firestoreCategories.some(c => c.id === aiSuggested)) {
       return aiSuggested
     }
 
-    const bestMatch = findBestCategory(aiSuggested, firestoreCategories, type)
-    if (bestMatch) return bestMatch
-
-    // Fallback para primeira categoria do tipo
-    return cats[0]?.id || ''
-  }, [data, firestoreCategories, incomeCategories, expenseCategories])
+    return findBestCategory(aiSuggested, firestoreCategories, type) || ''
+  }, [data, firestoreCategories])
 
   const [editedData, setEditedData] = useState({
     descricao: data.descricao || '',
