@@ -53,6 +53,14 @@ function notifyAll(payload) {
 }
 
 /**
+ * Same dispatch path as SSE — use when the client mutates data that SSE might not broadcast
+ * (e.g. implicit POST /tags inside resolveTagIds).
+ */
+export function emitLocalEntityEvent(entity, action = 'invalidate', id = null) {
+  notifyAll({ entity, action, id })
+}
+
+/**
  * Parse SSE stream chunks. Cada evento separado por `\n\n`; campos por `\n`.
  * Formato: `event: <name>\ndata: <json>\n\n`
  */

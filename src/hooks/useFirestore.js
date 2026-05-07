@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { subscribeMany } from '../services/eventStream'
+import { subscribeMany, emitLocalEntityEvent } from '../services/eventStream'
 // 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
 // pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
 // de dados (firestore) saiu deste arquivo após F4 da Fase E pós-refactor.
@@ -111,10 +111,12 @@ export async function resolveTagIds(tagNames, apiClient) {
 
   let allTags = await apiClient.get('/api/v1/tags')
   const ids = []
+  let tagsListMayHaveChanged = false
 
   for (const name of names) {
     let row = allTags.find(t => t.name === name)
     if (!row) {
+      tagsListMayHaveChanged = true
       try {
         await apiClient.post('/api/v1/tags', { name })
       } catch {
@@ -125,6 +127,11 @@ export async function resolveTagIds(tagNames, apiClient) {
     }
     if (row?.id) ids.push(row.id)
   }
+
+  if (tagsListMayHaveChanged) {
+    emitLocalEntityEvent('tag', 'invalidate')
+  }
+
   return ids
 }
 
