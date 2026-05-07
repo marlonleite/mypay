@@ -91,15 +91,16 @@ export default function FaturaResult({
   }, [firestoreCategories, getMainCategories])
 
   // Mapeia categorias da IA para categorias Firestore.
-  // Backend retorna nome (main ou sub); sem match, deixa vazio para o user escolher
-  // — fallback cego para a primeira main fazia tudo cair em "Alimentação".
+  // Backend retorna nome (main ou sub) em `categoria_sugerida` (mapper em
+  // `documentService.js`); sem match, deixa vazio para o user escolher.
   const mapInitialTransactions = useCallback(() => {
     if (!data?.transacoes?.length) return []
     return data.transacoes.map((t) => {
-      const isFirestoreId = t.categoria && firestoreCategories.some(c => c.id === t.categoria)
+      const suggested = t.categoria_sugerida
+      const isFirestoreId = suggested && firestoreCategories.some(c => c.id === suggested)
       const categoryId = isFirestoreId
-        ? t.categoria
-        : findBestCategory(t.categoria, firestoreCategories, 'expense') || ''
+        ? suggested
+        : findBestCategory(suggested, firestoreCategories, 'expense') || ''
       return { ...t, categoryId }
     })
   }, [data, firestoreCategories])
