@@ -328,7 +328,7 @@ export default function Categories() {
     try {
       await archiveCategory(category.id)
       // Também arquivar subcategorias
-      const subs = getSubcategories(category.id)
+      const subs = getSubcategories(category.id, category.type)
       for (const sub of subs) {
         await archiveCategory(sub.id)
       }
@@ -368,7 +368,7 @@ export default function Categories() {
   }
 
   const CategoryItem = ({ category, depth = 0 }) => {
-    const subcategories = getSubcategories(category.id)
+    const subcategories = getSubcategories(category.id, category.type)
     const hasSubcategories = subcategories.length > 0
     const isExpanded = expandedCategories[category.id]
     const isNested = depth > 0
@@ -845,7 +845,7 @@ export default function Categories() {
             <strong className="text-white">{deletingCategory?.name}</strong>{' '}
             permanentemente?
           </p>
-          {deletingCategory && getSubcategories(deletingCategory.id).length > 0 && (
+          {deletingCategory && getSubcategories(deletingCategory.id, deletingCategory.type).length > 0 && (
             <p className="text-sm text-orange-400">
               Atenção: As subcategorias também serão excluídas.
             </p>

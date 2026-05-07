@@ -152,7 +152,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
   const categoryOptions = useMemo(() => {
     const mainCats = getMainCategories(expenseForm.type)
     return mainCats.map(cat => {
-      const subs = getSubcategories(cat.id)
+      const subs = getSubcategories(cat.id, expenseForm.type)
       if (subs.length === 0) {
         return { value: cat.id, label: cat.name }
       }
@@ -314,7 +314,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
       const mainCats = getMainCategories(type)
       for (const cat of mainCats) {
         result.push({ value: cat.id, label: cat.name })
-        const subs = getSubcategories(cat.id)
+        const subs = getSubcategories(cat.id, type)
         for (const sub of subs) {
           result.push({ value: sub.id, label: `  ${sub.name}` })
         }

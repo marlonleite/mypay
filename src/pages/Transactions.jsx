@@ -474,7 +474,7 @@ export default function Transactions({
 
     for (const cat of mainCats) {
       result.push({ id: cat.id, name: cat.name, isMain: true })
-      const subs = getSubcategories(cat.id)
+      const subs = getSubcategories(cat.id, transactionType)
       for (const sub of subs) {
         result.push({ id: sub.id, name: `  ${sub.name}`, isMain: false, parentName: cat.name })
       }

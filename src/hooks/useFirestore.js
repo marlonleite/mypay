@@ -1242,8 +1242,12 @@ export function useCategories() {
   const getMainCategories = (type) =>
     categories.filter(c => c.type === type && !c.parentId && !c.archived)
 
-  const getSubcategories = (parentId) =>
-    categories.filter(c => c.parentId === parentId && !c.archived)
+  const getSubcategories = (parentId, categoryType = undefined) =>
+    categories.filter(c => {
+      if (c.parentId !== parentId || c.archived) return false
+      if (categoryType !== undefined && c.type !== categoryType) return false
+      return true
+    })
 
   const getArchivedCategories = () =>
     categories.filter(c => c.archived)
