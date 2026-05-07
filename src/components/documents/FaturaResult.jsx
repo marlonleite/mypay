@@ -19,6 +19,7 @@ import { findBestCategory } from '../../utils/categoryMapping'
 import { MONTHS } from '../../utils/constants'
 import { getCurrentMonthYear, parseLocalDate } from '../../utils/helpers'
 import { guessCardIdFromFileName } from '../../utils/guessCardFromFileName'
+import { flattenCategoriesForPicker } from '../../utils/categoryPickerList'
 import { useCreditCardInvoices } from '../../hooks/useFirestore'
 
 const VALIDATION_TOLERANCE = 0.02
@@ -81,7 +82,6 @@ export default function FaturaResult({
   onDiscard,
   cards = [],
   categories: firestoreCategories = [],
-  getMainCategories,
   saving = false,
   month,
   year,
@@ -96,10 +96,10 @@ export default function FaturaResult({
 }) {
   const { formatCurrency } = usePrivacy()
 
-  const expenseCategories = useMemo(() => {
-    if (getMainCategories) return getMainCategories('expense')
-    return firestoreCategories.filter(c => c.type === 'expense' && !c.parentId)
-  }, [firestoreCategories, getMainCategories])
+  const expenseCategories = useMemo(
+    () => flattenCategoriesForPicker(firestoreCategories, 'expense'),
+    [firestoreCategories]
+  )
 
   // Mapeia categorias da IA para categorias Firestore.
   // Backend retorna nome (main ou sub) em `categoria_sugerida` (mapper em

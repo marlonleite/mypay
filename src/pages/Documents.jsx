@@ -597,7 +597,6 @@ export default function Documents({ month, year }) {
             onDiscard={handleDiscard}
             cards={cards}
             categories={allCategories}
-            getMainCategories={getMainCategories}
             saving={saving}
             month={month}
             year={year}

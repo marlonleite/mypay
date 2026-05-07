@@ -5,6 +5,7 @@ import { useTransactions } from '../../hooks/useFirestore'
 import { useCards } from '../../hooks/useFirestore'
 import { useAccounts } from '../../hooks/useFirestore'
 import { useCategories } from '../../hooks/useFirestore'
+import { normalizeSearchText } from '../../utils/searchTransactions'
 
 const DEBOUNCE_DELAY_MS = 300
 const MIN_SEARCH_LENGTH = 2
@@ -89,7 +90,7 @@ export default function SearchModal({ onNavigate }) {
     const matchedCategories = categories
       .filter(c =>
         !c.archived &&
-        c.name?.toLowerCase().includes(searchLower)
+        normalizeSearchText(c.name || '').includes(normalizeSearchText(debouncedQuery))
       )
       .slice(0, MAX_RESULTS_PER_CATEGORY)
 

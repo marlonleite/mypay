@@ -49,6 +49,7 @@ import Modal from '../ui/Modal'
 import Input from '../ui/Input'
 import Button from '../ui/Button'
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '../../utils/constants'
+import { normalizeSearchText } from '../../utils/searchTransactions'
 
 // Mapa de ícones
 const ICON_MAP = {
@@ -101,13 +102,13 @@ export default function CategorySelector({
     return categories.find(c => c.id === value)
   }, [categories, value])
 
-  // Filtrar categorias pela busca
+  // Filtrar categorias pela busca (insensível a acento — alinha com busca em lançamentos)
   const filteredCategories = useMemo(() => {
     if (!searchTerm.trim()) return categories
 
-    const term = searchTerm.toLowerCase()
+    const term = normalizeSearchText(searchTerm)
     return categories.filter(c =>
-      c.name.toLowerCase().includes(term)
+      normalizeSearchText(c.name || '').includes(term)
     )
   }, [categories, searchTerm])
 

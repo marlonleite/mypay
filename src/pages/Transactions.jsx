@@ -54,6 +54,7 @@ import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERI
 import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { matchTransaction } from '../utils/searchTransactions'
+import { flattenCategoriesForPicker } from '../utils/categoryPickerList'
 import {
   matchesTransactionSourceFilter,
   isRecurrenceLinkedTransaction,
@@ -128,9 +129,7 @@ export default function Transactions({
 
   const {
     categories: allCategories,
-    addCategory,
-    getMainCategories,
-    getSubcategories
+    addCategory
   } = useCategories()
 
   const {
@@ -469,20 +468,11 @@ export default function Transactions({
     }
   }, [filteredTransactions])
 
-  // Categorias do Firestore (principais + subcategorias)
-  const categories = useMemo(() => {
-    const mainCats = getMainCategories(transactionType)
-    const result = []
-
-    for (const cat of mainCats) {
-      result.push({ id: cat.id, name: cat.name, isMain: true })
-      const subs = getSubcategories(cat.id, transactionType)
-      for (const sub of subs) {
-        result.push({ id: sub.id, name: `  ${sub.name}`, isMain: false, parentName: cat.name })
-      }
-    }
-    return result
-  }, [transactionType, allCategories])
+  // Principais + subs + órfãs (pai ausente/arquivado) para o picker; busca usa nome accent-insensitive no selector.
+  const categories = useMemo(
+    () => flattenCategoriesForPicker(allCategories, transactionType),
+    [transactionType, allCategories]
+  )
 
   const getCategoryName = (categoryId) => {
     // Se categoryId é um objeto (migração antiga), extrair o nome

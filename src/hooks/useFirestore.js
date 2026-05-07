@@ -1196,7 +1196,7 @@ export function useCategories() {
   const addCategory = async (data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    await apiClient.post('/api/v1/categories', {
+    const created = await apiClient.post('/api/v1/categories', {
       name: data.name,
       type: data.type,
       icon: data.icon || 'Tag',
@@ -1207,6 +1207,7 @@ export function useCategories() {
       essential: data.essential ?? false,
     })
     await fetchCategories()
+    return mapCategory(created)
   }
 
   const updateCategory = async (id, data) => {

@@ -4,6 +4,7 @@ import Modal from './Modal'
 import Input from './Input'
 import Button from './Button'
 import { CATEGORY_ICONS, CATEGORY_COLORS } from '../../utils/constants'
+import { normalizeSearchText } from '../../utils/searchTransactions'
 
 export default function CategorySelector({
   isOpen,
@@ -26,7 +27,7 @@ export default function CategorySelector({
     return categories.filter(cat => {
       const matchesType = cat.type === type
       const matchesSearch = searchTerm === '' ||
-        cat.name.toLowerCase().includes(searchTerm.toLowerCase())
+        normalizeSearchText(cat.name || '').includes(normalizeSearchText(searchTerm))
       const isNotArchived = !cat.archived
       return matchesType && matchesSearch && isNotArchived
     })
