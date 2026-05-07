@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { subscribeMany, emitLocalEntityEvent } from '../services/eventStream'
+import { resolveRecurrenceLinkedPaid } from '../utils/recurrencePaidDisplay'
 // 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
 // pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
 // de dados (firestore) saiu deste arquivo após F4 da Fase E pós-refactor.
@@ -80,7 +81,12 @@ function mapTransaction(t) {
     accountId: t.account_id ?? null,
     categoryId: t.category_id ?? null,
     notes: t.notes ?? null,
-    paid: t.is_paid,
+    paid: resolveRecurrenceLinkedPaid({
+      transactionId: t.id,
+      recurrenceId: t.recurrence_id ?? null,
+      civilDate: parsedDate?.date ?? null,
+      rawIsPaid: t.is_paid,
+    }),
     isTransfer: t.is_transfer,
     oppositeTransactionId: t.opposite_transaction_id ?? null,
     creditCardId: t.credit_card_id ?? null,

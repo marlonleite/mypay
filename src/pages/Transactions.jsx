@@ -63,6 +63,7 @@ import {
 } from '../utils/transactionSemantics'
 import { describeApiError, friendlyApiError } from '../utils/apiErrors'
 import { useToast } from '../contexts/ToastContext'
+import { setPaidOverride, removePaidOverride } from '../utils/recurrencePaidDisplay'
 
 const TX_FILTER_TYPES = new Set([
   'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
@@ -1201,8 +1202,9 @@ export default function Transactions({
   }
 
   const togglePaidStatus = async (transaction) => {
+    const newPaidStatus = transaction.paid === false ? true : false
     try {
-      const newPaidStatus = transaction.paid === false ? true : false
+      setPaidOverride(transaction.id, newPaidStatus)
       await updateTransaction(transaction.id, {
         ...transaction,
         paid: newPaidStatus
@@ -1212,6 +1214,7 @@ export default function Transactions({
         setSelectedTransaction({ ...transaction, paid: newPaidStatus })
       }
     } catch (error) {
+      removePaidOverride(transaction.id)
       console.error('Error toggling paid status:', error)
     }
   }

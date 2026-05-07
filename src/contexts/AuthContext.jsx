@@ -7,6 +7,7 @@ import {
 import { auth, googleProvider } from '../firebase/config'
 import { connect as connectEventStream, disconnect as disconnectEventStream } from '../services/eventStream'
 import { clearSettingsCache } from '../services/settingsService'
+import { clearTransactionPaidOverrides } from '../utils/recurrencePaidDisplay'
 
 const AuthContext = createContext()
 
@@ -33,6 +34,7 @@ export function AuthProvider({ children }) {
       } else {
         disconnectEventStream()
         clearSettingsCache()
+        clearTransactionPaidOverrides()
       }
     })
 
