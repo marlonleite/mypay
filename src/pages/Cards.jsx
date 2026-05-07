@@ -364,11 +364,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
     : invoiceFullChargeTotal
 
   // Fatura paga = lançamentos bloqueados (read-only). Backend
-  // (credit_card_invoices.status) é fonte de verdade — `isBillPaid` permanece
-  // como fallback pra cartões/meses sem invoice materializada.
-  const billConsideredPaid =
-    currentInvoice?.status === 'paid' ||
-    (selectedCard != null && isBillPaid(selectedCard.id))
+  // (credit_card_invoices.status) é fonte de verdade quando há invoice
+  // materializada — usar OR com `isBillPaid` causava falso positivo: pagamento
+  // de outra invoice do mesmo card disparava "Reabrir fatura" e o backend
+  // respondia 409 "Invoice is not paid". `isBillPaid` permanece só como
+  // fallback pra cartões/meses sem invoice materializada.
+  const billConsideredPaid = currentInvoice
+    ? currentInvoice.status === 'paid'
+    : (selectedCard != null && isBillPaid(selectedCard.id))
   const isBillLocked = selectedCard && billConsideredPaid && invoiceFullChargeTotal > 0
 
   const bulkDeleteBusy = bulkDeleteStatus != null
