@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   CreditCard,
   CheckSquare,
@@ -24,10 +24,11 @@ import { useCreditCardInvoices } from '../../hooks/useFirestore'
 const VALIDATION_TOLERANCE = 0.02
 
 /**
- * Período da fatura alinhado às linhas extraídas: usa o mês/ano da compra mais recente.
- * Evita confiar em mes_referencia/ano_referencia da IA quando estão incoerentes com as datas.
+ * Última data de compra extraída pela IA. Usada como heurística inicial e
+ * para mapear ciclo→fatura quando `invoices` chegam (para inferir mês de
+ * vencimento, convenção do app global).
  */
-function inferBillPeriodFromTransactions(transacoes) {
+function findLatestPurchaseDate(transacoes) {
   if (!Array.isArray(transacoes) || transacoes.length === 0) return null
   let latest = null
   for (const t of transacoes) {
@@ -37,16 +38,26 @@ function inferBillPeriodFromTransactions(transacoes) {
     if (Number.isNaN(d.getTime())) continue
     if (!latest || d > latest) latest = d
   }
-  if (!latest) return null
-  return { billMonth: latest.getMonth(), billYear: latest.getFullYear() }
+  return latest
 }
 
+/**
+ * Estado inicial do seletor — sem `invoices` ainda. Privilegia
+ * `mes_referencia/ano_referencia` da IA (em geral, mês de vencimento extraído
+ * do PDF) e cai em latest-purchase + 1 mês quando a IA não trouxe esses
+ * campos. O efeito reativo abaixo refina assim que invoices chegarem.
+ */
 function resolveInitialBillPeriod(data, month, year) {
-  const fromLines = inferBillPeriodFromTransactions(data?.transacoes)
-  if (fromLines) return fromLines
-
   if (data?.mes_referencia >= 1 && data?.mes_referencia <= 12 && data?.ano_referencia) {
     return { billMonth: data.mes_referencia - 1, billYear: data.ano_referencia }
+  }
+
+  const latest = findLatestPurchaseDate(data?.transacoes)
+  if (latest) {
+    // Heurística pré-invoices: vencimento ≈ mês seguinte ao fechamento da
+    // compra mais recente. Será corrigido pelo useEffect ao receber invoices.
+    const ref = new Date(latest.getFullYear(), latest.getMonth() + 1, 1)
+    return { billMonth: ref.getMonth(), billYear: ref.getFullYear() }
   }
 
   if (
@@ -125,25 +136,60 @@ export default function FaturaResult({
   const [{ billMonth, billYear }, setBillPeriod] = useState(() =>
     resolveInitialBillPeriod(data, month, year)
   )
+  const userTouchedPeriod = useRef(false)
+  const periodAlignedToInvoices = useRef(false)
+
+  // Wrappers do seletor: marcam que o user mexeu manualmente (impede que o
+  // alinhamento via invoices sobrescreva escolhas explícitas).
+  const handleBillMonthChange = useCallback((nextMonth) => {
+    userTouchedPeriod.current = true
+    setBillPeriod((prev) => ({ ...prev, billMonth: nextMonth }))
+  }, [])
+  const handleBillYearChange = useCallback((nextYear) => {
+    userTouchedPeriod.current = true
+    setBillPeriod((prev) => ({ ...prev, billYear: nextYear }))
+  }, [])
+
+  // Quando `invoices` carrega, alinha billMonth/billYear ao MÊS DE VENCIMENTO
+  // (mesma convenção do app global: useFirestore.findInvoiceByDueMonth e o
+  // seletor de mês em Cards/Transactions). Roda só uma vez por seleção de
+  // cartão e respeita interação manual do user.
+  useEffect(() => {
+    if (userTouchedPeriod.current || periodAlignedToInvoices.current) return
+    if (!invoices?.length) return
+    const latest = findLatestPurchaseDate(data?.transacoes)
+    if (!latest) return
+    const containing = invoices.find(
+      (inv) =>
+        inv.startingDate &&
+        inv.closingDate &&
+        latest >= inv.startingDate &&
+        latest <= inv.closingDate
+    )
+    if (containing?.dueDate) {
+      setBillPeriod({
+        billMonth: containing.dueDate.getMonth(),
+        billYear: containing.dueDate.getFullYear(),
+      })
+      periodAlignedToInvoices.current = true
+    }
+  }, [invoices, data])
+
+  // Reseta o alinhamento quando o cartão muda — invoices novas precisam
+  // refletir no seletor mesmo se o user já tinha visto o anterior.
+  useEffect(() => {
+    periodAlignedToInvoices.current = false
+    userTouchedPeriod.current = false
+  }, [selectedCard])
 
   /**
-   * Fatura alvo = a escolhida em "Fatura de referência" (billMonth/billYear), não o mês global do app.
-   * 1) Ciclo: data no meio do mês de referência entre starting_date e closing_date (ex.: fatura que fecha em março).
-   * 2) Fallback: due_date no mês/ano escolhido (quem trata o seletor como mês de vencimento).
-   * Sem id, o backend infere invoice pela data de cada linha → itens espalhados em várias faturas.
+   * Fatura alvo via mês de VENCIMENTO (convenção do app global).
+   * Sem id, o backend cairia no roteamento data-based, espalhando itens em
+   * múltiplas faturas — ancoramos explicitamente no invoice_id correto.
    */
   const targetCreditCardInvoiceId = useMemo(() => {
     if (!selectedCard || typeof billMonth !== 'number' || typeof billYear !== 'number') return null
     if (!invoices?.length) return null
-    const midCycle = new Date(billYear, billMonth, 15, 12, 0, 0)
-    const byCycle = invoices.find(
-      (inv) =>
-        inv.startingDate &&
-        inv.closingDate &&
-        midCycle >= inv.startingDate &&
-        midCycle <= inv.closingDate
-    )
-    if (byCycle) return byCycle.id
     return (
       invoices.find(
         (inv) =>
@@ -321,23 +367,21 @@ export default function FaturaResult({
         )}
       </div>
 
-      {/* Seletor de mês/ano da fatura */}
+      {/* Seletor de mês/ano da fatura — convenção: mês de VENCIMENTO. */}
       <div className="px-4 py-3 border-b border-dark-700">
-        <label className="block text-sm font-medium text-dark-300 mb-2">Fatura de referência</label>
+        <label className="block text-sm font-medium text-dark-300 mb-2">
+          Mês de vencimento da fatura
+        </label>
         <div className="flex gap-2">
           <Select
             value={billMonth}
-            onChange={(e) =>
-              setBillPeriod((p) => ({ ...p, billMonth: Number(e.target.value) }))
-            }
+            onChange={(e) => handleBillMonthChange(Number(e.target.value))}
             options={MONTHS.map((name, i) => ({ value: i, label: name }))}
             className="flex-1"
           />
           <Select
             value={billYear}
-            onChange={(e) =>
-              setBillPeriod((p) => ({ ...p, billYear: Number(e.target.value) }))
-            }
+            onChange={(e) => handleBillYearChange(Number(e.target.value))}
             options={Array.from({ length: 5 }, (_, i) => {
               const y = new Date().getFullYear() - 2 + i
               return { value: y, label: String(y) }
