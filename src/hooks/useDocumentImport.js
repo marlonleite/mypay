@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { listImports } from '../services/documentService'
+import { listImports, deleteImport as deleteImportService } from '../services/documentService'
 import { parseLocalDate } from '../utils/helpers'
 import { apiClient } from '../services/apiClient'
 
@@ -102,11 +102,28 @@ export function useImportHistory() {
   // Re-fetch imports (útil após processar novo documento).
   const refresh = fetchImports
 
+  /**
+   * Force-delete um import com cascade nas transações criadas a partir dele.
+   * Otimista: remove da lista local imediatamente; reverte em caso de erro.
+   */
+  const deleteImport = async (importId) => {
+    if (!importId) throw new Error('importId é obrigatório')
+    const previous = imports
+    setImports(prev => prev.filter(i => i.id !== importId))
+    try {
+      await deleteImportService(importId)
+    } catch (err) {
+      setImports(previous)
+      throw err
+    }
+  }
+
   return {
     imports,
     loading,
     addCardExpense,
     refresh,
+    deleteImport,
   }
 }
 

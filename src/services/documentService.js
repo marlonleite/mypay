@@ -132,6 +132,38 @@ function mapBackendResponseToLegacyShape(backend) {
 }
 
 /**
+ * DELETE /api/v1/documents/imports/{importId} — force-delete com cascade.
+ *
+ * Backend cascateia transactions linkadas via FK ``import_id`` (Wave 6+) e
+ * apaga o arquivo R2 em best-effort. Bloqueia 409 quando alguma transação
+ * cascateada está em fatura paga (user precisa reabrir a fatura antes).
+ */
+export async function deleteImport(importId) {
+  if (!importId) throw new Error('importId é obrigatório')
+  const headers = await buildAuthHeader()
+  const res = await fetch(`${API_BASE}/api/v1/documents/imports/${importId}`, {
+    method: 'DELETE',
+    headers,
+  })
+
+  if (res.status === 204) return true
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const body = await res.json()
+      detail = body?.detail ?? ''
+    } catch {
+      detail = await res.text().catch(() => '')
+    }
+    if (res.status === 404) {
+      throw new Error('Importação não encontrada ou sem permissão.')
+    }
+    throw new Error(detail || `Erro ao excluir importação: ${res.status}`)
+  }
+  return true
+}
+
+/**
  * Lista importações do usuário (substitui Firestore `users/{uid}/imports`).
  * Backend cria import_record automaticamente em cada /documents/process.
  */

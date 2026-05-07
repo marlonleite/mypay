@@ -1,12 +1,31 @@
-import { FileImage, FileText, CheckCircle, Clock, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
+import { FileImage, FileText, CheckCircle, Clock, RotateCcw, Trash2, Loader2 } from 'lucide-react'
 import Card from '../ui/Card'
 import { formatDate } from '../../utils/helpers'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 
-export default function ImportHistory({ imports = [], onReview }) {
+export default function ImportHistory({ imports = [], onReview, onDelete }) {
   const { formatCurrency } = usePrivacy()
+  const [deletingId, setDeletingId] = useState(null)
 
   if (imports.length === 0) return null
+
+  const handleDeleteClick = async (e, item) => {
+    e.stopPropagation()
+    if (!onDelete) return
+    const label = item.fileName || 'esta importação'
+    const msg =
+      `Excluir "${label}"?\n\n` +
+      'Isto também apaga TODAS as transações criadas a partir desta importação. ' +
+      'Faturas pagas precisam ser reabertas antes — caso contrário, a operação falha.'
+    if (!window.confirm(msg)) return
+    try {
+      setDeletingId(item.id)
+      await onDelete(item)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const getFileIcon = (fileType) => {
     if (fileType?.includes('pdf')) {
@@ -78,9 +97,24 @@ export default function ImportHistory({ imports = [], onReview }) {
                     onReview(item)
                   }}
                   className="p-1.5 text-dark-500 hover:text-violet-400 hover:bg-dark-700 rounded-lg transition-colors"
-                title="Abrir revisão (carrega dados salvos no servidor)"
+                title="Reaproveitar extração (sem chamar IA novamente)"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteClick(e, item)}
+                  disabled={deletingId === item.id}
+                  className="p-1.5 text-dark-500 hover:text-red-400 hover:bg-dark-700 rounded-lg transition-colors disabled:opacity-50"
+                  title="Excluir importação (cascateia transações criadas)"
+                >
+                  {deletingId === item.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
                 </button>
               )}
             </div>

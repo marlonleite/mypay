@@ -11,6 +11,7 @@
  *
  * Imports de documento:
  * - "Import already applied"
+ * - "Has transactions in paid invoice. Reopen the invoice before deleting this import."
  */
 
 const FRIENDLY_MAP = [
@@ -50,6 +51,11 @@ const FRIENDLY_MAP = [
     test: /Import already applied/i,
     message:
       'Esta importação já foi aplicada. Para reimportá-la, exclua antes os lançamentos relacionados.',
+  },
+  {
+    test: /transactions in paid invoice/i,
+    message:
+      'Há transações desta importação em uma fatura paga. Reabra a fatura antes de excluir.',
   },
 ]
 

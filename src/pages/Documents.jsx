@@ -85,7 +85,7 @@ export default function Documents({ month, year }) {
   const { accounts } = useAccounts()
   const { tags } = useTags()
   const { addTransaction } = useTransactions(month, year)
-  const { imports, addCardExpense, refresh: refreshImports } = useImportHistory()
+  const { imports, addCardExpense, refresh: refreshImports, deleteImport } = useImportHistory()
   const { categories: allCategories, getMainCategories } = useCategories()
 
   // Handlers
@@ -426,6 +426,17 @@ export default function Documents({ month, year }) {
     setDocumentType(docType)
   }
 
+  const handleDeleteImport = async (importItem) => {
+    if (!importItem?.id) return
+    try {
+      await deleteImport(importItem.id)
+      toast.success('Importação excluída.')
+    } catch (err) {
+      console.error('Erro ao excluir importação:', err)
+      toast.error(describeApiError(err, 'Não foi possível excluir a importação.'))
+    }
+  }
+
   const handleDiscard = () => {
     handleReset()
   }
@@ -657,7 +668,7 @@ export default function Documents({ month, year }) {
 
       {/* Histórico de importações */}
       {status === 'idle' && imports.length > 0 && (
-        <ImportHistory imports={imports} onReview={handleReview} />
+        <ImportHistory imports={imports} onReview={handleReview} onDelete={handleDeleteImport} />
       )}
 
     </div>
