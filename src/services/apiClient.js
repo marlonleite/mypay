@@ -30,6 +30,9 @@ async function requestJson(method, path, body, extraHeaders = {}) {
   const options = {
     method,
     headers,
+    // API list endpoints use short private Cache-Control + ETag; without this,
+    // the browser may reuse a GET response within max-age after mutations.
+    cache: method === 'GET' || method === 'HEAD' ? 'no-store' : 'default'
   }
 
   if (body !== undefined) {
