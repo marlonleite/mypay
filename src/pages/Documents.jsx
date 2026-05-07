@@ -32,6 +32,8 @@ import {
 import { buildTransactionPayload, resolveCreditCardInvoiceIdForDueMonth } from '../hooks/useFirestore'
 import { apiClient } from '../services/apiClient'
 import { DOCUMENT_TYPES } from '../utils/constants'
+import { describeApiError } from '../utils/apiErrors'
+import { useToast } from '../contexts/ToastContext'
 import Input from '../components/ui/Input'
 
 const BATCH_CHUNK_SIZE = 20
@@ -53,7 +55,10 @@ function isSuspiciousPdfExtract(file, result) {
   return noDesc && noAmount
 }
 
+const APPLIED_IMPORT_STATUSES = new Set(['applied', 'completed'])
+
 export default function Documents({ month, year }) {
+  const { toast } = useToast()
   // Estados
   const [file, setFile] = useState(null)
   const [documentType, setDocumentType] = useState('auto')
@@ -378,7 +383,7 @@ export default function Documents({ month, year }) {
       }, 2000)
     } catch (err) {
       console.error('Erro ao importar despesas em batch:', err)
-      setError(err.message || 'Erro ao importar despesas. Algumas podem ter sido salvas parcialmente.')
+      setError(describeApiError(err, 'Erro ao importar despesas. Algumas podem ter sido salvas parcialmente.'))
     } finally {
       setSaving(false)
       setFaturaImportProgress(null)
@@ -388,6 +393,13 @@ export default function Documents({ month, year }) {
   /** Reabre revisão a partir do GET /documents/imports/{id} quando o backend expõe o payload. */
   const handleReview = async (importItem) => {
     if (!importItem?.id) return
+    // Backend rejeita re-apply de import já aplicado com 400 "Import already applied"
+    // (mypay-api/src/presentation/api/documents.py:86). Bloqueia antes de abrir
+    // a tela de revisão para não induzir o user a um clique sem efeito.
+    if (APPLIED_IMPORT_STATUSES.has(importItem.status)) {
+      toast.error('Esta fatura já foi importada. Para reimportá-la, exclua antes os lançamentos relacionados.')
+      return
+    }
     setReviewImport(importItem)
     setRecentImportHint(null)
     setError(null)
@@ -401,7 +413,7 @@ export default function Documents({ month, year }) {
       setStatus('result')
     } catch (err) {
       console.error('Erro ao carregar importação:', err)
-      setError(err.message || 'Não foi possível carregar esta importação.')
+      setError(describeApiError(err, 'Não foi possível carregar esta importação.'))
       setStatus('error')
     } finally {
       setLoadingImportDetail(false)

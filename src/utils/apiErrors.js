@@ -8,6 +8,9 @@
  * - "Cannot delete invoice payment directly; use POST /credit-card-invoices/{id}/reopen"
  * - "Invoice already paid"
  * - "Invoice is not paid"
+ *
+ * Imports de documento:
+ * - "Import already applied"
  */
 
 const FRIENDLY_MAP = [
@@ -42,6 +45,11 @@ const FRIENDLY_MAP = [
     test: /reopen it before deleting transactions/i,
     message:
       'Há transações em uma fatura paga. Reabra a fatura para excluir lançamentos.',
+  },
+  {
+    test: /Import already applied/i,
+    message:
+      'Esta importação já foi aplicada. Para reimportá-la, exclua antes os lançamentos relacionados.',
   },
 ]
 
