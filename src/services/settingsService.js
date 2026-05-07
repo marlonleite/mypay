@@ -6,7 +6,9 @@ import { subscribe as subscribeEventStream } from './eventStream'
  *
  * Backend consolida em 1 row `user_settings` com UNIQUE (user_id):
  *   { id, user_id, theme, show_values, push_enabled, push_token,
- *     onboarding_completed, onboarding_step, created_at, updated_at }
+ *     onboarding_completed, onboarding_step,
+ *     default_category_id_expense, default_category_id_income,
+ *     created_at, updated_at }
  *
  * Os 4 contexts do frontend (Privacy/Theme/Onboarding/Notification) leem o
  * mesmo recurso. Pra evitar 4 GETs duplicados por mount, mantemos uma promise
@@ -36,6 +38,8 @@ function mapSettings(s) {
     pushToken: s.push_token ?? null,
     onboardingCompleted: s.onboarding_completed,
     onboardingStep: s.onboarding_step,
+    defaultCategoryIdExpense: s.default_category_id_expense ?? null,
+    defaultCategoryIdIncome: s.default_category_id_income ?? null,
     updatedAt: s.updated_at ? new Date(s.updated_at) : null,
   }
 }
@@ -65,6 +69,12 @@ export async function updateSettings(partial) {
   if (partial.pushToken !== undefined) payload.push_token = partial.pushToken
   if (partial.onboardingCompleted !== undefined) payload.onboarding_completed = partial.onboardingCompleted
   if (partial.onboardingStep !== undefined) payload.onboarding_step = partial.onboardingStep
+  if (partial.defaultCategoryIdExpense !== undefined) {
+    payload.default_category_id_expense = partial.defaultCategoryIdExpense
+  }
+  if (partial.defaultCategoryIdIncome !== undefined) {
+    payload.default_category_id_income = partial.defaultCategoryIdIncome
+  }
 
   const raw = await apiClient.put('/api/v1/settings', payload)
   cached = mapSettings(raw)

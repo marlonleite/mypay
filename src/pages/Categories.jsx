@@ -8,6 +8,7 @@ import {
   ChevronRight,
   FolderInput,
   Tag,
+  GitMerge,
   Utensils,
   Car,
   Home,
@@ -75,6 +76,7 @@ export default function Categories() {
     addCategory,
     updateCategory,
     moveCategory,
+    mergeCategory,
     archiveCategory,
     restoreCategory,
     deleteCategory,
@@ -87,6 +89,10 @@ export default function Categories() {
   const [modalOpen, setModalOpen] = useState(false)
   const [moveModalOpen, setMoveModalOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [mergeModalOpen, setMergeModalOpen] = useState(false)
+  const [mergingCategory, setMergingCategory] = useState(null)
+  const [mergeTargetId, setMergeTargetId] = useState('')
+  const [savingMerge, setSavingMerge] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
   const [parentCategory, setParentCategory] = useState(null)
   const [movingCategory, setMovingCategory] = useState(null)
@@ -123,6 +129,19 @@ export default function Categories() {
       ...mainCats.map(c => ({ value: c.id, label: c.name }))
     ]
   }, [movingCategory, categories])
+
+  const mergeTargetOptions = useMemo(() => {
+    if (!mergingCategory) return [{ value: '', label: 'Escolha a categoria destino' }]
+    const opts = categories
+      .filter(
+        c =>
+          c.type === mergingCategory.type &&
+          !c.archived &&
+          c.id !== mergingCategory.id
+      )
+      .map(c => ({ value: c.id, label: c.name }))
+    return [{ value: '', label: 'Escolha a categoria destino' }, ...opts]
+  }, [mergingCategory, categories])
 
   const handleInitialize = async () => {
     try {
@@ -173,6 +192,35 @@ export default function Categories() {
   const openDeleteModal = (category) => {
     setDeletingCategory(category)
     setDeleteModalOpen(true)
+  }
+
+  const openMergeModal = (category) => {
+    setMergingCategory(category)
+    setMergeTargetId('')
+    setMergeModalOpen(true)
+  }
+
+  const handleMergeConfirm = async () => {
+    if (!mergingCategory || !mergeTargetId) return
+    try {
+      setSavingMerge(true)
+      const summary = await mergeCategory(mergingCategory.id, mergeTargetId)
+      const lines = [
+        `Lançamentos: ${summary.transactions_updated}`,
+        `Recorrências: ${summary.recurrences_updated}`,
+        `Metas: ${summary.goals_updated}`,
+        `Orçamentos: ${summary.budgets_updated}`,
+        `Sugestões automáticas: ${summary.hints_updated}`
+      ]
+      window.alert(`Mesclagem concluída.\n\n${lines.join('\n')}`)
+      setMergeModalOpen(false)
+      setMergingCategory(null)
+    } catch (error) {
+      console.error('Error merging categories:', error)
+      window.alert(error?.message || 'Não foi possível mesclar as categorias.')
+    } finally {
+      setSavingMerge(false)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -319,6 +367,14 @@ export default function Categories() {
               title="Mover"
             >
               <FolderInput className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => openMergeModal(category)}
+              className="p-1.5 text-dark-400 hover:text-teal-400 hover:bg-teal-500/10 rounded-lg transition-colors"
+              title="Mesclar em outra categoria"
+            >
+              <GitMerge className="w-4 h-4" />
             </button>
 
             <button
@@ -614,6 +670,51 @@ export default function Categories() {
         </div>
       </Modal>
 
+      {/* Modal Mesclar categoria */}
+      <Modal
+        isOpen={mergeModalOpen}
+        onClose={() => {
+          setMergeModalOpen(false)
+          setMergingCategory(null)
+        }}
+        title={mergingCategory ? `Mesclar "${mergingCategory.name}"` : 'Mesclar categoria'}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-dark-400">
+            Todas as referências (lançamentos, recorrências, orçamentos, metas) passarão a usar a categoria destino.
+            A categoria atual será removida após a mesclagem.
+          </p>
+          <Select
+            label="Mesclar na categoria"
+            value={mergeTargetId}
+            onChange={(e) => setMergeTargetId(e.target.value)}
+            options={mergeTargetOptions}
+          />
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setMergeModalOpen(false)
+                setMergingCategory(null)
+              }}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleMergeConfirm}
+              variant="primary"
+              loading={savingMerge}
+              disabled={!mergeTargetId}
+              className="flex-1"
+            >
+              Mesclar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Modal Confirmar Exclusão */}
       <Modal
         isOpen={deleteModalOpen}
@@ -622,7 +723,9 @@ export default function Categories() {
       >
         <div className="space-y-4">
           <p className="text-sm text-dark-400">
-            Tem certeza que deseja excluir <strong className="text-white">"{deletingCategory?.name}"</strong> permanentemente?
+            Tem certeza que deseja excluir{' '}
+            <strong className="text-white">{deletingCategory?.name}</strong>{' '}
+            permanentemente?
           </p>
           {deletingCategory && getSubcategories(deletingCategory.id).length > 0 && (
             <p className="text-sm text-orange-400">
@@ -633,7 +736,7 @@ export default function Categories() {
             Lançamentos que usam esta categoria não serão excluídos, mas ficarão sem categoria.
           </p>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-3 pt-2">
             <Button
               type="button"
               variant="ghost"
@@ -641,6 +744,18 @@ export default function Categories() {
               className="flex-1"
             >
               Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                const cat = deletingCategory
+                setDeleteModalOpen(false)
+                if (cat) openMergeModal(cat)
+              }}
+              className="flex-1"
+            >
+              Mesclar em outra…
             </Button>
             <Button
               onClick={handleDelete}

@@ -1126,7 +1126,7 @@ function mapCategory(c) {
 
 // Hook para categorias — migrado para REST API (GET /api/v1/categories)
 // Interface mantida: { categories, loading, error, needsInitialization, initializeDefaultCategories,
-//   addCategory, updateCategory, moveCategory, archiveCategory, restoreCategory, deleteCategory,
+//   addCategory, updateCategory, moveCategory, mergeCategory, archiveCategory, restoreCategory, deleteCategory,
 //   getMainCategories, getSubcategories, getArchivedCategories }
 export function useCategories() {
   const { user } = useAuth()
@@ -1227,6 +1227,17 @@ export function useCategories() {
     await fetchCategories()
   }
 
+  const mergeCategory = async (fromId, intoId) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const { apiClient } = await import('../services/apiClient')
+    const body = await apiClient.post('/api/v1/categories/merge', {
+      from_category_id: fromId,
+      into_category_id: intoId
+    })
+    await fetchCategories()
+    return body
+  }
+
   // Helpers in-memory (interface mantida, funcionam sobre o array mapeado)
   const getMainCategories = (type) =>
     categories.filter(c => c.type === type && !c.parentId && !c.archived)
@@ -1248,6 +1259,7 @@ export function useCategories() {
     addCategory,
     updateCategory,
     moveCategory,
+    mergeCategory,
     archiveCategory,
     restoreCategory,
     deleteCategory,

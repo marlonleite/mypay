@@ -115,12 +115,22 @@ export default function ProcessingResult({
 
   const categories = editedData.tipo === 'income' ? incomeCategories : expenseCategories
 
-  const handleCreateTransaction = () => {
+  const handleCreateTransaction = async () => {
+    const { fetchSettings } = await import('../../services/settingsService')
+    let cat = editedData.categoria || null
+    if (!cat) {
+      const s = await fetchSettings()
+      if (editedData.tipo === 'expense' && s?.defaultCategoryIdExpense) {
+        cat = s.defaultCategoryIdExpense
+      } else if (editedData.tipo === 'income' && s?.defaultCategoryIdIncome) {
+        cat = s.defaultCategoryIdIncome
+      }
+    }
     const transactionData = {
       description: editedData.descricao,
       amount: editedData.valor || 0,
       date: editedData.data,
-      category: editedData.categoria,
+      category: cat,
       type: editedData.tipo,
       accountId: selectedAccount,
       paid: isPaid,
@@ -131,14 +141,24 @@ export default function ProcessingResult({
     onCreateTransaction(transactionData)
   }
 
-  const handleCreateCardExpense = () => {
+  const handleCreateCardExpense = async () => {
     if (!selectedCard) return
+    const { fetchSettings } = await import('../../services/settingsService')
+    let cat = editedData.categoria || null
+    if (!cat) {
+      const s = await fetchSettings()
+      if (editedData.tipo === 'expense' && s?.defaultCategoryIdExpense) {
+        cat = s.defaultCategoryIdExpense
+      } else if (editedData.tipo === 'income' && s?.defaultCategoryIdIncome) {
+        cat = s.defaultCategoryIdIncome
+      }
+    }
     onCreateCardExpense({
       cardId: selectedCard,
       description: editedData.descricao,
       amount: editedData.valor || 0,
       date: editedData.data,
-      category: editedData.categoria,
+      category: cat,
       ...(notes && { notes }),
       ...(selectedTags.length > 0 && { tags: selectedTags })
     })

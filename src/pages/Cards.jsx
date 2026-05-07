@@ -560,13 +560,24 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
     try {
       setSaving(true)
 
+      let categoryForSave = expenseForm.category || null
+      if (!editingItem && !categoryForSave) {
+        const { fetchSettings } = await import('../services/settingsService')
+        const s = await fetchSettings()
+        if (expenseForm.type === TRANSACTION_TYPES.EXPENSE && s?.defaultCategoryIdExpense) {
+          categoryForSave = s.defaultCategoryIdExpense
+        } else if (expenseForm.type === TRANSACTION_TYPES.INCOME && s?.defaultCategoryIdIncome) {
+          categoryForSave = s.defaultCategoryIdIncome
+        }
+      }
+
       if (editingItem) {
         // Atualizar lançamento existente — usa billMonth/billYear do form (editável)
         await updateCardExpense(editingItem.id, {
           type: expenseForm.type,
           description: expenseForm.description,
           amount: expenseForm.amount,
-          category: expenseForm.category,
+          category: categoryForSave,
           date: expenseForm.date,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: expenseForm.billMonth,
@@ -586,7 +597,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
           type: expenseForm.type,
           description: expenseForm.description,
           amount: expenseForm.amount,
-          category: expenseForm.category,
+          category: categoryForSave,
           date: expenseForm.date,
           installments: parseInt(expenseForm.installments) || 1,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],

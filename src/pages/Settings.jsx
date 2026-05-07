@@ -1,20 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Settings as SettingsIcon,
   AlertTriangle,
   Bell,
   BellOff,
   Smartphone,
-  Download
+  Download,
+  Tag
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePushNotifications } from '../hooks/usePushNotifications'
+import { useCategories } from '../hooks/useFirestore'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
+import Select from '../components/ui/Select'
 import ExportModal from '../components/export/ExportModal'
+import { fetchSettings, updateSettings } from '../services/settingsService'
+import { TRANSACTION_TYPES } from '../utils/constants'
 
 export default function Settings() {
   const { user } = useAuth()
+  const {
+    getMainCategories,
+    loading: categoriesLoading
+  } = useCategories()
   const {
     isSupported: pushSupported,
     permission: pushPermission,
@@ -26,6 +35,55 @@ export default function Settings() {
     sendTestNotification
   } = usePushNotifications()
   const [showExportModal, setShowExportModal] = useState(false)
+  const [defaultExpenseId, setDefaultExpenseId] = useState('')
+  const [defaultIncomeId, setDefaultIncomeId] = useState('')
+  const [defaultsLoading, setDefaultsLoading] = useState(true)
+  const [defaultsSaving, setDefaultsSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!user) {
+        setDefaultsLoading(false)
+        return
+      }
+      try {
+        const s = await fetchSettings()
+        if (cancelled || !s) return
+        setDefaultExpenseId(s.defaultCategoryIdExpense || '')
+        setDefaultIncomeId(s.defaultCategoryIdIncome || '')
+      } catch (err) {
+        console.error('Erro ao carregar categorias padrão:', err)
+      } finally {
+        if (!cancelled) setDefaultsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user])
+
+  const expenseDefaultOptions = [
+    { value: '', label: 'Nenhuma (deixar vazio no servidor)' },
+    ...getMainCategories(TRANSACTION_TYPES.EXPENSE).map((c) => ({ value: c.id, label: c.name }))
+  ]
+
+  const incomeDefaultOptions = [
+    { value: '', label: 'Nenhuma (deixar vazio no servidor)' },
+    ...getMainCategories(TRANSACTION_TYPES.INCOME).map((c) => ({ value: c.id, label: c.name }))
+  ]
+
+  const handleSaveDefaultCategories = async () => {
+    try {
+      setDefaultsSaving(true)
+      await updateSettings({
+        defaultCategoryIdExpense: defaultExpenseId || null,
+        defaultCategoryIdIncome: defaultIncomeId || null
+      })
+    } catch (err) {
+      console.error('Erro ao salvar categorias padrão:', err)
+    } finally {
+      setDefaultsSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -128,6 +186,42 @@ export default function Settings() {
               )}
             </>
           )}
+        </div>
+      </Card>
+
+      {/* Default categories */}
+      <Card>
+        <h2 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+          <Tag className="w-4 h-4" />
+          Categorias padrão
+        </h2>
+        <p className="text-sm text-dark-400 mb-4">
+          Ao criar um lançamento sem escolher categoria (e quando o servidor aplicar a mesma regra),
+          usamos estes IDs como despesa ou receita. Transferências não recebem padrão automático no servidor.
+        </p>
+        <div className="space-y-4">
+          <Select
+            label="Padrão para despesas"
+            value={defaultExpenseId}
+            onChange={(e) => setDefaultExpenseId(e.target.value)}
+            options={expenseDefaultOptions}
+            disabled={defaultsLoading || categoriesLoading}
+          />
+          <Select
+            label="Padrão para receitas"
+            value={defaultIncomeId}
+            onChange={(e) => setDefaultIncomeId(e.target.value)}
+            options={incomeDefaultOptions}
+            disabled={defaultsLoading || categoriesLoading}
+          />
+          <Button
+            variant="primary"
+            onClick={handleSaveDefaultCategories}
+            loading={defaultsSaving}
+            disabled={defaultsLoading || categoriesLoading}
+          >
+            Salvar categorias padrão
+          </Button>
         </div>
       </Card>
 

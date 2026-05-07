@@ -183,7 +183,8 @@ export default function Tags() {
       >
         <div className="space-y-4">
           <p className="text-dark-300">
-            Tem certeza que deseja excluir a tag <span className="text-white font-medium">"{tagToDelete}"</span>?
+            Tem certeza que deseja excluir a tag{' '}
+            <span className="text-white font-medium">{tagToDelete}</span>?
           </p>
           <p className="text-sm text-dark-400">
             A tag será removida, mas os lançamentos que a utilizam não serão afetados.

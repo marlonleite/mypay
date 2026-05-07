@@ -852,10 +852,22 @@ export default function Transactions({
 
     try {
       setSaving(true)
+
+      let resolvedCategory = formData.category || null
+      if (!editingTransaction && !resolvedCategory) {
+        const { fetchSettings } = await import('../services/settingsService')
+        const s = await fetchSettings()
+        if (transactionType === TRANSACTION_TYPES.EXPENSE && s?.defaultCategoryIdExpense) {
+          resolvedCategory = s.defaultCategoryIdExpense
+        } else if (transactionType === TRANSACTION_TYPES.INCOME && s?.defaultCategoryIdIncome) {
+          resolvedCategory = s.defaultCategoryIdIncome
+        }
+      }
+
       const data = {
         description: formData.description,
         amount: formData.amount,
-        category: formData.category || null,
+        category: resolvedCategory || null,
         accountId: formData.accountId,
         date: formData.date,
         type: transactionType,
