@@ -8,9 +8,9 @@ import {
   DollarSign,
   Repeat,
   Layers2,
-  X,
   Paperclip,
-  Loader
+  Loader,
+  Ban
 } from 'lucide-react'
 import Modal from '../ui/Modal'
 import { usePrivacy } from '../../contexts/PrivacyContext'
@@ -29,6 +29,8 @@ export default function TransactionDetail({
   onCopy,
   onDelete,
   onTogglePaid,
+  onStopRecurrence,
+  stoppingRecurrence = false,
   onAddAttachments,
   getCategoryName,
   getAccountName,
@@ -169,6 +171,28 @@ export default function TransactionDetail({
               </span>
             </button>
           </div>
+
+          {isRecurrenceLinkedTransaction(transaction) && typeof onStopRecurrence === 'function' && (
+            <div className="mt-5 w-full max-w-xs mx-auto space-y-2 text-center border-t border-dark-700/80 pt-5">
+              <p className="text-xs text-dark-500 leading-relaxed px-1">
+                Para não gerar mais lançamentos futuros desta série, arquive o template de recorrência.
+                Os registros já criados permanecem.
+              </p>
+              <button
+                type="button"
+                onClick={() => onStopRecurrence(transaction)}
+                disabled={stoppingRecurrence || deleting}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-orange-500/35 bg-orange-500/10 text-orange-300 text-sm font-medium hover:bg-orange-500/15 hover:border-orange-500/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {stoppingRecurrence ? (
+                  <Loader className="w-4 h-4 animate-spin shrink-0" aria-hidden />
+                ) : (
+                  <Ban className="w-4 h-4 shrink-0" aria-hidden />
+                )}
+                Parar recorrência
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Lado direito - Detalhes */}

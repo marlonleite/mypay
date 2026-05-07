@@ -81,6 +81,9 @@ const RECURRENCE_MONTHLY_LIKE_FREQUENCIES = new Set([
   'annual',
 ])
 
+const CONFIRM_ARCHIVE_RECURRENCE_MESSAGE =
+  'A recorrência será arquivada: novos lançamentos futuros deixam de ser gerados automaticamente. Os lançamentos já existentes permanecem. Deseja continuar?'
+
 /** Dia civil local para cortes "desta data em diante" em exclusões em série. */
 function transactionDayStamp(d) {
   const x = d instanceof Date ? d : new Date(d)
@@ -142,7 +145,7 @@ export default function Transactions({
 
   const { tags: existingTags } = useTags()
   const { cards } = useCards()
-  const { addRecurrence, updateRecurrence } = useRecurrences()
+  const { addRecurrence, updateRecurrence, archiveRecurrence } = useRecurrences()
 
   const fileInputRef = useRef(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -165,6 +168,7 @@ export default function Transactions({
   const [savingCategory, setSavingCategory] = useState(false)
   /** Durante DELETE: qual transação e qual modo — evita spinner nos 3 botões ao mesmo tempo. */
   const [deleteProgress, setDeleteProgress] = useState(null)
+  const [stoppingRecurrence, setStoppingRecurrence] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
 
@@ -1062,6 +1066,25 @@ export default function Transactions({
       console.error('Error saving transaction:', error)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleStopRecurrence = async (transaction) => {
+    const recurrenceId = transaction?.recurrenceId
+    if (!recurrenceId) return
+    if (!window.confirm(CONFIRM_ARCHIVE_RECURRENCE_MESSAGE)) return
+    try {
+      setStoppingRecurrence(true)
+      await archiveRecurrence(recurrenceId)
+      await refreshTransactions()
+      toast.success('Recorrência encerrada. Novos lançamentos não serão gerados.')
+      setDetailModalOpen(false)
+      setSelectedTransaction(null)
+    } catch (error) {
+      console.error('Error archiving recurrence:', error)
+      toast.error(describeApiError(error, 'Não foi possível arquivar a recorrência.'))
+    } finally {
+      setStoppingRecurrence(false)
     }
   }
 
@@ -2309,6 +2332,8 @@ export default function Transactions({
         onCopy={copyTransaction}
         onDelete={(t) => handleDelete(t)}
         onTogglePaid={togglePaidStatus}
+        onStopRecurrence={handleStopRecurrence}
+        stoppingRecurrence={stoppingRecurrence}
         onAddAttachments={handleAddAttachmentsToDetail}
         getCategoryName={getCategoryName}
         getAccountName={getAccountName}
