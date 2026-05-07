@@ -50,6 +50,7 @@ import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
+import SearchableSelect from '../components/ui/SearchableSelect'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
 import { useCategories } from '../hooks/useFirestore'
@@ -136,8 +137,8 @@ export default function Categories() {
   }, [movingCategory, categories])
 
   const mergeTargetOptions = useMemo(() => {
-    if (!mergingCategory) return [{ value: '', label: 'Escolha a categoria destino' }]
-    const opts = categories
+    if (!mergingCategory) return []
+    return categories
       .filter(
         c =>
           c.type === mergingCategory.type &&
@@ -145,7 +146,7 @@ export default function Categories() {
           c.id !== mergingCategory.id
       )
       .map(c => ({ value: c.id, label: c.name }))
-    return [{ value: '', label: 'Escolha a categoria destino' }, ...opts]
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }))
   }, [mergingCategory, categories])
 
   const handleInitialize = async () => {
@@ -727,12 +728,21 @@ export default function Categories() {
             Todas as referências (lançamentos, recorrências, orçamentos, metas) passarão a usar a categoria destino.
             A categoria atual será removida após a mesclagem.
           </p>
-          <Select
-            label="Mesclar na categoria"
-            value={mergeTargetId}
-            onChange={(e) => setMergeTargetId(e.target.value)}
-            options={mergeTargetOptions}
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-dark-300">
+              Mesclar na categoria
+            </label>
+            <SearchableSelect
+              options={mergeTargetOptions}
+              value={mergeTargetId || ''}
+              emptyValue=""
+              onChange={(val) => setMergeTargetId(typeof val === 'string' ? val : '')}
+              placeholder="Escolha a categoria destino"
+              showResetOption={false}
+              fullWidth
+              searchPlaceholder="Buscar por nome..."
+            />
+          </div>
           <div className="flex gap-3 pt-2">
             <Button
               type="button"
