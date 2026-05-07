@@ -49,6 +49,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
+import { coerceFormTagList, normalizeTagForForm } from '../utils/formTags'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
@@ -219,10 +220,11 @@ export default function Transactions({
 
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
-    if (!tagInput.trim()) return existingTags.filter(t => !formData.tags.includes(t))
+    const current = coerceFormTagList(formData.tags)
+    if (!tagInput.trim()) return existingTags.filter(t => !current.includes(t))
     const term = tagInput.toLowerCase()
     return existingTags.filter(t =>
-      t.toLowerCase().includes(term) && !formData.tags.includes(t)
+      t.toLowerCase().includes(term) && !current.includes(t)
     )
   }, [tagInput, existingTags, formData.tags])
 
@@ -537,11 +539,7 @@ export default function Transactions({
   }
 
   // Helper para normalizar tags (pode ser string ou objeto)
-  const normalizeTag = (tag) => {
-    if (!tag) return ''
-    if (typeof tag === 'object') return tag.name || ''
-    return String(tag)
-  }
+  const normalizeTag = normalizeTagForForm
 
   const normalizeTags = (tags) => {
     if (!Array.isArray(tags)) return []
@@ -698,7 +696,7 @@ export default function Transactions({
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date),
       notes: transaction.notes || '',
-      tags: transaction.tags || [],
+      tags: coerceFormTagList(transaction.tags),
       attachments,
       recurrenceType: '',
       fixedFrequency: 'monthly',
@@ -707,7 +705,7 @@ export default function Transactions({
       paid: transaction.paid !== false // default to true for old transactions
     })
     setShowNotes(!!transaction.notes)
-    setShowTags(transaction.tags?.length > 0)
+    setShowTags(coerceFormTagList(transaction.tags).length > 0)
     setShowRecurrence(false)
     setModalOpen(true)
   }
@@ -723,14 +721,14 @@ export default function Transactions({
       accountId: transaction.accountId || activeAccounts[0]?.id || '',
       date: formatDateForInput(transaction.date), // Preserva data original
       notes: transaction.notes || '',
-      tags: transaction.tags || [],
+      tags: coerceFormTagList(transaction.tags),
       attachments: [], // Não copia anexos
       recurrenceType: '',
       installments: '',
       paid: true
     })
     setShowNotes(!!transaction.notes)
-    setShowTags(transaction.tags?.length > 0)
+    setShowTags(coerceFormTagList(transaction.tags).length > 0)
     setShowRecurrence(false)
     setModalOpen(true)
   }
@@ -805,13 +803,14 @@ export default function Transactions({
     }))
   }
 
-  const addTag = (tag = tagInput.trim()) => {
-    if (tag && !formData.tags.includes(tag)) {
-      setFormData(prev => ({
-        ...prev,
-        tags: [...prev.tags, tag]
-      }))
-    }
+  const addTag = (rawTag = tagInput.trim()) => {
+    const tag = String(rawTag ?? '').trim()
+    if (!tag) return
+    setFormData(prev => {
+      const list = coerceFormTagList(prev.tags)
+      if (list.includes(tag)) return prev
+      return { ...prev, tags: [...list, tag] }
+    })
     setTagInput('')
     setShowTagSuggestions(false)
   }
@@ -819,7 +818,7 @@ export default function Transactions({
   const removeTag = (tagToRemove) => {
     setFormData(prev => ({
       ...prev,
-      tags: prev.tags.filter(t => t !== tagToRemove)
+      tags: coerceFormTagList(prev.tags).filter(t => t !== tagToRemove)
     }))
   }
 

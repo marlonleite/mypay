@@ -39,6 +39,7 @@ import { describeApiError } from '../utils/apiErrors'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { useToast } from '../contexts/ToastContext'
 import { isDateInMonth, formatDateForInput } from '../utils/helpers'
+import { coerceFormTagList, normalizeTagForForm } from '../utils/formTags'
 import { CARD_COLORS, MONTHS, TRANSACTION_TYPES } from '../utils/constants'
 // uploadComprovante removido pós F-Cards-attachments — comprovantes vão via
 // attachmentService.uploadAttachment (em handlePayBill) após backend retornar
@@ -175,10 +176,11 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
 
   // Tags filtradas para autocomplete
   const filteredTagSuggestions = useMemo(() => {
-    if (!tagInput.trim()) return existingTags.filter(t => !expenseForm.tags.includes(t))
+    const current = coerceFormTagList(expenseForm.tags)
+    if (!tagInput.trim()) return existingTags.filter(t => !current.includes(t))
     const term = tagInput.toLowerCase()
     return existingTags.filter(t =>
-      t.toLowerCase().includes(term) && !expenseForm.tags.includes(t)
+      t.toLowerCase().includes(term) && !current.includes(t)
     )
   }, [tagInput, existingTags, expenseForm.tags])
 
@@ -463,11 +465,11 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
       category: expense.category || '',
       date: formatDateForInput(expenseDate),
       installments: '1',
-      tags: expense.tags || [],
+      tags: coerceFormTagList(expense.tags),
       billMonth: expense.billMonth ?? month,
       billYear: expense.billYear ?? year,
     })
-    setShowTags(expense.tags?.length > 0)
+    setShowTags(coerceFormTagList(expense.tags).length > 0)
     setTagInput('')
     setModalType('expense')
   }
@@ -531,13 +533,14 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
   }
 
   // Tags
-  const addTag = (tag = tagInput.trim()) => {
-    if (tag && !expenseForm.tags.includes(tag)) {
-      setExpenseForm(prev => ({
-        ...prev,
-        tags: [...prev.tags, tag]
-      }))
-    }
+  const addTag = (rawTag = tagInput.trim()) => {
+    const tag = String(rawTag ?? '').trim()
+    if (!tag) return
+    setExpenseForm(prev => {
+      const list = coerceFormTagList(prev.tags)
+      if (list.includes(tag)) return prev
+      return { ...prev, tags: [...list, tag] }
+    })
     setTagInput('')
     setShowTagSuggestions(false)
   }
@@ -545,7 +548,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
   const removeTag = (tagToRemove) => {
     setExpenseForm(prev => ({
       ...prev,
-      tags: prev.tags.filter(t => t !== tagToRemove)
+      tags: coerceFormTagList(prev.tags).filter(t => t !== tagToRemove)
     }))
   }
 
@@ -804,11 +807,7 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
   }
 
   // Helper para normalizar tags (pode ser string ou objeto)
-  const normalizeTag = (tag) => {
-    if (!tag) return ''
-    if (typeof tag === 'object') return tag.name || ''
-    return String(tag)
-  }
+  const normalizeTag = normalizeTagForForm
 
   const normalizeTags = (tags) => {
     if (!Array.isArray(tags)) return []

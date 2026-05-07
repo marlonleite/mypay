@@ -106,10 +106,26 @@ function mapTransaction(t) {
 // Resolve tag names → UUIDs via API (exported for recurrence bulk fields).
 export async function resolveTagIds(tagNames, apiClient) {
   if (!tagNames || tagNames.length === 0) return []
-  const allTags = await apiClient.get('/api/v1/tags')
-  return tagNames
-    .map(name => allTags.find(t => t.name === name)?.id)
-    .filter(Boolean)
+  const names = [...new Set(tagNames.map(n => String(n).trim()).filter(Boolean))]
+  if (names.length === 0) return []
+
+  let allTags = await apiClient.get('/api/v1/tags')
+  const ids = []
+
+  for (const name of names) {
+    let row = allTags.find(t => t.name === name)
+    if (!row) {
+      try {
+        await apiClient.post('/api/v1/tags', { name })
+      } catch {
+        // 409 duplicate / race — refetch below
+      }
+      allTags = await apiClient.get('/api/v1/tags')
+      row = allTags.find(t => t.name === name)
+    }
+    if (row?.id) ids.push(row.id)
+  }
+  return ids
 }
 
 // Converte payload frontend (camelCase) → API (snake_case).
