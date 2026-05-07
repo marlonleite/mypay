@@ -1,11 +1,21 @@
-import { useState } from 'react'
-import { Tag, Plus, Trash2, Edit2, X, Check } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Tag, Plus, Trash2, Edit2, Search } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Modal from '../components/ui/Modal'
 import EmptyState from '../components/ui/EmptyState'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useTags } from '../hooks/useFirestore'
+
+const TAG_SEARCH_DEBOUNCE_MS = 300
+
+function foldForSearch(s) {
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+}
 
 export default function Tags() {
   const { tags, loading, addTag, updateTag, deleteTag } = useTags()
@@ -16,6 +26,15 @@ export default function Tags() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [tagToDelete, setTagToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [tagSearchQuery, setTagSearchQuery] = useState('')
+  const debouncedTagSearch = useDebouncedValue(tagSearchQuery, TAG_SEARCH_DEBOUNCE_MS)
+
+  const filteredTags = useMemo(() => {
+    const q = debouncedTagSearch.trim()
+    if (!q) return tags
+    const needle = foldForSearch(q)
+    return tags.filter(t => foldForSearch(t).includes(needle))
+  }, [tags, debouncedTagSearch])
 
   const openNewModal = () => {
     setEditingTag(null)
@@ -104,35 +123,55 @@ export default function Tags() {
         />
       ) : (
         <Card>
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
+              <input
+                type="search"
+                value={tagSearchQuery}
+                onChange={(e) => setTagSearchQuery(e.target.value)}
+                placeholder="Filtrar por nome..."
+                autoComplete="off"
+                aria-label="Filtrar tags"
+                className="w-full pl-10 pr-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-sm text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50"
+              />
+            </div>
+          </div>
           <div className="space-y-2">
-            {tags.map((tag) => (
-              <div
-                key={tag}
-                className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                    <Tag className="w-4 h-4 text-violet-400" />
+            {filteredTags.length === 0 ? (
+              <p className="text-sm text-dark-400 text-center py-8">
+                Nenhuma tag encontrada para essa busca.
+              </p>
+            ) : (
+              filteredTags.map((tag) => (
+                <div
+                  key={tag}
+                  className="flex items-center justify-between p-3 bg-dark-800/30 rounded-xl border border-dark-700/30"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                      <Tag className="w-4 h-4 text-violet-400" />
+                    </div>
+                    <span className="text-white font-medium">{tag}</span>
                   </div>
-                  <span className="text-white font-medium">{tag}</span>
-                </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => openEditModal(tag)}
-                    className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => confirmDelete(tag)}
-                    className="p-2 text-dark-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openEditModal(tag)}
+                      className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => confirmDelete(tag)}
+                      className="p-2 text-dark-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
       )}
