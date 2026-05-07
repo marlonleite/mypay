@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Plus,
+  Search,
   Edit2,
   Archive,
   Trash2,
@@ -58,6 +59,7 @@ import {
   CATEGORY_ICONS,
   CATEGORY_COLORS
 } from '../utils/constants'
+import { normalizeSearchText } from '../utils/searchTransactions'
 
 // Nested category list: branch guide + indent (Tailwind tokens)
 const SUBTREE_CONTAINER_MAIN = 'mt-0 ml-4 border-l-2 border-dark-600/80 pl-3 space-y-0'
@@ -80,6 +82,20 @@ function collectDescendantCategoryIds(rootId, allCategories) {
     for (const ch of childrenByParent.get(id) || []) stack.push(ch)
   }
   return forbidden
+}
+
+function categoryNameMatchesNorm(name, normQuery) {
+  return normalizeSearchText(name || '').includes(normQuery)
+}
+
+/** True if this category or any non-archived descendant of same type matches. */
+function categoryOrDescendantMatches(cat, allCategories, normQuery) {
+  if (!normQuery) return true
+  if (categoryNameMatchesNorm(cat.name, normQuery)) return true
+  const children = allCategories.filter(
+    c => c.parentId === cat.id && !c.archived && c.type === cat.type
+  )
+  return children.some(ch => categoryOrDescendantMatches(ch, allCategories, normQuery))
 }
 
 // Mapa de ícones para renderização dinâmica
@@ -122,6 +138,7 @@ export default function Categories() {
   const [movingCategory, setMovingCategory] = useState(null)
   const [deletingCategory, setDeletingCategory] = useState(null)
   const [expandedCategories, setExpandedCategories] = useState({})
+  const [categoryFilter, setCategoryFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [saving, setSaving] = useState(false)
   const [initializing, setInitializing] = useState(false)
@@ -142,6 +159,29 @@ export default function Categories() {
   const archivedCategories = useMemo(() => {
     return getArchivedCategories().filter(c => c.type === activeType)
   }, [categories, activeType])
+
+  const categoryFilterNorm = useMemo(() => {
+    const t = categoryFilter.trim()
+    return t ? normalizeSearchText(t) : null
+  }, [categoryFilter])
+
+  const filteredUserCategories = useMemo(() => {
+    if (!categoryFilterNorm) return userCategories
+    return userCategories.filter(main =>
+      categoryOrDescendantMatches(main, categories, categoryFilterNorm)
+    )
+  }, [userCategories, categories, categoryFilterNorm])
+
+  const filteredArchivedCategories = useMemo(() => {
+    if (!categoryFilterNorm) return archivedCategories
+    return archivedCategories.filter(c =>
+      categoryNameMatchesNorm(c.name, categoryFilterNorm)
+    )
+  }, [archivedCategories, categoryFilterNorm])
+
+  useEffect(() => {
+    setCategoryFilter('')
+  }, [activeType])
 
   // Destinos para mover: principal (sem pai), depois principais, depois subs (rótulos hierárquicos)
   const moveTargetOptions = useMemo(() => {
@@ -367,10 +407,19 @@ export default function Categories() {
     return CATEGORY_COLORS.find(c => c.id === colorId)?.class || 'bg-violet-500'
   }
 
-  const CategoryItem = ({ category, depth = 0 }) => {
-    const subcategories = getSubcategories(category.id, category.type)
+  const CategoryItem = ({ category, depth = 0, filterNorm = null }) => {
+    const allSubs = getSubcategories(category.id, category.type)
+    const selfMatches = Boolean(filterNorm && categoryNameMatchesNorm(category.name, filterNorm))
+
+    const subcategories =
+      filterNorm && !selfMatches
+        ? allSubs.filter(sub =>
+            categoryOrDescendantMatches(sub, categories, filterNorm)
+          )
+        : allSubs
+
     const hasSubcategories = subcategories.length > 0
-    const isExpanded = expandedCategories[category.id]
+    const isExpanded = filterNorm ? hasSubcategories : !!expandedCategories[category.id]
     const isNested = depth > 0
 
     return (
@@ -382,7 +431,7 @@ export default function Categories() {
           title={isNested ? 'Subcategoria' : undefined}
         >
           <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-            {hasSubcategories ? (
+            {hasSubcategories && !filterNorm ? (
               <button
                 type="button"
                 onClick={() => toggleExpand(category.id)}
@@ -492,7 +541,12 @@ export default function Categories() {
         {isExpanded && subcategories.length > 0 && (
           <div className={depth === 0 ? SUBTREE_CONTAINER_MAIN : SUBTREE_CONTAINER_NESTED}>
             {subcategories.map(sub => (
-              <CategoryItem key={sub.id} category={sub} depth={depth + 1} />
+              <CategoryItem
+                key={sub.id}
+                category={sub}
+                depth={depth + 1}
+                filterNorm={filterNorm}
+              />
             ))}
           </div>
         )}
@@ -561,6 +615,23 @@ export default function Categories() {
         </button>
       </div>
 
+      {/* Filtro por nome */}
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-dark-500"
+          aria-hidden
+        />
+        <input
+          type="search"
+          enterKeyHint="search"
+          placeholder="Filtrar categorias por nome..."
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="w-full rounded-xl border border-dark-700 bg-dark-800 py-2.5 pl-10 pr-4 text-sm text-white placeholder-dark-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+          aria-label="Filtrar categorias por nome"
+        />
+      </div>
+
       {/* Categories List */}
       {userCategories.length === 0 ? (
         <EmptyState
@@ -573,10 +644,27 @@ export default function Categories() {
             </Button>
           }
         />
+      ) : filteredUserCategories.length === 0 ? (
+        <Card className="p-8">
+          <EmptyState
+            icon={Search}
+            title="Nenhuma categoria encontrada"
+            description={`Nenhum resultado para "${categoryFilter.trim()}". Tente outro termo ou limpe o filtro.`}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setCategoryFilter('')}>
+                Limpar filtro
+              </Button>
+            }
+          />
+        </Card>
       ) : (
         <Card className="divide-y divide-dark-700/50">
-          {userCategories.map(category => (
-            <CategoryItem key={category.id} category={category} />
+          {filteredUserCategories.map(category => (
+            <CategoryItem
+              key={category.id}
+              category={category}
+              filterNorm={categoryFilterNorm}
+            />
           ))}
         </Card>
       )}
@@ -594,7 +682,12 @@ export default function Categories() {
 
           {showArchived && (
             <Card className="divide-y divide-dark-700/50 opacity-60">
-              {archivedCategories.map(category => (
+              {filteredArchivedCategories.length === 0 ? (
+                <div className="py-6 text-center text-sm text-dark-500">
+                  Nenhuma categoria arquivada corresponde ao filtro.
+                </div>
+              ) : (
+                filteredArchivedCategories.map(category => (
                 <div key={category.id} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-3">
                     <div className="w-6" />
@@ -622,7 +715,8 @@ export default function Categories() {
                     </button>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </Card>
           )}
         </div>
