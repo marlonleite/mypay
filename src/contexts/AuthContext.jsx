@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import {
-  signInWithPopup,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth'
-import { auth, googleProvider } from '../firebase/config'
+import { auth } from '../firebase/config'
+import { signInWithGoogle as signInWithGoogleFacade } from '../services/auth'
 import { connect as connectEventStream, disconnect as disconnectEventStream } from '../services/eventStream'
 import { clearSettingsCache } from '../services/settingsService'
 import { clearTransactionPaidOverrides } from '../utils/recurrencePaidDisplay'
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
   const loginWithGoogle = async () => {
     try {
       setError(null)
-      const result = await signInWithPopup(auth, googleProvider)
+      const result = await signInWithGoogleFacade()
       return result.user
     } catch (error) {
       console.error('Error signing in with Google:', error)

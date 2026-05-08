@@ -1,7 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { AppRouter } from './router/Router'
+import { isWeb } from './services/platform'
 import { AuthProvider } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { PrivacyProvider } from './contexts/PrivacyContext'
@@ -14,7 +15,7 @@ import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <AppRouter>
       <AuthProvider>
         <ThemeProvider>
           <PrivacyProvider>
@@ -32,14 +33,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           </PrivacyProvider>
         </ThemeProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </AppRouter>
   </React.StrictMode>,
 )
 
-// Register service workers for PWA and FCM
-if ('serviceWorker' in navigator) {
+// PWA + FCM service workers (web only; file:// and capacitor:// skip registration)
+if (isWeb() && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    // Register main PWA service worker
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
         console.log('PWA SW registered:', registration)
@@ -48,8 +48,6 @@ if ('serviceWorker' in navigator) {
         console.log('PWA SW registration failed:', error)
       })
 
-    // Register Firebase Messaging service worker
-    // This is done separately to handle push notifications in background
     navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/firebase-cloud-messaging-push-scope' })
       .then(registration => {
         console.log('FCM SW registered:', registration)

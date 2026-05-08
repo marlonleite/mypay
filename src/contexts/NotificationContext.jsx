@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { useAuth } from './AuthContext'
 import { useTransactions, useAllCardExpenses, useCards, useBudgets } from '../hooks/useFirestore'
 import { getCurrentMonthYear } from '../utils/helpers'
-import { showLocalNotification, isPushSupported, getNotificationPermission } from '../services/pushNotifications'
+import { showLocalNotification, supportsLocalNotificationPreview, getNotificationPermission } from '../services/push'
 import { fetchSettings, subscribeSettings } from '../services/settingsService'
 
 const NotificationContext = createContext()
@@ -210,7 +210,7 @@ export function NotificationProvider({ children }) {
   // Show local notification on app open (once per day per alert type)
   useEffect(() => {
     if (!pushEnabled || !user) return
-    if (!isPushSupported()) return
+    if (!supportsLocalNotificationPreview()) return
     if (getNotificationPermission() !== 'granted') return
 
     // Check if we already showed notification today

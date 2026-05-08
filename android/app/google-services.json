@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "599784654391",
+    "project_id": "mypay-464bd",
+    "storage_bucket": "mypay-464bd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:599784654391:android:71fbf0f6cb99f5982461b2",
+        "android_client_info": {
+          "package_name": "com.mypay.mypay_mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "599784654391-8l95rbe15ualak8sj7hh8vb898k41as0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mypay.mypay_mobile",
+            "certificate_hash": "7bbb3cf22779ce9e98c1ee9aa93aba74627c8292"
+          }
+        },
+        {
+          "client_id": "599784654391-vro69748383qr3j553a3a8n2sffaeq18.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCragrh35hnvREp31mZYiNXl7bZyiVpiY0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "599784654391-vro69748383qr3j553a3a8n2sffaeq18.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

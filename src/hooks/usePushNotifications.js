@@ -12,7 +12,7 @@ import {
   onForegroundMessage,
   showLocalNotification,
   isPushSupported
-} from '../services/pushNotifications'
+} from '../services/push'
 
 export function usePushNotifications() {
   const { user } = useAuth()
