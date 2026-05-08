@@ -66,6 +66,7 @@ export function AuthProvider({ children }) {
 
   const getErrorMessage = (code) => {
     const messages = {
+      'auth/unauthorized-domain': 'Domínio não autorizado no Firebase. Verifique Authentication → Authorized domains (localhost / 127.0.0.1).',
       'auth/popup-closed-by-user': 'Login cancelado. Tente novamente.',
       'auth/popup-blocked': 'O popup foi bloqueado. Permita popups para este site.',
       'auth/cancelled-popup-request': 'Operação cancelada.',
