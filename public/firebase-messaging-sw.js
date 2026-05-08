@@ -23,8 +23,8 @@ self.addEventListener('message', (event) => {
         const notificationTitle = payload.notification?.title || 'myPay'
         const notificationOptions = {
           body: payload.notification?.body || '',
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
+          icon: '/logo-mypay.svg',
+          badge: '/logo-mypay.svg',
           tag: payload.data?.tag || 'mypay-notification',
           data: payload.data || {},
           vibrate: [200, 100, 200],
@@ -81,8 +81,8 @@ self.addEventListener('push', (event) => {
         const notificationTitle = payload.notification.title || 'myPay'
         const notificationOptions = {
           body: payload.notification.body || '',
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
+          icon: '/logo-mypay.svg',
+          badge: '/logo-mypay.svg',
           tag: payload.data?.tag || 'mypay-push',
           data: payload.data || {},
           vibrate: [200, 100, 200]

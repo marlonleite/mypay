@@ -58,8 +58,8 @@ export function showLocalNotification(title, options = {}) {
   }
   try {
     const notification = new Notification(title, {
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
+      icon: '/logo-mypay.svg',
+      badge: '/logo-mypay.svg',
       vibrate: [200, 100, 200],
       tag: 'mypay-local',
       ...options

@@ -107,6 +107,51 @@ npm run build
 
 Os arquivos serão gerados na pasta `dist/`.
 
+### Logo (marca)
+
+O logo oficial está em **`public/logo-mypay.svg`** (favicon, `manifest.json`, tela de login, ícones em notificações web/FCM). O símbolo “$” usa fonte do sistema para renderizar sem depender do Montserrat.
+
+Para trocar o **ícone do app** no launcher Android ou no instalador Electron (`.icns` / `.ico`), exporte PNG ou ícones nativos a partir desse SVG (por exemplo fluxo com [Capacitor Assets](https://capacitorjs.com/docs/guides/splash-screens-and-icons) ou o gerador de ícones do electron-builder).
+
+## Electron e Android: builds e como atualizar
+
+A **PWA** (ex.: Vercel) passa a servir o bundle novo após cada deploy. **Electron** e **Capacitor** embutem o `dist/` **no momento do build**: mudanças em `src/` só entram nesses apps depois que você gera de novo o instalador/APK e instala por cima.
+
+**Pré-requisitos:**
+
+- `.env` com `VITE_API_URL` apontando para a API de produção (builds nativos não usam o proxy do Vite).
+- **API:** `CORS_ORIGINS` + `CORS_ORIGIN_REGEX` para loopback (ver `mypay-api`).
+- **Firebase Auth:** domínios autorizados incluindo `127.0.0.1` e `localhost` (Electron).
+- **Android:** Java 17, `ANDROID_HOME`, depuração USB ativa no aparelho.
+
+### Electron (macOS)
+
+| Objetivo | Comando |
+|---------|---------|
+| Desenvolvimento (Vite + janela) | `npm run electron:dev` |
+| Gerar `.dmg` | `npm run electron:build:mac` |
+
+O instalador sai em `dist-electron/myPay-<versão>.dmg` (pasta ignorada no git).
+
+**Atualizar o app instalado:** rode de novo `npm run electron:build:mac`, abra o DMG e arraste **myPay** para **Aplicativos**, substituindo a cópia antiga.
+
+### Android (USB / sideload, sem Play Store)
+
+| Objetivo | Comando |
+|---------|---------|
+| Desenvolvimento no aparelho | `npm run android:dev` |
+| APK **debug** instalável (`adb` ou arquivo) | `npm run android:build:debug` |
+| APK release (não assinado no template atual) | `npm run android:build` → `app-release-unsigned.apk` **não** instala até assinar ou configurar keystore |
+
+**Instalar / atualizar via USB (debug):**
+
+```bash
+npm run android:build:debug
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+O `-r` substitui a instalação anterior. Para **release** assinado com keystore próprio, configure `signingConfigs` no Gradle (detalhes arquitetura em `PLAN-ELECTRON-CAPACITOR.md`).
+
 ## Deploy
 
 ### Firebase Hosting
