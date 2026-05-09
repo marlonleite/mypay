@@ -18,8 +18,10 @@ import { TRANSACTION_TYPES } from '../../utils/constants'
 import {
   isRecurrenceLinkedTransaction,
   isInstallmentPlanTransaction,
+  isCreditCardBillPayment,
   formatInstallmentFraction
 } from '../../utils/transactionSemantics'
+import { listInvoiceAttachments } from '../../services/invoiceAttachmentService'
 
 export default function TransactionDetail({
   transaction,
@@ -42,6 +44,32 @@ export default function TransactionDetail({
   const fileInputRef = React.useRef(null)
   const [uploadingAttachment, setUploadingAttachment] = React.useState(false)
   const [uploadError, setUploadError] = React.useState(null)
+  const [invoiceAttachments, setInvoiceAttachments] = React.useState([])
+  const [invoiceAttachmentsLoading, setInvoiceAttachmentsLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    const invoiceId = transaction?.paidCreditCardInvoiceId
+    const paidCardId = transaction?.paidCreditCardId
+    if (!isOpen || !invoiceId || !paidCardId) {
+      setInvoiceAttachments([])
+      setInvoiceAttachmentsLoading(false)
+      return
+    }
+    let cancelled = false
+    setInvoiceAttachmentsLoading(true)
+    listInvoiceAttachments(invoiceId)
+      .then((list) => {
+        if (!cancelled) setInvoiceAttachments(Array.isArray(list) ? list : [])
+      })
+      .catch((err) => {
+        console.error('Error loading invoice attachments for transaction detail:', err)
+        if (!cancelled) setInvoiceAttachments([])
+      })
+      .finally(() => {
+        if (!cancelled) setInvoiceAttachmentsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [isOpen, transaction?.id, transaction?.paidCreditCardInvoiceId, transaction?.paidCreditCardId])
 
   const handleFileSelect = async (e) => {
     const fileList = e.target.files
@@ -335,7 +363,43 @@ export default function TransactionDetail({
                 {transaction.attachment.fileName || '1 arquivo'}
               </a>
             ) : (
-              <p className="text-sm text-white">--</p>
+              !(isCreditCardBillPayment(transaction) && transaction.paidCreditCardInvoiceId) ? (
+                <p className="text-sm text-white">--</p>
+              ) : null
+            )}
+            {isCreditCardBillPayment(transaction) && transaction.paidCreditCardInvoiceId && (
+              <div
+                className={
+                  transaction.attachments?.length > 0 || transaction.attachment
+                    ? 'mt-3 pt-3 border-t border-dark-700/80'
+                    : ''
+                }
+              >
+                <p className="text-xs text-dark-500 mb-1">Comprovantes da fatura</p>
+                {invoiceAttachmentsLoading ? (
+                  <p className="text-xs text-dark-400 flex items-center gap-1.5">
+                    <Loader className="w-3 h-3 animate-spin shrink-0" aria-hidden />
+                    Carregando…
+                  </p>
+                ) : invoiceAttachments.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    {invoiceAttachments.map((att) => (
+                      <a
+                        key={att.id}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-amber-200/90 hover:text-amber-100 truncate"
+                        title="Anexo da fatura do cartão (mesma lista em Cartões)"
+                      >
+                        {att.fileName || 'Arquivo'}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-dark-400">--</p>
+                )}
+              </div>
             )}
           </div>
 
