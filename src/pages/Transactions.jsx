@@ -1165,6 +1165,7 @@ export default function Transactions({
           transactionToLog.paidCreditCardId,
           txDate ? txDate.getMonth() : month,
           txDate ? txDate.getFullYear() : year,
+          transactionToLog.paidCreditCardInvoiceId,
         )
         setDetailModalOpen(false)
         setSelectedTransaction(null)

@@ -56,7 +56,10 @@ function sumCardBillLedger(expensesList) {
   return expensesList.reduce((sum, e) => sum + ledgerOwedDeltaForCardExpense(e), 0)
 }
 
-export default function Cards({ month, year, onMonthChange, onNavigate, openCardId, onConsumeOpenCard }) {
+export default function Cards({
+  month, year, onMonthChange, onNavigate,
+  openCardId, openInvoiceId, onConsumeOpenCard, onConsumeOpenInvoice,
+}) {
   const { formatCurrency } = usePrivacy()
   const { toast } = useToast()
   const {
@@ -104,6 +107,8 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
   // Faturas do cartão selecionado (Onda 2 — entidade própria) + helpers.
   // refresh é invocado após pagar/estornar pra recomputar amount/balance/payment_amount.
   const {
+    invoices: cardInvoices,
+    loading: loadingCardInvoices,
     findInvoiceByDueMonth,
     refresh: refreshInvoices,
   } = useCreditCardInvoices(selectedCard?.id)
@@ -431,6 +436,24 @@ export default function Cards({ month, year, onMonthChange, onNavigate, openCard
     onConsumeOpenCard?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openCardId, cards])
+
+  // ?invoice=<uuid> alinha mês/ano ao vencimento da fatura do pagamento (Lançamentos
+  // usa data do lançamento; em Cartões o seletor é o mês do due_date da invoice).
+  useEffect(() => {
+    if (!openInvoiceId || !selectedCard || loadingCardInvoices) return
+    const inv = cardInvoices.find((i) => i.id === openInvoiceId)
+    if (inv?.dueDate) {
+      onMonthChange(inv.dueDate.getMonth(), inv.dueDate.getFullYear())
+    }
+    onConsumeOpenInvoice?.()
+  }, [
+    openInvoiceId,
+    selectedCard,
+    cardInvoices,
+    loadingCardInvoices,
+    onMonthChange,
+    onConsumeOpenInvoice,
+  ])
 
   const openNewExpenseModal = () => {
     setBulkSelectionMode(false)

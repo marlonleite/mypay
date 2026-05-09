@@ -122,8 +122,12 @@ function AppContent() {
   // Lançamentos quando o DELETE de um pagamento de fatura retorna 409
   // (transação vinculada a fatura paga → usuário precisa Reabrir fatura).
   const openCardId = searchParams.get('card')
+  const openInvoiceId = searchParams.get('invoice')
+
+  // paidCreditCardInvoiceId deep-links à fatura certa: o mês global em Cartões
+  // é o do vencimento, não o da data do lançamento de pagamento.
   const handleOpenCardInvoice = useCallback(
-    (cardId, month, year) => {
+    (cardId, month, year, paidCreditCardInvoiceId = null) => {
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev)
@@ -131,6 +135,8 @@ function AppContent() {
           p.set('card', cardId)
           if (typeof month === 'number') p.set('month', String(month + 1))
           if (typeof year === 'number') p.set('year', String(year))
+          if (paidCreditCardInvoiceId) p.set('invoice', paidCreditCardInvoiceId)
+          else p.delete('invoice')
           return p
         },
         { replace: true }
@@ -146,6 +152,17 @@ function AppContent() {
       (prev) => {
         const p = new URLSearchParams(prev)
         p.delete('card')
+        return p
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  const clearOpenInvoiceParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        p.delete('invoice')
         return p
       },
       { replace: true }
@@ -209,7 +226,9 @@ function AppContent() {
             onMonthChange={handleMonthChange}
             onNavigate={setActiveTab}
             openCardId={openCardId}
+            openInvoiceId={openInvoiceId}
             onConsumeOpenCard={clearOpenCardParam}
+            onConsumeOpenInvoice={clearOpenInvoiceParam}
           />
         )
       case 'reports':
