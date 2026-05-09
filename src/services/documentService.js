@@ -579,19 +579,46 @@ export function resolveCategoryIdForApply({
 
 /**
  * Monta linha do batch (shape POST /transactions) para compra no cartão; `client_line_id` opcional.
- * `expense.date` e `expense.originalDate`: YYYY-MM-DD ou Date; prefere data civil da linha quando válida.
- * `options.credit_card_invoice_id` ou `expense.creditCardInvoiceId`: fatura aberta (vencimento no contexto do app).
+ * Com `credit_card_invoice_id`: `date` no payload é a **data da fatura** (`expense.date`, ex. vencimento),
+ * não a do extrato — assim Lançamentos e filtros por mês não “perdem” a linha. `originalDate` vira sufixo
+ * em `notes` (`Extrato: YYYY-MM-DD`) quando diferir.
+ * Sem invoice id: mantém comportamento anterior (data da linha do documento quando válida).
  */
 export function buildInvoiceCardExpenseApiItem(expense, options) {
   const { category_id, client_line_id, tagIdByName, credit_card_invoice_id: invoiceIdOpt } = options
   if (!expense.cardId) throw new Error('cardId é obrigatório')
 
-  let dateIso
+  const invId = invoiceIdOpt ?? expense.creditCardInvoiceId ?? null
   const rawLine =
     typeof expense.originalDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(expense.originalDate.trim())
       ? expense.originalDate.trim()
       : null
-  if (rawLine) {
+
+  let dateIso
+  let notesOut = expense.notes ?? null
+
+  if (invId) {
+    const parsedBill =
+      expense.date instanceof Date
+        ? expense.date
+        : expense.date
+          ? parseLocalDate(expense.date)
+          : null
+    if (parsedBill && !Number.isNaN(parsedBill.getTime())) {
+      dateIso = parsedBill.toISOString().slice(0, 10)
+    } else if (typeof expense.billYear === 'number' && typeof expense.billMonth === 'number') {
+      dateIso = new Date(expense.billYear, expense.billMonth, 1).toISOString().slice(0, 10)
+    } else if (rawLine) {
+      const d = parseLocalDate(rawLine)
+      dateIso = d.toISOString().slice(0, 10)
+    } else {
+      throw new Error('Data da fatura ausente para lançamento com credit_card_invoice_id')
+    }
+    if (rawLine && rawLine !== dateIso) {
+      const tag = `Extrato: ${rawLine}`
+      notesOut = notesOut ? `${notesOut} · ${tag}` : tag
+    }
+  } else if (rawLine) {
     const d = parseLocalDate(rawLine)
     dateIso = d.toISOString().slice(0, 10)
   } else {
@@ -619,13 +646,12 @@ export function buildInvoiceCardExpenseApiItem(expense, options) {
     date: dateIso,
     credit_card_id: expense.cardId,
     category_id: category_id || null,
-    notes: expense.notes ?? null,
+    notes: notesOut,
     is_paid: true,
     installment: expense.installment || 1,
     total_installments: expense.totalInstallments || 1,
     installment_group_id: expense.installmentGroupId ?? null,
   }
-  const invId = invoiceIdOpt ?? expense.creditCardInvoiceId
   if (invId) item.credit_card_invoice_id = invId
   if (tag_ids && tag_ids.length > 0) item.tag_ids = tag_ids
   if (client_line_id) item.client_line_id = client_line_id

@@ -231,9 +231,9 @@ export default function FaturaResult({
 
   /**
    * Fatura alvo via mês de VENCIMENTO (convenção do app global).
-   * Com id, todas as linhas do lote recebem o mesmo credit_card_invoice_id.
-   * Sem id, o apply manda cada linha com data civil (originalDate) e o backend
-   * pode resolver a fatura por período (ensure_invoice_for_period).
+   * Com id, todas as linhas do lote recebem o mesmo credit_card_invoice_id e
+   * data persistida alinhada ao vencimento (não à data de cada linha do PDF).
+   * Sem id, o apply usa data do extrato por linha e o backend resolve o período.
    */
   const targetCreditCardInvoiceId = useMemo(() => {
     if (!selectedCard || typeof billMonth !== 'number' || typeof billYear !== 'number') return null
@@ -313,6 +313,10 @@ export default function FaturaResult({
     if (!selectedCard || selectedCount === 0) return
 
     const faturaDate = new Date(billYear, billMonth, 1)
+    const anchorInv = targetCreditCardInvoiceId
+      ? invoices.find((i) => i.id === targetCreditCardInvoiceId)
+      : null
+    const ledgerDate = anchorInv?.dueDate ?? faturaDate
     const expenses = editedTransactions
       .filter(t => selectedIds.has(t.id))
       .map(t => ({
@@ -320,7 +324,7 @@ export default function FaturaResult({
         cardId: selectedCard,
         description: t.descricao,
         amount: t.valor || 0,
-        date: faturaDate,
+        date: ledgerDate,
         originalDate: t.data,
         category: t.categoryId,
         categoria_sugerida: t.categoria_sugerida ?? null,
@@ -331,7 +335,17 @@ export default function FaturaResult({
       }))
 
     onSave(expenses)
-  }, [selectedCard, selectedCount, editedTransactions, selectedIds, billYear, billMonth, onSave, targetCreditCardInvoiceId])
+  }, [
+    selectedCard,
+    selectedCount,
+    editedTransactions,
+    selectedIds,
+    billYear,
+    billMonth,
+    onSave,
+    targetCreditCardInvoiceId,
+    invoices,
+  ])
 
   // Empty state
   if (!data?.transacoes?.length) {

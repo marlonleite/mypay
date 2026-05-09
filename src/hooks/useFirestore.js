@@ -600,6 +600,24 @@ export async function resolveCreditCardInvoiceIdForDueMonth(cardId, month, year)
   return null
 }
 
+/**
+ * Data civil do vencimento da fatura no mês/ano do seletor (0-indexed month).
+ * Fallback: dia 1 do mês quando não há invoice listada — alinha `transactions.date`
+ * ao período da fatura em vez da data do extrato.
+ */
+export async function resolveInvoiceDueDateForBillMonth(cardId, month, year) {
+  if (!cardId || typeof month !== 'number' || typeof year !== 'number') return null
+  const { apiClient } = await import('../services/apiClient')
+  const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+  if (!Array.isArray(data)) return null
+  for (const i of data) {
+    if (!i.due_date || typeof i.due_date !== 'string') continue
+    const d = new Date(i.due_date + 'T12:00:00')
+    if (d.getMonth() === month && d.getFullYear() === year) return d
+  }
+  return new Date(year, month, 1)
+}
+
 // Busca invoices de múltiplos cartões em paralelo. Usado por Accounts.jsx
 // para mostrar o saldo devedor real (invoice.balance computed) de cada cartão.
 export function useAllCreditCardInvoices(cardIds) {

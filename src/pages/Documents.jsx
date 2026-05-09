@@ -29,7 +29,7 @@ import {
   DOCUMENT_IMPORT_APPLY_MAX_ITEMS,
   getImportDetail,
 } from '../services/documentService'
-import { buildTransactionPayload, resolveCreditCardInvoiceIdForDueMonth } from '../hooks/useFirestore'
+import { buildTransactionPayload, resolveCreditCardInvoiceIdForDueMonth, resolveInvoiceDueDateForBillMonth } from '../hooks/useFirestore'
 import { apiClient } from '../services/apiClient'
 import { DOCUMENT_TYPES } from '../utils/constants'
 import { describeApiError } from '../utils/apiErrors'
@@ -206,7 +206,28 @@ export default function Documents({ month, year }) {
         month,
         year
       )
-      const expenseWithInvoice = { ...expenseData, creditCardInvoiceId }
+      let expenseWithInvoice = { ...expenseData, creditCardInvoiceId }
+      if (creditCardInvoiceId) {
+        const anchor = await resolveInvoiceDueDateForBillMonth(expenseData.cardId, month, year)
+        if (anchor) {
+          expenseWithInvoice = { ...expenseWithInvoice, date: anchor }
+        }
+        const origRaw = expenseData.date
+        const orig =
+          typeof origRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(origRaw.trim())
+            ? origRaw.trim()
+            : null
+        const anchorIso =
+          expenseWithInvoice.date instanceof Date
+            ? expenseWithInvoice.date.toISOString().slice(0, 10)
+            : null
+        if (orig && anchorIso && orig !== anchorIso) {
+          const tag = `Extrato: ${orig}`
+          expenseWithInvoice.notes = expenseWithInvoice.notes
+            ? `${expenseWithInvoice.notes} · ${tag}`
+            : tag
+        }
+      }
 
       // Card_expense não persiste attachments (decisão 2026-04-15);
       // o PDF da fatura fica linkado ao import_record (criado pelo backend).

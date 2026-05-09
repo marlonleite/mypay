@@ -82,3 +82,40 @@ export async function getInvoiceBreakdown(invoiceId) {
     transactionCount: row.transaction_count ?? 0,
   }))
 }
+
+/** Mensagem única para UI + validações client-side antes de POST. */
+export const PAID_INVOICE_EXPENSE_BLOCK_MESSAGE =
+  'Esta fatura está paga. Reabra em Cartões para importar ou incluir lançamentos.'
+
+/**
+ * Impede criar/importar lançamentos em fatura já paga (status=paid).
+ * @param {string} cardId
+ * @param {number} monthJs Índice JS 0–11 (mês de vencimento).
+ * @param {number} year
+ */
+export async function assertInvoiceNotPaidForCardPeriod(cardId, monthJs, year) {
+  if (!cardId || typeof monthJs !== 'number' || typeof year !== 'number') return
+  const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+  if (!Array.isArray(data)) return
+  for (const i of data) {
+    if (!i.due_date || typeof i.due_date !== 'string') continue
+    const d = new Date(i.due_date + 'T12:00:00')
+    if (d.getMonth() === monthJs && d.getFullYear() === year && i.status === 'paid') {
+      throw new Error(PAID_INVOICE_EXPENSE_BLOCK_MESSAGE)
+    }
+  }
+}
+
+/**
+ * @param {string} cardId
+ * @param {string} invoiceId
+ */
+export async function assertInvoiceNotPaidById(cardId, invoiceId) {
+  if (!cardId || !invoiceId) return
+  const data = await apiClient.get(`/api/v1/credit-card-invoices?card_id=${cardId}`)
+  if (!Array.isArray(data)) return
+  const i = data.find((row) => row.id === invoiceId)
+  if (i?.status === 'paid') {
+    throw new Error(PAID_INVOICE_EXPENSE_BLOCK_MESSAGE)
+  }
+}

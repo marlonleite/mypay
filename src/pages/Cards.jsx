@@ -35,6 +35,7 @@ import BankSelector from '../components/ui/BankSelector'
 import SearchableSelect from '../components/ui/SearchableSelect'
 import { useCards, useAllCardExpenses, useCardExpenses, useAccounts, useBillPayments, useCreditCardInvoices, useAllCreditCardInvoices, useTags, useCategories } from '../hooks/useFirestore'
 import InvoiceAttachmentList from '../components/cards/InvoiceAttachmentList'
+import { PAID_INVOICE_EXPENSE_BLOCK_MESSAGE } from '../services/invoiceService'
 import { describeApiError } from '../utils/apiErrors'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { useToast } from '../contexts/ToastContext'
@@ -287,7 +288,19 @@ export default function Cards({
   // Despesas do cartão selecionado — vêm do hook invoice-based quando há invoice.
   const selectedCardExpenses = useMemo(() => {
     if (!selectedCard) return []
-    if (currentInvoice) return [...invoiceExpenses].sort((a, b) => new Date(b.date) - new Date(a.date))
+    if (currentInvoice) {
+      const byId = new Map(invoiceExpenses.map((e) => [e.id, e]))
+      for (const e of allExpenses) {
+        if (
+          e.cardId === selectedCard.id &&
+          e.creditCardInvoiceId === currentInvoice.id &&
+          !byId.has(e.id)
+        ) {
+          byId.set(e.id, e)
+        }
+      }
+      return [...byId.values()].sort((a, b) => new Date(b.date) - new Date(a.date))
+    }
     return allExpenses
       .filter(e => e.cardId === selectedCard.id && isExpenseInBill(e, month, year))
       .sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -376,7 +389,11 @@ export default function Cards({
   const billConsideredPaid = currentInvoice
     ? currentInvoice.status === 'paid'
     : (selectedCard != null && isBillPaid(selectedCard.id))
-  const isBillLocked = selectedCard && billConsideredPaid && invoiceFullChargeTotal > 0
+  // Fatura materializada e paga: bloqueio sempre (mesmo se total exibir 0).
+  const isBillLocked =
+    selectedCard &&
+    ((currentInvoice?.status === 'paid') ||
+      (billConsideredPaid && !currentInvoice && invoiceFullChargeTotal > 0))
 
   const bulkDeleteBusy = bulkDeleteStatus != null
 
@@ -453,6 +470,10 @@ export default function Cards({
   ])
 
   const openNewExpenseModal = () => {
+    if (isBillLocked) {
+      toast.error(PAID_INVOICE_EXPENSE_BLOCK_MESSAGE)
+      return
+    }
     setBulkSelectionMode(false)
     setEditingItem(null)
     const expenseCats = getMainCategories(TRANSACTION_TYPES.EXPENSE)
@@ -601,6 +622,22 @@ export default function Cards({
         }
       }
 
+      const matchingInvoiceForForm = cardInvoices.find(
+        (i) =>
+          i.dueDate &&
+          i.dueDate.getMonth() === (expenseForm.billMonth ?? month) &&
+          i.dueDate.getFullYear() === (expenseForm.billYear ?? year)
+      )
+      const ledgerDateForSave = matchingInvoiceForForm?.dueDate ?? expenseForm.date
+
+      if (!editingItem) {
+        const inv = matchingInvoiceForForm ?? currentInvoice
+        if (inv?.status === 'paid') {
+          toast.error(PAID_INVOICE_EXPENSE_BLOCK_MESSAGE)
+          return
+        }
+      }
+
       if (editingItem) {
         // Atualizar lançamento existente — usa billMonth/billYear do form (editável)
         await updateCardExpense(editingItem.id, {
@@ -608,7 +645,7 @@ export default function Cards({
           description: expenseForm.description,
           amount: expenseForm.amount,
           category: categoryForSave,
-          date: expenseForm.date,
+          date: ledgerDateForSave,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: expenseForm.billMonth,
           billYear: expenseForm.billYear,
@@ -628,7 +665,7 @@ export default function Cards({
           description: expenseForm.description,
           amount: expenseForm.amount,
           category: categoryForSave,
-          date: expenseForm.date,
+          date: ledgerDateForSave,
           installments: parseInt(expenseForm.installments) || 1,
           tags: expenseForm.tags.length > 0 ? expenseForm.tags : [],
           billMonth: month,
