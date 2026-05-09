@@ -117,19 +117,39 @@ export default function FaturaResult({
   }, [data, firestoreCategories])
 
   const [selectedCard, setSelectedCard] = useState('')
+  const lastSuccessfulBatchCardIdRef = useRef(null)
 
-  // Pré-seleciona: 1 cartão ativo, ou match do nome do ficheiro (ex. c6, bradesco) com nome/descrição do cartão.
+  // Pré-seleciona ou recupera cartão após import parcial / lista de cartões atrasada.
+  // Evita botão "Importar" ficável desabilitado com placeholder mesmo quando o lote já tem cardId.
   useEffect(() => {
     const active = cards.filter((c) => c && !c.archived)
     if (active.length === 0) return
 
-    setSelectedCard((prev) => {
-      if (prev) return prev
-      if (active.length === 1) return active[0].id
-      const guessed = fileName ? guessCardIdFromFileName(fileName, active) : null
-      return guessed || ''
-    })
-  }, [cards, fileName])
+    if (selectedCard) {
+      if (active.some((c) => c.id === selectedCard)) return
+      setSelectedCard('')
+      return
+    }
+
+    const fromBanner = applyWarningBanner?.batchCardId
+    const hint =
+      (fromBanner && active.some((c) => c.id === fromBanner) ? fromBanner : null) ||
+      (lastSuccessfulBatchCardIdRef.current &&
+      active.some((c) => c.id === lastSuccessfulBatchCardIdRef.current)
+        ? lastSuccessfulBatchCardIdRef.current
+        : null) ||
+      (active.length === 1 ? active[0].id : null) ||
+      (fileName ? guessCardIdFromFileName(fileName, active) : null) ||
+      ''
+
+    if (hint) setSelectedCard(hint)
+  }, [
+    cards,
+    fileName,
+    selectedCard,
+    applyWarningBanner?.batchCardId,
+    applyWarningBanner?.bannerKey,
+  ])
 
   const { invoices, loading: invoicesLoading } = useCreditCardInvoices(selectedCard || null)
 
@@ -311,6 +331,8 @@ export default function FaturaResult({
 
   const handleSave = useCallback(() => {
     if (!selectedCard || selectedCount === 0) return
+
+    lastSuccessfulBatchCardIdRef.current = selectedCard
 
     const faturaDate = new Date(billYear, billMonth, 1)
     const anchorInv = targetCreditCardInvoiceId
@@ -656,6 +678,11 @@ export default function FaturaResult({
         >
           Importar {selectedCount} {selectedCount === 1 ? 'despesa' : 'despesas'}
         </Button>
+        {!saving && !hasNoCards && selectedCount > 0 && !selectedCard && (
+          <p className="text-xs text-amber-200/90 text-center -mt-1">
+            Selecione um cartão acima — sem isso o import fica desativado.
+          </p>
+        )}
         <Button
           onClick={onDiscard}
           variant="ghost"

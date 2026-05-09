@@ -371,6 +371,8 @@ export default function Documents({ month, year }) {
           failed: applyResponse.failed,
           failedLines,
           importBlockedReason,
+          batchCardId: enriched[0]?.cardId ?? null,
+          bannerKey: Date.now(),
           onRetry: () => {
             setFaturaApplyBanner(null)
             handleBatchCardExpenses(retryExpenses)
