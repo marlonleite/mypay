@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal, Target, Wallet, Settings, Eye, EyeOff, BarChart3, Search, Flag, History } from 'lucide-react'
+import { LayoutDashboard, Receipt, CreditCard, Scan, Tag, Hash, LogOut, User, Plus, MoreHorizontal, Wallet, Settings, Eye, EyeOff, BarChart3, Search, History } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePrivacy } from '../contexts/PrivacyContext'
 import { useSearch } from '../contexts/SearchContext'
@@ -18,8 +18,6 @@ const mainTabs = [
 // Itens do menu "Mais"
 const moreMenuItems = [
   { id: 'reports', label: 'Relatórios', icon: BarChart3 },
-  { id: 'goals', label: 'Metas', icon: Flag },
-  { id: 'budgets', label: 'Orçamentos', icon: Target },
   { id: 'accounts', label: 'Contas', icon: Wallet },
   { id: 'categories', label: 'Categorias', icon: Tag },
   { id: 'tags', label: 'Tags', icon: Hash },

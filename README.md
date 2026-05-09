@@ -158,7 +158,7 @@ npm run android:build:debug
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-**macOS + Android num comando** (um `vite build`, gera `.app`, copia para `/Applications`, gera APK debug e `adb install -r`):
+**macOS + Android num comando** (um `vite build`, gera `.app` via `electron-builder --mac dir`, copia para `/Applications`, gera APK debug e `adb install -r`):
 
 ```bash
 npm run native:install

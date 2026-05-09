@@ -14,10 +14,8 @@ import Reports from './pages/Reports'
 import Categories from './pages/Categories'
 import Tags from './pages/Tags'
 import Documents from './pages/Documents'
-import Budgets from './pages/Budgets'
 import Accounts from './pages/Accounts'
 import Settings from './pages/Settings'
-import Goals from './pages/Goals'
 import Activities from './pages/Activities'
 import SearchModal from './components/search/SearchModal'
 import ToastContainer from './components/ui/Toast'
@@ -39,8 +37,6 @@ const VALID_TABS = new Set([
   'transactions',
   'cards',
   'reports',
-  'goals',
-  'budgets',
   'accounts',
   'categories',
   'tags',
@@ -235,18 +231,8 @@ function AppContent() {
             year={selectedMonth.year}
           />
         )
-      case 'budgets':
-        return (
-          <Budgets
-            month={selectedMonth.month}
-            year={selectedMonth.year}
-            onMonthChange={handleMonthChange}
-          />
-        )
       case 'accounts':
         return <Accounts onNavigate={setActiveTab} />
-      case 'goals':
-        return <Goals />
       case 'activities':
         return <Activities />
       case 'settings':

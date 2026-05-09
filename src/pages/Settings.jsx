@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
   Settings as SettingsIcon,
-  AlertTriangle,
   Bell,
   BellOff,
   Smartphone,
@@ -246,21 +245,6 @@ export default function Settings() {
           >
             Exportar
           </Button>
-        </div>
-      </Card>
-
-      {/* Danger Zone */}
-      <Card className="border-red-500/20">
-        <h2 className="text-sm font-medium text-red-400 mb-4 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
-          Zona de Perigo
-        </h2>
-
-        <div className="p-4 bg-dark-800/50 rounded-xl">
-          <p className="text-white font-medium">Resetar Todos os Dados</p>
-          <p className="text-sm text-dark-400 mt-1">
-            Disponível após cutover completo para o novo backend.
-          </p>
         </div>
       </Card>
 

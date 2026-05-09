@@ -9,7 +9,6 @@ import { PrivacyProvider } from './contexts/PrivacyContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { SearchProvider } from './contexts/SearchContext'
 import { ToastProvider } from './contexts/ToastContext'
-import { GoalsProvider } from './contexts/GoalsContext'
 import { OnboardingProvider } from './contexts/OnboardingContext'
 import './index.css'
 
@@ -22,11 +21,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <NotificationProvider>
               <SearchProvider>
                 <ToastProvider>
-                  <GoalsProvider>
-                    <OnboardingProvider>
-                      <App />
-                    </OnboardingProvider>
-                  </GoalsProvider>
+                  <OnboardingProvider>
+                    <App />
+                  </OnboardingProvider>
                 </ToastProvider>
               </SearchProvider>
             </NotificationProvider>

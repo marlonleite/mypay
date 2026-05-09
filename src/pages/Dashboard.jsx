@@ -12,7 +12,6 @@ import Card from '../components/ui/Card'
 import MonthSelector from '../components/ui/MonthSelector'
 import Loading from '../components/ui/Loading'
 import EmptyState from '../components/ui/EmptyState'
-import GoalTracker from '../components/goals/GoalTracker'
 import InsightsWidget from '../components/insights/InsightsWidget'
 import { useTransactions, useAllCardExpenses, useCards, useAccounts } from '../hooks/useFirestore'
 import { usePrivacy } from '../contexts/PrivacyContext'
@@ -237,12 +236,6 @@ export default function Dashboard({ month, year, onMonthChange, onNavigate }) {
             month={month}
             year={year}
             onViewAll={() => onNavigate?.('reports')}
-          />
-
-          {/* Goals Tracker */}
-          <GoalTracker
-            onViewAll={() => onNavigate?.('goals')}
-            onAddGoal={() => onNavigate?.('goals')}
           />
 
           {/* Account Balances */}

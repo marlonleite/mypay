@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import { useAuth } from './AuthContext'
-import { useTransactions, useAllCardExpenses, useCards, useBudgets } from '../hooks/useFirestore'
+import { useTransactions, useAllCardExpenses, useCards } from '../hooks/useFirestore'
 import { getCurrentMonthYear } from '../utils/helpers'
 import { showLocalNotification, supportsLocalNotificationPreview, getNotificationPermission } from '../services/push'
 import { fetchSettings, subscribeSettings } from '../services/settingsService'
@@ -21,8 +21,6 @@ export function NotificationProvider({ children }) {
   const { transactions } = useTransactions(month, year)
   const { expenses: cardExpenses } = useAllCardExpenses()
   const { cards } = useCards()
-  const { budgets } = useBudgets(month, year)
-
   const [readNotifications, setReadNotifications] = useState(() => {
     const saved = localStorage.getItem('readNotifications')
     return saved ? JSON.parse(saved) : []
@@ -146,36 +144,6 @@ export function NotificationProvider({ children }) {
       }
     })
 
-    // 4. Budget exceeded
-    budgets.forEach(budget => {
-      const spent = transactions
-        .filter(t => t.type === 'expense' && t.category === budget.categoryId)
-        .reduce((sum, t) => sum + (t.amount || 0), 0)
-
-      const cardSpent = cardExpenses
-        .filter(e => {
-          const expDate = e.date instanceof Date ? e.date : new Date(e.date)
-          return e.category === budget.categoryId && expDate.getMonth() === month && expDate.getFullYear() === year
-        })
-        .reduce((sum, e) => sum + (e.amount || 0), 0)
-
-      const totalSpent = spent + cardSpent
-      const percentage = (totalSpent / budget.amount) * 100
-
-      if (percentage >= 100) {
-        notifs.push({
-          id: `budget-exceeded-${budget.id}-${month}-${year}`,
-          type: 'budget_exceeded',
-          severity: 'medium',
-          title: 'Orçamento excedido',
-          message: `Categoria com ${percentage.toFixed(0)}% do orçamento gasto`,
-          date: today,
-          actionText: 'Ver orçamentos',
-          actionData: { budgetId: budget.id }
-        })
-      }
-    })
-
     // Sort by severity and date (most recent first)
     return notifs.sort((a, b) => {
       const severityOrder = { high: 0, medium: 1, low: 2 }
@@ -186,7 +154,7 @@ export function NotificationProvider({ children }) {
       const dateB = b.date instanceof Date ? b.date : new Date(b.date)
       return dateB - dateA
     })
-  }, [user, transactions, cardExpenses, cards, budgets, month, year])
+  }, [user, transactions, cardExpenses, cards, month, year])
 
   // Unread notifications
   const unreadNotifications = useMemo(() => {

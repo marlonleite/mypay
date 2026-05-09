@@ -14,8 +14,9 @@ const DEV_SERVER_URL = `http://localhost:${VITE_DEV_PORT}`
  * Chromium resolves "localhost" to 127.0.0.1 first → connection refused / blank window.
  *
  * Ops (production API + Firebase):
- * - mypay-api CORS_ORIGINS: `http://127.0.0.1:<port>` (default port below).
- * - Firebase Auth → Authorized domains: add `127.0.0.1` (not only `localhost`).
+ * - mypay-api CORS: CORS_ORIGIN_REGEX covers localhost and 127.0.0.1 with any port.
+ * - Firebase Auth → Authorized domains: `localhost` is default; avoid needing `127.0.0.1`
+ *   by loading the UI at http://localhost:<port> while the server still listens on 127.0.0.1.
  */
 const PACKAGED_STATIC_PORT_DEFAULT = 47382
 
@@ -97,7 +98,7 @@ function startPackagedDistServer(distDir, port) {
       console.error(
         `[myPay Electron] Static server failed (port ${port}).`,
         err.code === 'EADDRINUSE'
-          ? `Free the port or set MYPAY_ELECTRON_STATIC_PORT. CORS must allow http://127.0.0.1:${port}`
+          ? `Free the port or set MYPAY_ELECTRON_STATIC_PORT. CORS allow http://localhost:${port}`
           : err.message
       )
       reject(err)
@@ -106,7 +107,8 @@ function startPackagedDistServer(distDir, port) {
     server.once('error', onListenError)
     server.listen(port, '127.0.0.1', () => {
       server.removeListener('error', onListenError)
-      const url = `http://127.0.0.1:${port}/`
+      // Document origin http://localhost — Firebase includes "localhost" in authorized domains by default.
+      const url = `http://localhost:${port}/`
       resolve({ server, url })
     })
   })

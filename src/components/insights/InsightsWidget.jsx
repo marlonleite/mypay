@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { Lightbulb, ChevronRight } from 'lucide-react'
 import InsightCard from './InsightCard'
 import { generateInsights } from '../../services/insightService'
-import { useTransactions, useAllCardExpenses, useCategories, useBudgets } from '../../hooks/useFirestore'
-import { useGoals } from '../../contexts/GoalsContext'
+import { useTransactions, useAllCardExpenses, useCategories } from '../../hooks/useFirestore'
 import { usePrivacy } from '../../contexts/PrivacyContext'
 import { isDateInMonth } from '../../utils/helpers'
 
@@ -18,8 +17,6 @@ export default function InsightsWidget({ month, year, onViewAll }) {
   const { transactions: currentTransactions } = useTransactions(month, year)
   const { expenses: allCardExpenses } = useAllCardExpenses()
   const { categories } = useCategories()
-  const { budgets } = useBudgets(month, year)
-  const { goals } = useGoals()
 
   // Calcular mês anterior
   const prevMonth = month === 0 ? 11 : month - 1
@@ -47,8 +44,8 @@ export default function InsightsWidget({ month, year, onViewAll }) {
       currentCardExpenses,
       previousCardExpenses,
       categories,
-      budgets,
-      goals,
+      budgets: [],
+      goals: [],
       month,
       year
     })
@@ -58,8 +55,6 @@ export default function InsightsWidget({ month, year, onViewAll }) {
     currentCardExpenses,
     previousCardExpenses,
     categories,
-    budgets,
-    goals,
     month,
     year
   ])
