@@ -586,10 +586,25 @@ export default function FaturaResult({
       {applyWarningBanner && (
         <div className="px-4 pt-3 border-t border-dark-800">
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-            <p className="text-amber-200 font-medium">
-              {applyWarningBanner.succeeded} linha(s) salvas; {applyWarningBanner.failed} falhou(aram).
-              Corrija as categorias ou dados e use o botão abaixo para reenviar só o que falhou (nova tentativa).
-            </p>
+            {applyWarningBanner.importBlockedReason === 'invoice_paid' ? (
+              <p className="text-amber-200 font-medium leading-snug">
+                {applyWarningBanner.succeeded} linha(s) salvas.{' '}
+                {applyWarningBanner.failed === 1
+                  ? '1 linha não foi importada'
+                  : `${applyWarningBanner.failed} linhas não foram importadas`}{' '}
+                porque a{' '}
+                <span className="text-amber-100">fatura do período selecionado está paga</span> no
+                app. Isso não é erro de categoria. Em <strong className="text-amber-100">Cartões</strong>,
+                reabra essa fatura (ou ajuste o mês de vencimento do import) e só então use o botão
+                abaixo para reenviar o que falhou.
+              </p>
+            ) : (
+              <p className="text-amber-200 font-medium">
+                {applyWarningBanner.succeeded} linha(s) salvas; {applyWarningBanner.failed} falhou(aram).
+                Corrija as categorias ou dados e use o botão abaixo para reenviar só o que falhou (nova
+                tentativa).
+              </p>
+            )}
             <ul className="mt-2 max-h-36 overflow-y-auto text-dark-300 space-y-1 text-xs">
               {applyWarningBanner.failedLines.map((l) => (
                 <li key={`${l.lineId}-${l.description}`}>
@@ -605,7 +620,9 @@ export default function FaturaResult({
                 size="sm"
                 disabled={saving}
               >
-                Tentar só as linhas com erro
+                {applyWarningBanner.importBlockedReason === 'invoice_paid'
+                  ? 'Reenviar linhas com erro (reabra a fatura antes, se ainda estiver paga)'
+                  : 'Tentar só as linhas com erro'}
               </Button>
             </div>
           </div>

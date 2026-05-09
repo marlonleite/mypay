@@ -31,6 +31,11 @@ const FRIENDLY_MAP = [
       'Não dá para excluir um pagamento direto. Use "Reabrir fatura" para desfazê-lo.',
   },
   {
+    test: /Invoice is paid; reopen it before adding card purchases/i,
+    message:
+      'Esta fatura está paga. Em Cartões, reabra a fatura para poder importar ou lançar despesas nela.',
+  },
+  {
     test: /Invoice already paid/i,
     message: 'Esta fatura já está paga.',
   },
@@ -65,6 +70,13 @@ const FRIENDLY_MAP = [
  */
 export function isInvoiceNotPaidForReopenError(error) {
   return /Invoice is not paid/i.test(String(error?.message ?? error))
+}
+
+/**
+ * Erro 409 do apply em lote quando credit_card_invoice está paid (mypay-api).
+ */
+export function isPaidInvoiceBlocksImportsError(message) {
+  return /Invoice is paid; reopen it before adding card purchases/i.test(String(message ?? ''))
 }
 
 /**

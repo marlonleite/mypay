@@ -32,7 +32,7 @@ import {
 import { buildTransactionPayload, resolveCreditCardInvoiceIdForDueMonth, resolveInvoiceDueDateForBillMonth } from '../hooks/useFirestore'
 import { apiClient } from '../services/apiClient'
 import { DOCUMENT_TYPES } from '../utils/constants'
-import { describeApiError } from '../utils/apiErrors'
+import { describeApiError, isPaidInvoiceBlocksImportsError } from '../utils/apiErrors'
 import { useToast } from '../contexts/ToastContext'
 import Input from '../components/ui/Input'
 
@@ -348,17 +348,29 @@ export default function Documents({ month, year }) {
           .filter((r) => r.error)
           .map((r) => {
             const ex = enriched.find((x) => x._clientLineId === r.client_line_id)
+            const rawMsg = r.error?.message || r.error?.type || 'Erro'
             return {
               lineId: ex?.lineId,
               description: ex?.description || '—',
-              message: r.error?.message || r.error?.type || 'Erro',
+              message: describeApiError({ message: rawMsg }, rawMsg),
             }
           })
+
+        const importBlockedReason =
+          failedLines.length > 0 &&
+          applyResponse.results
+            .filter((r) => r.error)
+            .every((r) =>
+              isPaidInvoiceBlocksImportsError(r.error?.message || r.error?.type)
+            )
+            ? 'invoice_paid'
+            : null
 
         setFaturaApplyBanner({
           succeeded: applyResponse.succeeded,
           failed: applyResponse.failed,
           failedLines,
+          importBlockedReason,
           onRetry: () => {
             setFaturaApplyBanner(null)
             handleBatchCardExpenses(retryExpenses)
