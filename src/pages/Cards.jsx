@@ -208,20 +208,6 @@ export default function Cards({
     return isDateInMonth(expense.date, billMonth, billYear)
   }
 
-  // Item está fora do ciclo da fatura quando a data da compra cai antes do
-  // starting_date ou depois do closing_date da invoice atual. Usado pra sinalizar
-  // visualmente que o lançamento foi vinculado à fatura por outro critério (ex.:
-  // edição manual de billMonth/billYear ou parcela com data deslocada).
-  const getInvoicePeriodFlag = (expense) => {
-    if (!currentInvoice?.startingDate || !currentInvoice?.closingDate) return null
-    if (!expense?.date) return null
-    const d = expense.date instanceof Date ? expense.date : new Date(expense.date)
-    if (Number.isNaN(d.getTime())) return null
-    if (d < currentInvoice.startingDate) return 'before'
-    if (d > currentInvoice.closingDate) return 'after'
-    return null
-  }
-
   const formatInvoicePeriodLabel = () => {
     if (!currentInvoice?.startingDate || !currentInvoice?.closingDate) return ''
     return `${formatDate(currentInvoice.startingDate)} → ${formatDate(currentInvoice.closingDate)}`
@@ -1336,18 +1322,12 @@ export default function Cards({
             />
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-dark-400 font-medium">Lançamentos do mês</p>
+              <p className="text-xs text-dark-400 font-medium">
+                {currentInvoice ? 'Lançamentos da fatura' : 'Lançamentos do mês'}
+              </p>
               {filteredCardExpenses.map((expense) => {
                 const isIncome = expense.type === TRANSACTION_TYPES.INCOME
                 const bulkSelected = bulkSelectedExpenseIds.includes(expense.id)
-                const periodFlag = getInvoicePeriodFlag(expense)
-                const periodBadgeLabel =
-                  periodFlag === 'before' ? 'antes do ciclo'
-                  : periodFlag === 'after' ? 'após o ciclo'
-                  : null
-                const periodBadgeTitle = periodFlag
-                  ? `Vinculado a esta fatura — ciclo ${formatInvoicePeriodLabel()}`
-                  : ''
                 return (
                   <div
                     key={expense.id}
@@ -1387,14 +1367,6 @@ export default function Cards({
                         {expense.totalInstallments > 1 && (
                           <span className={`ml-1 ${isIncome ? 'text-emerald-400' : 'text-orange-400'}`}>
                             ({expense.installment}/{expense.totalInstallments})
-                          </span>
-                        )}
-                        {periodBadgeLabel && (
-                          <span
-                            className="ml-1.5 inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/15 text-amber-300 rounded align-middle"
-                            title={periodBadgeTitle}
-                          >
-                            {periodBadgeLabel}
                           </span>
                         )}
                       </p>

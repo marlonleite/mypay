@@ -437,59 +437,24 @@ export default function FaturaResult({
             className="w-28"
           />
         </div>
-        {selectedCard &&
-          !invoicesLoading &&
-          invoices.length > 0 &&
-          invoices.some((i) => i.dueDate) && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            <span className="text-xs text-dark-500 w-full">Faturas com vencimento neste cartão:</span>
-            {Array.from(
-              new Map(
-                invoices
-                  .filter((i) => i.dueDate)
-                  .map((i) => {
-                    const m = i.dueDate.getMonth()
-                    const y = i.dueDate.getFullYear()
-                    return [`${y}-${m}`, { m, y }]
-                  })
-              ).values()
-            ).map(({ m, y }) => (
-              <button
-                key={`${y}-${m}`}
-                type="button"
-                onClick={() => {
-                  userTouchedPeriod.current = true
-                  setBillPeriod({ billMonth: m, billYear: y })
-                }}
-                className={`rounded-lg border px-2 py-1 text-xs transition-colors ${
-                  billMonth === m && billYear === y
-                    ? 'border-violet-500/50 bg-violet-500/15 text-violet-200'
-                    : 'border-dark-600 bg-dark-800 text-dark-300 hover:border-dark-500 hover:text-white'
-                }`}
-              >
-                {MONTHS[m]} {y}
-              </button>
-            ))}
-          </div>
-        )}
         {selectedCard && !invoicesLoading && invoices.length === 0 && (
           <p className="mt-2 text-xs text-dark-400 leading-snug">
-            Ainda não há faturas listadas para este cartão. Você pode importar mesmo assim: cada linha usa a data
-            extraída do PDF e o servidor associa à fatura do período.
+            Ainda não há faturas listadas para este cartão. Você pode importar mesmo assim: o servidor associa ou cria a
+            fatura conforme a data de cada linha, ou alinhe o vencimento em Cartões e importe de novo com o mesmo
+            período.
           </p>
         )}
         {selectedCard && !invoicesLoading && invoices.length > 0 && !targetCreditCardInvoiceId && (
           <p className="mt-2 text-xs text-amber-200/90 leading-snug">
-            Não há fatura com vencimento exatamente no mês/ano selecionado. Ajuste o seletor, use um dos
-            vencimentos acima ou importe assim mesmo — o vínculo explícito à fatura só aplica quando o vencimento
-            coincide; sem isso, cada linha segue a data do extrato e o servidor resolve o período.
+            Não há fatura com vencimento em {MONTHS[billMonth]} {billYear} neste cartão. Ajuste o mês/ano se necessário,
+            materialize a fatura em Cartões nesse vencimento, ou importe assim mesmo — sem vínculo, o servidor pode
+            usar a data de cada linha para decidir o período.
           </p>
         )}
         {selectedCard && targetCreditCardInvoiceId && (
           <p className="mt-2 text-xs text-blue-200/90 leading-snug">
-            Todas as linhas selecionadas serão lançadas nesta fatura — inclusive as com data fora do mês de
-            fechamento (parcelas atrasadas, IOF, conversão de câmbio). É o comportamento correto: a fatura
-            agrupa as compras pelo ciclo, não pela data de cada linha.
+            Fatura de {MONTHS[billMonth]} {billYear} encontrada: todas as linhas selecionadas serão lançadas nela,
+            inclusive com datas do PDF em outros meses (parcelas, IOF, câmbio, etc.).
           </p>
         )}
       </div>
