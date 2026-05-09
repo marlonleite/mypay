@@ -118,32 +118,10 @@ function AppContent() {
     [setSearchParams]
   )
 
-  // Abre o modal de detalhes de um cartão na aba Cartões. Usado por
-  // Lançamentos quando o DELETE de um pagamento de fatura retorna 409
-  // (transação vinculada a fatura paga → usuário precisa Reabrir fatura).
+  // Deep-link optional (?card= & ?invoice=) → Cards abre o modal e alinha o mês
+  // ao vencimento da fatura indicada.
   const openCardId = searchParams.get('card')
   const openInvoiceId = searchParams.get('invoice')
-
-  // paidCreditCardInvoiceId deep-links à fatura certa: o mês global em Cartões
-  // é o do vencimento, não o da data do lançamento de pagamento.
-  const handleOpenCardInvoice = useCallback(
-    (cardId, month, year, paidCreditCardInvoiceId = null) => {
-      setSearchParams(
-        (prev) => {
-          const p = new URLSearchParams(prev)
-          p.set('tab', 'cards')
-          p.set('card', cardId)
-          if (typeof month === 'number') p.set('month', String(month + 1))
-          if (typeof year === 'number') p.set('year', String(year))
-          if (paidCreditCardInvoiceId) p.set('invoice', paidCreditCardInvoiceId)
-          else p.delete('invoice')
-          return p
-        },
-        { replace: true }
-      )
-    },
-    [setSearchParams]
-  )
 
   // Limpa o param `card` da URL — usado pelo Cards.jsx depois de abrir o
   // modal pra evitar reabertura espontânea ao trocar mês/aba.
@@ -215,7 +193,6 @@ function AppContent() {
             onShowFiltersChange={setTransactionShowFilters}
             dateRange={transactionDateRange}
             onDateRangeChange={setTransactionDateRange}
-            onOpenCardInvoice={handleOpenCardInvoice}
           />
         )
       case 'cards':

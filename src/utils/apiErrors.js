@@ -60,6 +60,14 @@ const FRIENDLY_MAP = [
 ]
 
 /**
+ * POST /credit-card-invoices/{id}/reopen falha quando a fatura não está
+ * `paid` no backend (lançamento só "Pago" no UI ou pagamento órfão).
+ */
+export function isInvoiceNotPaidForReopenError(error) {
+  return /Invoice is not paid/i.test(String(error?.message ?? error))
+}
+
+/**
  * Tenta extrair uma mensagem amigável de um Error vindo do apiClient.
  * Retorna `null` se não for um caso conhecido — caller pode mostrar `error.message`.
  */

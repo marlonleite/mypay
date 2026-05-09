@@ -1826,6 +1826,12 @@ export function useBillPayments(month, year) {
     return payments.find(p => p.cardId === cardId)
   }
 
+  /** Pagamento cuja transação aponta para esta invoice (um lançamento /pay por fatura). */
+  const getBillPaymentForInvoice = (invoiceId) => {
+    if (!invoiceId) return undefined
+    return payments.find((p) => p.paidCreditCardInvoiceId === invoiceId)
+  }
+
   // Obter todos os pagamentos de uma fatura
   const getBillPayments = (cardId) => {
     return payments.filter(p => p.cardId === cardId)
@@ -1906,6 +1912,7 @@ export function useBillPayments(month, year) {
     isBillFullyPaid,
     getTotalPaid,
     getBillPayment,
+    getBillPaymentForInvoice,
     getBillPayments,
     getPreviousBalance,
     addBillPayment,

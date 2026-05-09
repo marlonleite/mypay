@@ -3,10 +3,11 @@ import { apiClient } from './apiClient'
 /**
  * Wrapper sobre os endpoints de fatura (Wave9): pagar / reabrir / breakdown.
  *
- * Pagar fatura cria uma transação contábil (paid_credit_card_invoice_id) e
- * marca a fatura como ``status='paid'``. Reabrir apaga essa transação e
- * volta a fatura para ``status='open'`` — anexos da fatura são preservados,
- * pois vivem em ``credit_card_invoice_attachments`` (não na transação).
+ * Pagar fatura cria **um** lançamento contábil (`paid_credit_card_invoice_id`) e
+ * atualiza a fatura (``payment_amount`` / ``status``). Reabrir apaga esse
+ * lançamento e volta a fatura para ``status='open'`` — anexos permanecem em
+ * ``credit_card_invoice_attachments`` (não na transação). Segundo `/pay` na
+ * mesma invoice deve ser bloqueado no app e rejeitado na API.
  */
 
 function toIsoDate(value) {

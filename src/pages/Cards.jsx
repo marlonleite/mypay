@@ -56,6 +56,18 @@ function sumCardBillLedger(expensesList) {
   return expensesList.reduce((sum, e) => sum + ledgerOwedDeltaForCardExpense(e), 0)
 }
 
+/** `payment_amount` da invoice já reflete pagamento alocado — evita segundo POST /pay (um lançamento por fatura). */
+const INVOICE_REGISTERED_PAYMENT_EPSILON = 0.01
+
+function hasRegisteredBillPayment(invoice) {
+  if (!invoice) return false
+  if (invoice.status === 'paid') return true
+  return (invoice.paymentAmount ?? 0) > INVOICE_REGISTERED_PAYMENT_EPSILON
+}
+
+const DUPLICATE_INVOICE_PAY_MESSAGE =
+  'Esta fatura já tem pagamento registrado (um por fatura). Reabra a fatura para desfazer e poder pagar de novo.'
+
 export default function Cards({
   month, year, onMonthChange, onNavigate,
   openCardId, openInvoiceId, onConsumeOpenCard, onConsumeOpenInvoice,
@@ -79,8 +91,7 @@ export default function Cards({
     isBillPaid,
     isBillFullyPaid,
     getTotalPaid,
-    getBillPayment,
-    getBillPayments,
+    getBillPaymentForInvoice,
     getPreviousBalance,
     addBillPayment,
     reopenBillPayment,
@@ -498,6 +509,13 @@ export default function Cards({
   }
 
   const openPayBillModal = () => {
+    const invoice = findInvoiceByDueMonth(month, year)
+    if (!invoice) return
+    if (hasRegisteredBillPayment(invoice)) {
+      toast.error(DUPLICATE_INVOICE_PAY_MESSAGE)
+      return
+    }
+
     const billAmount = invoiceFullChargeTotal
     const previousBalance = getPreviousBalance(selectedCard?.id)
     const totalDue = billAmount + previousBalance
@@ -715,6 +733,10 @@ export default function Cards({
       console.error(`Nenhuma fatura encontrada pra ${MONTHS[month]}/${year} no cartão ${selectedCard.name}`)
       return
     }
+    if (hasRegisteredBillPayment(invoice)) {
+      toast.error(DUPLICATE_INVOICE_PAY_MESSAGE)
+      return
+    }
 
     const billAmount = invoiceFullChargeTotal
     const previousBalance = invoice.previousBalance
@@ -759,9 +781,7 @@ export default function Cards({
   const handleCancelPayment = async () => {
     if (!selectedCard) return
 
-    // Wave9: prefere localizar a fatura pelo mês/ano corrente — `getBillPayment`
-    // ainda funciona pra recuperar o id da transação, mas /reopen aceita só
-    // invoice_id. A transação de pagamento é apagada pelo backend.
+    // Wave9: reopen desfaz o pagamento vinculado à fatura (um lançamento por fatura no fluxo /pay).
     const invoice = findInvoiceByDueMonth(month, year)
     if (!invoice) return
 
@@ -1124,7 +1144,9 @@ export default function Cards({
               // billPayment pode ser null no estado órfão (invoice.status='paid'
               // sem transação correspondente no mês visualizado). Cai em
               // currentInvoice.paidAt e omite o nome da conta nesse caso.
-              const billPayment = getBillPayment(selectedCard.id)
+              const billPayment = currentInvoice
+                ? getBillPaymentForInvoice(currentInvoice.id)
+                : undefined
               const accountName = billPayment ? getAccountName(billPayment.accountId) : null
               const paidAtRaw = billPayment?.paidAt ?? currentInvoice?.paidAt ?? null
               const paidAtStr = paidAtRaw

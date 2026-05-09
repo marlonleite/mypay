@@ -61,7 +61,7 @@ import {
   isInstallmentPlanTransaction,
   formatInstallmentFraction
 } from '../utils/transactionSemantics'
-import { describeApiError, friendlyApiError } from '../utils/apiErrors'
+import { describeApiError, isInvoiceNotPaidForReopenError } from '../utils/apiErrors'
 import { useToast } from '../contexts/ToastContext'
 import { setPaidOverride, removePaidOverride } from '../utils/recurrencePaidDisplay'
 
@@ -95,7 +95,6 @@ export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
   filters, onFiltersChange, searchTerm, onSearchTermChange,
   showFilters, onShowFiltersChange, dateRange, onDateRangeChange,
-  onOpenCardInvoice
 }) {
   const { formatCurrency } = usePrivacy()
   const { user } = useAuth()
@@ -1106,7 +1105,6 @@ export default function Transactions({
    * @param {'single'|'all'|'from_forward'} deleteMode
    */
   const confirmDelete = async (id, deleteMode = 'single') => {
-    // Declarado fora do try pra ficar acessível no catch (redirect 409).
     const transactionToLog = transactionToDelete || transactions.find(t => t.id === id)
     try {
       setDeleteProgress({ id, mode: deleteMode })
@@ -1134,55 +1132,52 @@ export default function Transactions({
           await deleteTransaction(txn.id)
         }
       } else {
-        await deleteTransaction(id)
-        // Registrar atividade de exclusão
-        if (transactionToLog) {
-          logTransactionDelete(transactionToLog)
-        }
-      }
+        const tx = transactionToLog
+        const isBillPayment =
+          Boolean(tx?.paidCreditCardInvoiceId) && Boolean(tx?.paidCreditCardId)
 
-      setDetailModalOpen(false)
-      setSelectedTransaction(null)
-      setDeleteModalOpen(false)
-      setTransactionToDelete(null)
-    } catch (error) {
-      console.error('Error deleting transaction:', error)
-      // Wave9: backend bloqueia DELETE direto em pagamento de fatura (transação
-      // com paid_credit_card_invoice_id). Quando isso acontece, redireciona
-      // o usuário pra Cartões com o cartão da fatura aberto — daí ele clica
-      // em "Reabrir fatura" pra desfazer o pagamento.
-      const status = parseHttpStatus(error)
-      const isLinkedBillPayment =
-        status === 409 &&
-        Boolean(transactionToLog?.paidCreditCardInvoiceId) &&
-        Boolean(transactionToLog?.paidCreditCardId)
-      if (isLinkedBillPayment && onOpenCardInvoice) {
-        const txDate = transactionToLog?.date
-          ? (transactionToLog.date instanceof Date ? transactionToLog.date : new Date(transactionToLog.date))
-          : null
-        toast.info(friendlyApiError(error) || 'Esta transação é o pagamento de uma fatura — abra "Reabrir fatura" para excluir.')
-        onOpenCardInvoice(
-          transactionToLog.paidCreditCardId,
-          txDate ? txDate.getMonth() : month,
-          txDate ? txDate.getFullYear() : year,
-          transactionToLog.paidCreditCardInvoiceId,
-        )
+        if (isBillPayment) {
+          if (
+            !window.confirm(
+              'Este lançamento é o pagamento da fatura. Excluir equivale a reabrir a fatura (desfaz o pagamento vinculado). Continuar?'
+            )
+          ) {
+            return
+          }
+          const { reopenInvoice: reopenInvoiceApi } = await import('../services/invoiceService')
+          try {
+            await reopenInvoiceApi(tx.paidCreditCardInvoiceId)
+            toast.success('Pagamento desfeito. A fatura foi reaberta.')
+          } catch (reopenErr) {
+            if (isInvoiceNotPaidForReopenError(reopenErr)) {
+              await deleteTransaction(id)
+              if (transactionToLog) {
+                logTransactionDelete(transactionToLog)
+              }
+              toast.success('Lançamento excluído. A fatura já estava em aberto no cadastro.')
+            } else {
+              throw reopenErr
+            }
+          }
+          await refreshTransactions()
+        } else {
+          await deleteTransaction(id)
+          if (transactionToLog) {
+            logTransactionDelete(transactionToLog)
+          }
+        }
+
         setDetailModalOpen(false)
         setSelectedTransaction(null)
         setDeleteModalOpen(false)
         setTransactionToDelete(null)
-      } else {
-        toast.error(describeApiError(error, 'Não foi possível excluir o lançamento.'))
       }
+    } catch (error) {
+      console.error('Error deleting transaction:', error)
+      toast.error(describeApiError(error, 'Não foi possível excluir o lançamento.'))
     } finally {
       setDeleteProgress(null)
     }
-  }
-
-  // Extrai o HTTP status code da mensagem do apiClient: "API <method> <path> → <code>: <detail>".
-  function parseHttpStatus(error) {
-    const m = String(error?.message ?? '').match(/→ (\d{3}):/)
-    return m ? Number(m[1]) : null
   }
 
   const handleAddAttachmentsToDetail = async (files) => {
