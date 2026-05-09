@@ -111,7 +111,15 @@ Os arquivos serão gerados na pasta `dist/`.
 
 O logo oficial está em **`public/logo-mypay.svg`** (favicon, `manifest.json`, tela de login, ícones em notificações web/FCM). O símbolo “$” usa fonte do sistema para renderizar sem depender do Montserrat.
 
-Para trocar o **ícone do app** no launcher Android ou no instalador Electron (`.icns` / `.ico`), exporte PNG ou ícones nativos a partir desse SVG (por exemplo fluxo com [Capacitor Assets](https://capacitorjs.com/docs/guides/splash-screens-and-icons) ou o gerador de ícones do electron-builder).
+**Ícones nativos (Android launcher + Electron dock / instalador):** a partir do mesmo SVG:
+
+```bash
+npm run icons:generate
+```
+
+Isso roda `@capacitor/assets` (Android mipmaps, adaptive icon, splashes) e gera `electron/icons/icon.png` (1024×1024) para o `electron-builder`. Rode de novo sempre que trocar `public/logo-mypay.svg`.
+
+Para só uma plataforma: `npm run icons:android` ou `npm run icons:electron`.
 
 ## Electron e Android: builds e como atualizar
 
@@ -133,7 +141,7 @@ A **PWA** (ex.: Vercel) passa a servir o bundle novo após cada deploy. **Electr
 
 O instalador sai em `dist-electron/myPay-<versão>.dmg` (pasta ignorada no git).
 
-**Atualizar o app instalado:** rode de novo `npm run electron:build:mac`, abra o DMG e arraste **myPay** para **Aplicativos**, substituindo a cópia antiga.
+**Atualizar o app instalado:** `npm run native:install` (copia o `.app` para `/Applications` e atualiza o Android por USB) **ou** rode `npm run electron:build:mac`, abra o DMG e arraste **myPay** para **Aplicativos**.
 
 ### Android (USB / sideload, sem Play Store)
 
@@ -149,6 +157,14 @@ O instalador sai em `dist-electron/myPay-<versão>.dmg` (pasta ignorada no git).
 npm run android:build:debug
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+**macOS + Android num comando** (um `vite build`, gera `.app`, copia para `/Applications`, gera APK debug e `adb install -r`):
+
+```bash
+npm run native:install
+```
+
+Use `SKIP_ELECTRON=1` ou `SKIP_ANDROID=1` se for só uma plataforma.
 
 O `-r` substitui a instalação anterior. Para **release** assinado com keystore próprio, configure `signingConfigs` no Gradle (detalhes arquitetura em `PLAN-ELECTRON-CAPACITOR.md`).
 
