@@ -697,7 +697,10 @@ export default function Cards({
       await refreshInvoices()
 
       const failedIds = new Set(
-        (results || []).filter((r) => !r.deleted).map((r) => r.id)
+        (results || [])
+          .filter((r) => r?.error != null || r?.deleted === false)
+          .map((r) => r.id)
+          .filter(Boolean)
       )
       if (failedCount > 0) {
         setBulkSelectedExpenseIds((prev) => prev.filter((id) => failedIds.has(id)))

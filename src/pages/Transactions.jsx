@@ -1148,6 +1148,8 @@ export default function Transactions({
           try {
             await reopenInvoiceApi(tx.paidCreditCardInvoiceId)
             toast.success('Pagamento desfeito. A fatura foi reaberta.')
+            const { emitTransactionRelatedInvalidation } = await import('../services/eventStream')
+            emitTransactionRelatedInvalidation()
           } catch (reopenErr) {
             if (isInvoiceNotPaidForReopenError(reopenErr)) {
               await deleteTransaction(id)

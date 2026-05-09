@@ -61,6 +61,15 @@ export function emitLocalEntityEvent(entity, action = 'invalidate', id = null) {
 }
 
 /**
+ * Após mutar transações (ou pagar/reabrir fatura via API direta). Com SSE
+ * desligado, evita lista de fatura / cartões defasada até recarregar a página.
+ */
+export function emitTransactionRelatedInvalidation() {
+  emitLocalEntityEvent('transaction', 'invalidate')
+  emitLocalEntityEvent('transfer', 'invalidate')
+}
+
+/**
  * Parse SSE stream chunks. Cada evento separado por `\n\n`; campos por `\n`.
  * Formato: `event: <name>\ndata: <json>\n\n`
  */

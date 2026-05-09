@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { subscribeMany, emitLocalEntityEvent } from '../services/eventStream'
+import { subscribeMany, emitLocalEntityEvent, emitTransactionRelatedInvalidation } from '../services/eventStream'
 import { resolveRecurrenceLinkedPaid } from '../utils/recurrencePaidDisplay'
 // 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
 // pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
@@ -277,6 +277,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     const payload = await buildTransactionPayload(data, apiClient)
     const created = await apiClient.post('/api/v1/transactions', payload)
     await fetchTransactions()
+    emitTransactionRelatedInvalidation()
     return mapTransaction(created) // consumidores usam result.id
   }
 
@@ -286,6 +287,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     const payload = await buildTransactionPayload(data, apiClient)
     const updated = await apiClient.put(`/api/v1/transactions/${id}`, payload)
     await fetchTransactions()
+    emitTransactionRelatedInvalidation()
     return mapTransaction(updated)
   }
 
@@ -311,6 +313,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     }
     await apiClient.delete(`/api/v1/transactions/${id}`, body)
     await fetchTransactions()
+    emitTransactionRelatedInvalidation()
   }
 
   // ❌ updateRecurrenceGroup / deleteRecurrenceGroup REMOVIDOS na Onda 7 do refactor.
@@ -545,6 +548,7 @@ export function useCreditCardInvoices(cardId) {
     const { payInvoice: payInvoiceService } = await import('../services/invoiceService')
     const result = await payInvoiceService(invoiceId, input)
     await fetchInvoices()
+    emitTransactionRelatedInvalidation()
     return result
   }
 
@@ -555,6 +559,7 @@ export function useCreditCardInvoices(cardId) {
     const { reopenInvoice: reopenInvoiceService } = await import('../services/invoiceService')
     const result = await reopenInvoiceService(invoiceId)
     await fetchInvoices()
+    emitTransactionRelatedInvalidation()
     return result
   }
 
@@ -1024,6 +1029,7 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     }
     const created = await apiClient.post('/api/v1/transactions', payload)
     await fetchExpenses()
+    emitTransactionRelatedInvalidation()
     return mapTransactionAsCardExpense(created)
   }
 
@@ -1033,6 +1039,7 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     const payload = await buildCardExpenseAsTransactionPayload(data, apiClient)
     const updated = await apiClient.put(`/api/v1/transactions/${id}`, payload)
     await fetchExpenses()
+    emitTransactionRelatedInvalidation()
     return mapTransactionAsCardExpense(updated)
   }
 
@@ -1043,6 +1050,7 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     if (!options.skipRefetch) {
       await fetchExpenses()
     }
+    emitTransactionRelatedInvalidation()
   }
 
   /**
@@ -1079,6 +1087,7 @@ export function useCardExpenses(cardId, month, year, invoiceId) {
     if (!skipRefetch) {
       await fetchExpenses()
     }
+    emitTransactionRelatedInvalidation()
     return { results: allResults, deleted_count, failed_count }
   }
 
@@ -1579,6 +1588,7 @@ export function useTransfers(month, year) {
 
     const created = await apiClient.post('/api/v1/transfers', payload)
     await fetchTransfers()
+    emitTransactionRelatedInvalidation()
     return mapTransfer(created)
   }
 
@@ -1591,6 +1601,7 @@ export function useTransfers(month, year) {
     const { apiClient } = await import('../services/apiClient')
     await apiClient.delete(`/api/v1/transfers/${id}`)
     await fetchTransfers()
+    emitTransactionRelatedInvalidation()
   }
 
   return {
@@ -1870,6 +1881,7 @@ export function useBillPayments(month, year) {
       notes: data.notes,
     })
     await fetchPayments()
+    emitTransactionRelatedInvalidation()
     return {
       id: result.paymentTransactionId,
       cardId: data.cardId ?? null,
@@ -1889,6 +1901,7 @@ export function useBillPayments(month, year) {
     const { reopenInvoice } = await import('../services/invoiceService')
     const result = await reopenInvoice(invoiceId)
     await fetchPayments()
+    emitTransactionRelatedInvalidation()
     return result
   }
 
