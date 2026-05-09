@@ -157,21 +157,68 @@ export default function FaturaResult({
   useEffect(() => {
     if (userTouchedPeriod.current || periodAlignedToInvoices.current) return
     if (!invoices?.length) return
-    const latest = findLatestPurchaseDate(data?.transacoes)
-    if (!latest) return
-    const containing = invoices.find(
-      (inv) =>
-        inv.startingDate &&
-        inv.closingDate &&
-        latest >= inv.startingDate &&
-        latest <= inv.closingDate
-    )
-    if (containing?.dueDate) {
+
+    const trySetFromInvoice = (inv) => {
+      if (!inv?.dueDate) return false
       setBillPeriod({
-        billMonth: containing.dueDate.getMonth(),
-        billYear: containing.dueDate.getFullYear(),
+        billMonth: inv.dueDate.getMonth(),
+        billYear: inv.dueDate.getFullYear(),
       })
       periodAlignedToInvoices.current = true
+      return true
+    }
+
+    const latest = findLatestPurchaseDate(data?.transacoes)
+    if (latest) {
+      const containing = invoices.find(
+        (inv) =>
+          inv.startingDate &&
+          inv.closingDate &&
+          latest >= inv.startingDate &&
+          latest <= inv.closingDate
+      )
+      if (trySetFromInvoice(containing)) return
+    }
+
+    const lineDates = []
+    for (const t of data?.transacoes || []) {
+      if (!t?.data || typeof t.data !== 'string') continue
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t.data.trim())) continue
+      const d = parseLocalDate(t.data.trim())
+      if (!Number.isNaN(d.getTime())) lineDates.push(d)
+    }
+    if (lineDates.length > 0) {
+      let best = null
+      let bestScore = -1
+      for (const inv of invoices) {
+        if (!inv.startingDate || !inv.closingDate) continue
+        let score = 0
+        for (const d of lineDates) {
+          if (d >= inv.startingDate && d <= inv.closingDate) score++
+        }
+        if (score > bestScore) {
+          bestScore = score
+          best = inv
+        }
+      }
+      if (bestScore > 0 && trySetFromInvoice(best)) return
+    }
+
+    const iaM = data?.mes_referencia
+    const iaY = data?.ano_referencia
+    if (typeof iaM === 'number' && iaM >= 1 && iaM <= 12 && iaY) {
+      const inv = invoices.find(
+        (i) =>
+          i.dueDate &&
+          i.dueDate.getMonth() === iaM - 1 &&
+          i.dueDate.getFullYear() === iaY
+      )
+      if (trySetFromInvoice(inv)) return
+    }
+
+    const withDue = invoices.filter((i) => i.dueDate)
+    if (withDue.length === 1) {
+      trySetFromInvoice(withDue[0])
     }
   }, [invoices, data])
 
@@ -184,8 +231,9 @@ export default function FaturaResult({
 
   /**
    * Fatura alvo via mês de VENCIMENTO (convenção do app global).
-   * Sem id, o backend cairia no roteamento data-based, espalhando itens em
-   * múltiplas faturas — ancoramos explicitamente no invoice_id correto.
+   * Com id, todas as linhas do lote recebem o mesmo credit_card_invoice_id.
+   * Sem id, o apply manda cada linha com data civil (originalDate) e o backend
+   * pode resolver a fatura por período (ensure_invoice_for_period).
    */
   const targetCreditCardInvoiceId = useMemo(() => {
     if (!selectedCard || typeof billMonth !== 'number' || typeof billYear !== 'number') return null
@@ -389,11 +437,52 @@ export default function FaturaResult({
             className="w-28"
           />
         </div>
+        {selectedCard &&
+          !invoicesLoading &&
+          invoices.length > 0 &&
+          invoices.some((i) => i.dueDate) && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className="text-xs text-dark-500 w-full">Faturas com vencimento neste cartão:</span>
+            {Array.from(
+              new Map(
+                invoices
+                  .filter((i) => i.dueDate)
+                  .map((i) => {
+                    const m = i.dueDate.getMonth()
+                    const y = i.dueDate.getFullYear()
+                    return [`${y}-${m}`, { m, y }]
+                  })
+              ).values()
+            ).map(({ m, y }) => (
+              <button
+                key={`${y}-${m}`}
+                type="button"
+                onClick={() => {
+                  userTouchedPeriod.current = true
+                  setBillPeriod({ billMonth: m, billYear: y })
+                }}
+                className={`rounded-lg border px-2 py-1 text-xs transition-colors ${
+                  billMonth === m && billYear === y
+                    ? 'border-violet-500/50 bg-violet-500/15 text-violet-200'
+                    : 'border-dark-600 bg-dark-800 text-dark-300 hover:border-dark-500 hover:text-white'
+                }`}
+              >
+                {MONTHS[m]} {y}
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedCard && !invoicesLoading && invoices.length === 0 && (
+          <p className="mt-2 text-xs text-dark-400 leading-snug">
+            Ainda não há faturas listadas para este cartão. Você pode importar mesmo assim: cada linha usa a data
+            extraída do PDF e o servidor associa à fatura do período.
+          </p>
+        )}
         {selectedCard && !invoicesLoading && invoices.length > 0 && !targetCreditCardInvoiceId && (
           <p className="mt-2 text-xs text-amber-200/90 leading-snug">
-            Não há fatura neste cartão para o período selecionado (ciclo ou vencimento). Ajuste o mês/ano ou abra
-            Cartões e confira as faturas — sem vínculo, o servidor pode lançar cada compra na fatura pela data da
-            linha.
+            Não há fatura com vencimento exatamente no mês/ano selecionado. Ajuste o seletor, use um dos
+            vencimentos acima ou importe assim mesmo — o vínculo explícito à fatura só aplica quando o vencimento
+            coincide; sem isso, cada linha segue a data do extrato e o servidor resolve o período.
           </p>
         )}
         {selectedCard && targetCreditCardInvoiceId && (
@@ -567,16 +656,7 @@ export default function FaturaResult({
           icon={CreditCard}
           fullWidth
           loading={saving}
-          disabled={
-            saving ||
-            hasNoCards ||
-            selectedCount === 0 ||
-            !selectedCard ||
-            (Boolean(selectedCard) &&
-              !invoicesLoading &&
-              invoices.length > 0 &&
-              !targetCreditCardInvoiceId)
-          }
+          disabled={saving || hasNoCards || selectedCount === 0 || !selectedCard}
         >
           Importar {selectedCount} {selectedCount === 1 ? 'despesa' : 'despesas'}
         </Button>
