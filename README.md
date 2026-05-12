@@ -111,37 +111,25 @@ Os arquivos serão gerados na pasta `dist/`.
 
 O logo oficial está em **`public/logo-mypay.svg`** (favicon, `manifest.json`, tela de login, ícones em notificações web/FCM). O símbolo “$” usa fonte do sistema para renderizar sem depender do Montserrat.
 
-**Ícones nativos (Android launcher + Electron dock / instalador):** a partir do mesmo SVG:
+**Ícones nativos (Android launcher):** a partir do mesmo SVG:
 
 ```bash
 npm run icons:generate
 ```
 
-Isso roda `@capacitor/assets` (Android mipmaps, adaptive icon, splashes) e gera `electron/icons/icon.png` (1024×1024) para o `electron-builder`. Rode de novo sempre que trocar `public/logo-mypay.svg`.
+Isso roda `@capacitor/assets` (Android mipmaps, adaptive icon, splashes). Rode de novo sempre que trocar `public/logo-mypay.svg`.
 
-Para só uma plataforma: `npm run icons:android` ou `npm run icons:electron`.
+Equivale a `npm run icons:android`.
 
-## Electron e Android: builds e como atualizar
+## Android: builds e como atualizar
 
-A **PWA** (ex.: Vercel) passa a servir o bundle novo após cada deploy. **Electron** e **Capacitor** embutem o `dist/` **no momento do build**: mudanças em `src/` só entram nesses apps depois que você gera de novo o instalador/APK e instala por cima.
+A **PWA** (ex.: Vercel) passa a servir o bundle novo após cada deploy. O **Capacitor** embute o `dist/` **no momento do build**: mudanças em `src/` só entram no app Android depois que você gera de novo o APK e instala por cima.
 
 **Pré-requisitos:**
 
 - `.env` com `VITE_API_URL` apontando para a API de produção (builds nativos não usam o proxy do Vite).
 - **API:** `CORS_ORIGINS` + `CORS_ORIGIN_REGEX` para loopback (ver `mypay-api`).
-- **Firebase Auth:** domínios autorizados incluindo `127.0.0.1` e `localhost` (Electron).
 - **Android:** Java 17, `ANDROID_HOME`, depuração USB ativa no aparelho.
-
-### Electron (macOS)
-
-| Objetivo | Comando |
-|---------|---------|
-| Desenvolvimento (Vite + janela) | `npm run electron:dev` |
-| Gerar `.dmg` | `npm run electron:build:mac` |
-
-O instalador sai em `dist-electron/myPay-<versão>.dmg` (pasta ignorada no git).
-
-**Atualizar o app instalado:** `npm run native:install` (copia o `.app` para `/Applications` e atualiza o Android por USB) **ou** rode `npm run electron:build:mac`, abra o DMG e arraste **myPay** para **Aplicativos**.
 
 ### Android (USB / sideload, sem Play Store)
 
@@ -158,15 +146,15 @@ npm run android:build:debug
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-**macOS + Android num comando** (um `vite build`, gera `.app` via `electron-builder --mac dir`, copia para `/Applications`, gera APK debug e `adb install -r`):
+**Build + sync + APK debug + `adb install -r`** em um comando:
 
 ```bash
 npm run native:install
 ```
 
-Use `SKIP_ELECTRON=1` ou `SKIP_ANDROID=1` se for só uma plataforma.
+Use `SKIP_ANDROID=1` se quiser apenas `vite build` e `cap sync` sem instalar no dispositivo.
 
-O `-r` substitui a instalação anterior. Para **release** assinado com keystore próprio, configure `signingConfigs` no Gradle (detalhes arquitetura em `PLAN-ELECTRON-CAPACITOR.md`).
+O `-r` substitui a instalação anterior. Para **release** assinado com keystore próprio, configure `signingConfigs` no Gradle (contexto histórico em `PLAN-ELECTRON-CAPACITOR.md`).
 
 ## Deploy
 

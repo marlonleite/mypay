@@ -1,48 +1,14 @@
 #!/usr/bin/env bash
-# One-shot: build web once → Android debug APK + macOS .app, install to device + /Applications.
+# One-shot: build web once → Android debug APK, install via USB.
 # From repo root: npm run native:install
-# Optional: SKIP_ELECTRON=1  |  SKIP_ANDROID=1
+# Optional: SKIP_ANDROID=1 (only vite build + cap sync)
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="myPay.app"
 APK="$ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
-
-install_electron() {
-  echo "==> Electron: electron-builder --mac dir (app descompactado; evita só .dmg)"
-  npx electron-builder --mac dir
-
-  local found
-  found=""
-  local best=0
-  while IFS= read -r -d '' path; do
-    local m
-    m="$(stat -f '%m' "$path" 2>/dev/null || echo 0)"
-    if [[ "$m" -ge "$best" ]]; then
-      best=$m
-      found=$path
-    fi
-  done < <(find "$ROOT/dist-electron" -name "$APP_NAME" -type d -print0 2>/dev/null)
-
-  if [[ -z "$found" || ! -d "$found" ]]; then
-    echo "ERRO: não achei $APP_NAME após o build. Conteúdo de dist-electron/:"
-    ls -la "$ROOT/dist-electron" 2>/dev/null || true
-    exit 1
-  fi
-  echo "    App gerado: $found"
-
-  echo "==> Electron: encerrar myPay se estiver aberto (para substituir em /Applications)"
-  osascript -e 'tell application "myPay" to quit' 2>/dev/null || true
-  sleep 1
-
-  echo "==> Electron: /Applications via ditto"
-  rm -rf "/Applications/$APP_NAME"
-  ditto "$found" "/Applications/$APP_NAME"
-  echo "    OK: /Applications/$APP_NAME"
-}
 
 install_android() {
   echo "==> Android: assembleDebug"
@@ -75,16 +41,10 @@ echo "==> Vite build + Capacitor sync (uma vez)"
 npm run build
 npx cap sync android
 
-if [[ "${SKIP_ELECTRON:-}" != 1 ]]; then
-  install_electron
-else
-  echo "==> SKIP_ELECTRON=1 — pulando Electron"
-fi
-
 if [[ "${SKIP_ANDROID:-}" != 1 ]]; then
   install_android
 else
-  echo "==> SKIP_ANDROID=1 — pulando Android"
+  echo "==> SKIP_ANDROID=1 — pulando instalação Android"
 fi
 
 echo "==> Concluído."

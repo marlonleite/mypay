@@ -1,13 +1,10 @@
-import { isElectron, isNative } from '../platform'
+import { isNative } from '../platform'
 import { apiClient } from '../apiClient'
 import { fetchSettings } from '../settingsService'
 
 async function loadImpl() {
   if (isNative()) {
     return import('./native.js')
-  }
-  if (isElectron()) {
-    return import('./electron.js')
   }
   return import('./web.js')
 }
@@ -80,9 +77,6 @@ export function isPushSupported() {
   // Android WebView pode não expor Notification API — não usar como gate.
   if (isNative()) {
     return true
-  }
-  if (isElectron()) {
-    return false
   }
   return (
     'serviceWorker' in navigator &&
