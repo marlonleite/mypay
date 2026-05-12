@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-
-// Versão atual do app (será atualizada no build)
-const CURRENT_VERSION = import.meta.env.VITE_APP_VERSION || '1.0.0'
+import { APP_BUNDLED_VERSION as CURRENT_VERSION } from '../utils/appVersion'
 
 // Intervalo de verificação (5 minutos)
 const CHECK_INTERVAL = 5 * 60 * 1000

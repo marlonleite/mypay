@@ -5,7 +5,8 @@ import {
   BellOff,
   Smartphone,
   Download,
-  Tag
+  Tag,
+  Package
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { usePushNotifications } from '../hooks/usePushNotifications'
@@ -16,6 +17,7 @@ import Select from '../components/ui/Select'
 import ExportModal from '../components/export/ExportModal'
 import { fetchSettings, updateSettings } from '../services/settingsService'
 import { TRANSACTION_TYPES } from '../utils/constants'
+import { APP_BUNDLED_VERSION } from '../utils/appVersion'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -269,6 +271,21 @@ export default function Settings() {
             <p className="text-white font-medium">{user?.displayName || 'Usuário'}</p>
             <p className="text-sm text-dark-400">{user?.email}</p>
           </div>
+        </div>
+      </Card>
+
+      {/* Bundled UI version */}
+      <Card>
+        <h2 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
+          <Package className="w-4 h-4" />
+          Versão do software
+        </h2>
+        <div className="p-4 bg-dark-800/50 rounded-xl">
+          <p className="text-white font-mono text-lg tracking-tight">{APP_BUNDLED_VERSION}</p>
+          <p className="text-xs text-dark-500 mt-2">
+            Build da interface (web/PWA ou WebView Android). Versão instalada no sistema pode diferir —
+            consulte Android em Ajustes → Apps → myPay.
+          </p>
         </div>
       </Card>
 
