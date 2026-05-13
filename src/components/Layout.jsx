@@ -211,7 +211,7 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 w-full lg:w-auto px-4 lg:px-8 py-4 pb-28 lg:pb-4">
+      <main className="flex-1 min-w-0 max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 w-full lg:w-auto px-4 lg:px-8 py-4 pb-28 lg:pb-4">
         {children}
       </main>
 

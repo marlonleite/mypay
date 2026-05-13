@@ -40,17 +40,23 @@ export default function IncomeExpenseBarChart({ income, expenses, formatCurrency
   const yAxisMax = maxValue * 1.2 // Add 20% padding
 
   return (
-    <ResponsiveContainer width="100%" height={250}>
-      <BarChart data={data} margin={{ top: 20, right: 0, left: 0, bottom: 5 }}>
+    <div className="w-full min-w-0 h-[220px] sm:h-[252px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={data}
+          margin={{ top: 28, right: 4, left: 4, bottom: 8 }}
+          barCategoryGap="18%"
+        >
         <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
         <XAxis
           dataKey="name"
           stroke="#9ca3af"
-          tick={{ fill: '#9ca3af', fontSize: 12 }}
+          tick={{ fill: '#9ca3af', fontSize: 11 }}
         />
         <YAxis
+          width={44}
           stroke="#9ca3af"
-          tick={{ fill: '#9ca3af', fontSize: 12 }}
+          tick={{ fill: '#9ca3af', fontSize: 10 }}
           domain={[0, yAxisMax]}
           tickFormatter={(value) => {
             if (value >= 1000000) {
@@ -74,5 +80,6 @@ export default function IncomeExpenseBarChart({ income, expenses, formatCurrency
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    </div>
   )
 }

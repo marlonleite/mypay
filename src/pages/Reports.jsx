@@ -115,7 +115,7 @@ export default function Reports({ month, year, onMonthChange }) {
   const hasData = filteredTransactions.length > 0 || filteredCardExpenses.length > 0
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 overflow-x-hidden">
       {/* Month Selector */}
       <MonthSelector
         month={month}
@@ -152,7 +152,7 @@ export default function Reports({ month, year, onMonthChange }) {
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 min-w-0">
             <Card className="!p-4">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
@@ -179,9 +179,9 @@ export default function Reports({ month, year, onMonthChange }) {
           </div>
 
           {/* Income vs Expense Bar Chart */}
-          <Card>
+          <Card className="min-w-0">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4 shrink-0" />
               Receitas vs Despesas
             </h3>
             <IncomeExpenseBarChart
@@ -193,9 +193,9 @@ export default function Reports({ month, year, onMonthChange }) {
 
           {/* Category Pie Chart */}
           {categoryData.length > 0 && (
-            <Card>
+            <Card className="min-w-0">
               <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-                <PieChartIcon className="w-4 h-4" />
+                <PieChartIcon className="w-4 h-4 shrink-0" />
                 Despesas por Categoria
               </h3>
               <CategoryPieChart
@@ -206,9 +206,9 @@ export default function Reports({ month, year, onMonthChange }) {
           )}
 
           {/* Month Comparison */}
-          <Card>
+          <Card className="min-w-0">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-              <GitCompare className="w-4 h-4" />
+              <GitCompare className="w-4 h-4 shrink-0" />
               Comparativo com Mês Anterior
             </h3>
             <MonthComparisonChart
@@ -219,9 +219,9 @@ export default function Reports({ month, year, onMonthChange }) {
           </Card>
 
           {/* Balance Evolution */}
-          <Card>
+          <Card className="min-w-0">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-              <LineChart className="w-4 h-4" />
+              <LineChart className="w-4 h-4 shrink-0" />
               Evolução do Saldo
             </h3>
             <BalanceEvolutionChart
@@ -233,9 +233,9 @@ export default function Reports({ month, year, onMonthChange }) {
           </Card>
 
           {/* Tags Report */}
-          <Card>
+          <Card className="min-w-0">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-              <Hash className="w-4 h-4" />
+              <Hash className="w-4 h-4 shrink-0" />
               Despesas por Tags
             </h3>
             <TagsReportChart
@@ -246,9 +246,9 @@ export default function Reports({ month, year, onMonthChange }) {
           </Card>
 
           {/* Monthly Trend Chart */}
-          <Card>
+          <Card className="min-w-0">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" />
+              <TrendingUp className="w-4 h-4 shrink-0" />
               Evolução Mensal
             </h3>
             <MonthlyTrendChart

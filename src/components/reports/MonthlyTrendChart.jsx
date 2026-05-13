@@ -115,17 +115,23 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={simplifiedData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+    <div className="w-full min-w-0 h-[280px] sm:h-[300px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={simplifiedData} margin={{ top: 8, right: 8, left: 0, bottom: 36 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
         <XAxis
           dataKey="name"
           stroke="#9ca3af"
           tick={{ fill: '#9ca3af', fontSize: 11 }}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={52}
         />
         <YAxis
+          width={40}
           stroke="#9ca3af"
-          tick={{ fill: '#9ca3af', fontSize: 11 }}
+          tick={{ fill: '#9ca3af', fontSize: 10 }}
           tickFormatter={(value) => {
             if (value >= 1000000) {
               return `${(value / 1000000).toFixed(1)}M`
@@ -138,8 +144,14 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
         />
         <Tooltip content={<CustomTooltip />} />
         <Legend
-          wrapperStyle={{ paddingTop: '20px' }}
+          verticalAlign="bottom"
+          align="center"
           iconType="line"
+          wrapperStyle={{
+            paddingTop: 10,
+            fontSize: 11,
+            color: '#9ca3af'
+          }}
         />
         <Line
           type="monotone"
@@ -170,5 +182,6 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
         />
       </LineChart>
     </ResponsiveContainer>
+    </div>
   )
 }
