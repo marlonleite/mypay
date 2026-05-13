@@ -115,7 +115,7 @@ export default function Reports({ month, year, onMonthChange }) {
   const hasData = filteredTransactions.length > 0 || filteredCardExpenses.length > 0
 
   return (
-    <div className="space-y-6 w-full min-w-0 overflow-x-hidden">
+    <div className="space-y-8 w-full min-w-0 overflow-x-hidden">
       {/* Month Selector */}
       <MonthSelector
         month={month}
@@ -179,7 +179,7 @@ export default function Reports({ month, year, onMonthChange }) {
           </div>
 
           {/* Income vs Expense Bar Chart */}
-          <Card className="min-w-0">
+          <Card className="min-w-0 isolate">
             <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 shrink-0" />
               Receitas vs Despesas
@@ -193,7 +193,7 @@ export default function Reports({ month, year, onMonthChange }) {
 
           {/* Category Pie Chart */}
           {categoryData.length > 0 && (
-            <Card className="min-w-0">
+            <Card className="min-w-0 isolate">
               <h3 className="text-sm font-medium text-dark-300 mb-4 flex items-center gap-2">
                 <PieChartIcon className="w-4 h-4 shrink-0" />
                 Despesas por Categoria
