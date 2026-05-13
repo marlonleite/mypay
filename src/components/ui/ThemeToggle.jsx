@@ -1,21 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sun, Moon, ChevronDown } from 'lucide-react'
+import { Sun, Moon, ChevronDown, Monitor } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
+
+const OPTIONS = [
+  { id: 'auto', label: 'Sistema', icon: Monitor },
+  { id: 'light', label: 'Claro', icon: Sun },
+  { id: 'dark', label: 'Escuro', icon: Moon },
+]
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef(null)
 
-  const options = [
-    { id: 'light', label: 'Claro', icon: Sun },
-    { id: 'dark', label: 'Escuro', icon: Moon }
-  ]
-
-  const currentOption = options.find(o => o.id === theme) || options[1]
+  const currentOption = OPTIONS.find(o => o.id === theme) ?? OPTIONS[0]
   const CurrentIcon = currentOption.icon
 
-  // Fechar dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -38,8 +38,8 @@ export default function ThemeToggle() {
       </button>
 
       {showDropdown && (
-        <div className="absolute top-full right-0 mt-2 bg-dark-800 border border-dark-600 rounded-xl shadow-lg py-1 min-w-[140px] z-50">
-          {options.map((option) => {
+        <div className="absolute top-full right-0 mt-2 bg-dark-800 border border-dark-600 rounded-xl shadow-lg py-1 min-w-[152px] z-50">
+          {OPTIONS.map((option) => {
             const Icon = option.icon
             return (
               <button
@@ -65,22 +65,27 @@ export default function ThemeToggle() {
   )
 }
 
-// Versão compacta (só ícone) - alterna entre claro e escuro
+// Compact: alterna modo claro/escuro efetivos (útil mesmo com tema "Automático").
 export function ThemeToggleCompact() {
-  const { theme, setTheme } = useTheme()
+  const { theme, effectiveTheme, setTheme } = useTheme()
 
   const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
+    const next = effectiveTheme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
   }
 
-  const Icon = theme === 'dark' ? Moon : Sun
-  const title = theme === 'dark' ? 'Tema: Escuro' : 'Tema: Claro'
+  const Icon = effectiveTheme === 'dark' ? Moon : Sun
+  let title =
+    effectiveTheme === 'dark' ? 'Tema escuro' : 'Tema claro'
+  if (theme === 'auto') {
+    title += ' (automático)'
+  }
 
   return (
     <button
       onClick={toggleTheme}
       className="p-2 text-dark-400 hover:text-white hover:bg-dark-800 rounded-full transition-colors"
-      title={title}
+      title={`${title} — toque para alternar`}
     >
       <Icon className="w-5 h-5" />
     </button>

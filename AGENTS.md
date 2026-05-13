@@ -38,6 +38,16 @@ Referência canônica no backend: seção **Comunicação rápida com o front** 
 - **CORS:** app e API em origens diferentes exigem `CORS_ORIGINS` no `.env` da API com a origem exata do front (`https://app...`, sem path). É ops/backend; o time de front precisa informar a URL de origem correta.
 - **Fora do escopo do front:** cron `materialize-upcoming`, `weekly-overdue-email`, `JOB_SECRET`, deploy da API, proxy.
 
+### `GET/PUT /api/v1/settings` — aparência (campos opcionais no backend)
+
+O front já envia/atualiza, quando faz sentido para o servidor, snake_case opcional sobre `user_settings`:
+
+- **`accent_preset`** — `violet` | `nubank` | `aqua`
+- **`contrast_follow_system`** — boolean: respeitar `prefers-contrast: more` do sistema
+- **`high_contrast`** — boolean: alto contraste ligado pelo usuário (checkbox manual)
+
+É preciso **migrar a tabela** no **mypay-api** antes do PUT passar sem erro 4xx; até lá o cliente usa **localStorage** e só registra `console.warn` se o sync falhar. Ver `settingsService.mapSettings`, `ThemeContext.jsx`, `appearance.js`.
+
 ### Checklist rápido (Network)
 
 Paralelismo nos GETs iniciais; transações longas com `limit` + `cursor` + `X-Next-Cursor`; menos refetch ao navegar (cache em listagens estáveis); sem regressão ao esperar transações futuras após mudança de recorrência (validar timing vs cron).

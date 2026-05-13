@@ -1,14 +1,16 @@
 import { apiClient } from './apiClient'
 import { subscribe as subscribeEventStream } from './eventStream'
+import { isAccentPresetId } from '../utils/appearance'
 
 /**
  * Service centralizado pra `/api/v1/settings`.
  *
- * Backend consolida em 1 row `user_settings` com UNIQUE (user_id):
- *   { id, user_id, theme, show_values, push_enabled, push_token,
- *     onboarding_completed, onboarding_step,
- *     default_category_id_expense, default_category_id_income,
- *     created_at, updated_at }
+ * Backend consolida em 1 row `user_settings` com UNIQUE (user_id).
+ * Campos usados pelo front incluem tema, onboarding, categorias padrão, push, privacidade, e opcionalmente aparência:
+ *   accent_preset (`violet` | `nubank` | `aqua`),
+ *   contrast_follow_system (boolean),
+ *   high_contrast (boolean, manual).
+ * Se a API não tiver essas colunas ainda, o PUT pode falhar: o cliente sincroniza com try/catch e mantém localStorage.
  *
  * Os 4 contexts do frontend (Privacy/Theme/Onboarding/Notification) leem o
  * mesmo recurso. Pra evitar 4 GETs duplicados por mount, mantemos uma promise
@@ -41,6 +43,14 @@ function mapSettings(s) {
     defaultCategoryIdExpense: s.default_category_id_expense ?? null,
     defaultCategoryIdIncome: s.default_category_id_income ?? null,
     updatedAt: s.updated_at ? new Date(s.updated_at) : null,
+    accentPreset:
+      typeof s.accent_preset === 'string' && isAccentPresetId(s.accent_preset)
+        ? s.accent_preset
+        : undefined,
+    contrastFollowSystem:
+      typeof s.contrast_follow_system === 'boolean' ? s.contrast_follow_system : undefined,
+    highContrastManual:
+      typeof s.high_contrast === 'boolean' ? s.high_contrast : undefined,
   }
 }
 
@@ -75,6 +85,11 @@ export async function updateSettings(partial) {
   if (partial.defaultCategoryIdIncome !== undefined) {
     payload.default_category_id_income = partial.defaultCategoryIdIncome
   }
+  if (partial.accentPreset !== undefined) payload.accent_preset = partial.accentPreset
+  if (partial.contrastFollowSystem !== undefined) {
+    payload.contrast_follow_system = partial.contrastFollowSystem
+  }
+  if (partial.highContrastManual !== undefined) payload.high_contrast = partial.highContrastManual
 
   const raw = await apiClient.put('/api/v1/settings', payload)
   cached = mapSettings(raw)

@@ -11,6 +11,9 @@ import { SearchProvider } from './contexts/SearchContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { OnboardingProvider } from './contexts/OnboardingContext'
 import './index.css'
+import { bootstrapAppearanceDom } from './utils/appearance'
+
+bootstrapAppearanceDom()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

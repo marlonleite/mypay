@@ -40,6 +40,39 @@ html {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+
+  --accent-overlay-10: rgb(139 92 246 / 0.1);
+  --accent-overlay-15: rgb(139 92 246 / 0.15);
+  --accent-overlay-20: rgb(139 92 246 / 0.22);
+
+  --semantic-success: #059669;
+  --semantic-error: #dc2626;
+  --semantic-warning: #ea580c;
+  --semantic-info: #2563eb;
+}
+
+/* Alternate accent — Nubank-style (purple) */
+:root.light[data-accent='nubank'] {
+  --accent-primary: #820ad1;
+  --accent-secondary: #9434e8;
+  --accent-bg: rgb(130 10 209 / 0.12);
+  --accent-button: #ede9fe;
+  --accent-button-text: #1a1a2e;
+  --accent-overlay-10: rgb(130 10 209 / 0.1);
+  --accent-overlay-15: rgb(130 10 209 / 0.15);
+  --accent-overlay-20: rgb(130 10 209 / 0.22);
+}
+
+/* Teal/cyan accent */
+:root.light[data-accent='aqua'] {
+  --accent-primary: #0891b2;
+  --accent-secondary: #06b6d4;
+  --accent-bg: rgb(8 145 178 / 0.11);
+  --accent-button: #cffafe;
+  --accent-button-text: #083344;
+  --accent-overlay-10: rgb(8 145 178 / 0.1);
+  --accent-overlay-15: rgb(8 145 178 / 0.15);
+  --accent-overlay-20: rgb(8 145 178 / 0.22);
 }
 
 /* Tema Escuro */
@@ -66,6 +99,52 @@ html {
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+
+  --accent-overlay-10: rgb(139 92 246 / 0.12);
+  --accent-overlay-15: rgb(139 92 246 / 0.18);
+  --accent-overlay-20: rgb(139 92 246 / 0.26);
+
+  --semantic-success: #34d399;
+  --semantic-error: #f87171;
+  --semantic-warning: #fb923c;
+  --semantic-info: #60a5fa;
+}
+
+:root.dark[data-accent='nubank'] {
+  --accent-primary: #db9cff;
+  --accent-secondary: #eccfff;
+  --accent-bg: rgb(214 153 255 / 0.16);
+  --accent-button: #3d2e58;
+  --accent-button-text: #faf5ff;
+  --accent-overlay-10: rgb(214 153 255 / 0.12);
+  --accent-overlay-15: rgb(214 153 255 / 0.2);
+  --accent-overlay-20: rgb(214 153 255 / 0.28);
+}
+
+:root.dark[data-accent='aqua'] {
+  --accent-primary: #22d3ee;
+  --accent-secondary: #67e8f9;
+  --accent-bg: rgb(34 211 238 / 0.13);
+  --accent-button: #164e63;
+  --accent-button-text: #ecfeff;
+  --accent-overlay-10: rgb(34 211 238 / 0.12);
+  --accent-overlay-15: rgb(34 211 238 / 0.2);
+  --accent-overlay-20: rgb(34 211 238 / 0.28);
+}
+
+/* Stronger hierarchy for borders and secondary text */
+html.light.high-contrast {
+  --text-secondary: #334155;
+  --text-muted: #475569;
+  --border-color: #cbd5e1;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+html.dark.high-contrast {
+  --text-secondary: #d4d4d8;
+  --text-muted: #b4b4c0;
+  --border-color: #5c5c78;
+  --bg-card: #222236;
 }
 
 body {
@@ -254,7 +333,7 @@ body {
 .dark .tag-reading { background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; }
 
 /* Icon circle colors */
-.icon-purple { background-color: #ede9fe; color: #8b5cf6; }
+.icon-purple { background-color: color-mix(in srgb, var(--accent-primary) 14%, transparent); color: var(--accent-primary); }
 .icon-orange { background-color: #ffedd5; color: #f97316; }
 .icon-pink { background-color: #fce7f3; color: #ec4899; }
 .icon-green { background-color: #d1fae5; color: #10b981; }
@@ -262,7 +341,7 @@ body {
 .icon-red { background-color: #fee2e2; color: #ef4444; }
 .icon-yellow { background-color: #fef3c7; color: #f59e0b; }
 
-.dark .icon-purple { background-color: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.dark .icon-purple { background-color: color-mix(in srgb, var(--accent-primary) 22%, transparent); color: var(--accent-secondary); }
 .dark .icon-orange { background-color: rgba(249, 115, 22, 0.2); color: #fb923c; }
 .dark .icon-pink { background-color: rgba(236, 72, 153, 0.2); color: #f472b6; }
 .dark .icon-green { background-color: rgba(16, 185, 129, 0.2); color: #34d399; }
@@ -313,14 +392,14 @@ body {
 .dark .text-orange-500 { color: #fb923c; }
 .dark .text-orange-400 { color: #fb923c; }
 
-/* Violet/Primary */
-.light .bg-violet-500\/10 { background-color: rgba(139, 92, 246, 0.1); }
-.light .bg-violet-500\/15 { background-color: rgba(139, 92, 246, 0.12); }
-.light .bg-violet-500\/20 { background-color: rgba(139, 92, 246, 0.15); }
+/* Violet/Primary overlays — derive from accent variables */
+.light .bg-violet-500\/10 { background-color: var(--accent-overlay-10); }
+.light .bg-violet-500\/15 { background-color: var(--accent-overlay-15); }
+.light .bg-violet-500\/20 { background-color: var(--accent-overlay-20); }
 
-.dark .bg-violet-500\/10 { background-color: rgba(139, 92, 246, 0.12); }
-.dark .bg-violet-500\/15 { background-color: rgba(139, 92, 246, 0.15); }
-.dark .bg-violet-500\/20 { background-color: rgba(139, 92, 246, 0.2); }
+.dark .bg-violet-500\/10 { background-color: var(--accent-overlay-10); }
+.dark .bg-violet-500\/15 { background-color: var(--accent-overlay-15); }
+.dark .bg-violet-500\/20 { background-color: var(--accent-overlay-20); }
 
 /* Amber/Alert */
 .light .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1); }
