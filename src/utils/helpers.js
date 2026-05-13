@@ -115,6 +115,19 @@ export const isExpenseInCardBill = (expenseDate, billMonth, billYear, closingDay
   return expense >= startDate && expense <= endDate
 }
 
+/**
+ * Arredonda valor monetário para 2 casas (centavos), evitando float tipo 1851.9599999999998
+ * que quebra validação Decimal do backend (max_digits / digit count).
+ * @param {unknown} value
+ * @returns {number|typeof value} — devolve o próprio value se não for número finito (ex.: undefined omit no JSON)
+ */
+export function roundMoney2(value) {
+  if (value === null || value === undefined || value === '') return value
+  const n = Number(value)
+  if (!Number.isFinite(n)) return value
+  return Math.round(n * 100) / 100
+}
+
 // Converter string monetária (BR ou US) para number
 export const parseCurrencyInput = (value) => {
   if (value == null || value === '') return null

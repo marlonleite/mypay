@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { subscribeMany, emitLocalEntityEvent, emitTransactionRelatedInvalidation } from '../services/eventStream'
+import { roundMoney2 } from '../utils/helpers'
 import { resolveRecurrenceLinkedPaid } from '../utils/recurrencePaidDisplay'
 // 🎉 Firestore SDK não é mais usado neste arquivo — todos os hooks foram migrados
 // pra REST API. Mantém-se Firebase Auth + FCM no projeto (config.js), mas o SDK
@@ -149,13 +150,19 @@ export async function resolveTagIds(tagNames, apiClient) {
  */
 export async function buildTransactionPayload(data, apiClient, opts = {}) {
   const isUpdate = opts.isUpdate === true
-  const tag_ids = data.tags !== undefined
-    ? await resolveTagIds(data.tags, apiClient)
-    : undefined
+
+  let tag_ids
+  if (!Object.prototype.hasOwnProperty.call(data, 'tags')) {
+    tag_ids = undefined
+  } else if (data.tags == null || (Array.isArray(data.tags) && data.tags.length === 0)) {
+    tag_ids = []
+  } else {
+    tag_ids = await resolveTagIds(Array.isArray(data.tags) ? data.tags : [String(data.tags)], apiClient)
+  }
 
   const payload = {
     description: data.description,
-    amount: data.amount,
+    amount: roundMoney2(data.amount),
     type: data.type,
     // date pode chegar como 'YYYY-MM-DD' string ou Date — API espera string ISO date
     date: data.date instanceof Date
@@ -294,13 +301,19 @@ export function useTransactions(month, year, dateRangeMaybe) {
   /**
    * POST /transactions/batch — multiple creates in one request (e.g. installments).
    * @param {object[]} rows — shapes accepted by buildTransactionPayload (create mode).
-   * @param {{ atomic?: boolean }} [opts] — default atomic true (single DB transaction on backend).
+   * @param {{
+   *   atomic?: boolean,
+   *   skipRefetch?: boolean,
+   *   skipInvalidate?: boolean
+   * }} [opts] — default atomic true; optional skip avoids N+ refetches/SSE pings (caller refreshes once).
    */
   const createTransactionsBatch = async (rows, opts = {}) => {
     if (!user) throw new Error('Usuário não autenticado')
     if (!rows?.length) {
       return { succeeded: 0, failed: 0, results: [], createdIds: [] }
     }
+    const skipRefetch = opts.skipRefetch === true
+    const skipInvalidate = opts.skipInvalidate === true
     const { apiClient } = await import('../services/apiClient')
     const atomic = opts.atomic !== false
     const items = []
@@ -314,7 +327,12 @@ export function useTransactions(month, year, dateRangeMaybe) {
     if (!body) {
       throw new Error(`Resposta inesperada ao criar lançamentos em lote (HTTP ${status})`)
     }
-    if ((body.failed ?? 0) > 0 || (body.succeeded ?? 0) !== rows.length) {
+    if (status < 200 || status >= 300) {
+      throw new Error(`Resposta inesperada ao criar lançamentos em lote (HTTP ${status})`)
+    }
+    const succeeded = Number(body.succeeded ?? 0)
+    const failed = Number(body.failed ?? 0)
+    if (failed > 0 || succeeded !== rows.length) {
       const first = body.results?.find(r => r?.error != null)
       const apiMsg =
         typeof first?.error?.message === 'string'
@@ -322,18 +340,53 @@ export function useTransactions(month, year, dateRangeMaybe) {
           : 'Um ou mais lançamentos do lote falharam'
       throw new Error(apiMsg)
     }
-    if (status !== 201) {
-      throw new Error(`Resposta inesperada ao criar lançamentos em lote (HTTP ${status})`)
-    }
     const createdIds = (body.results || []).map(r => r?.id).filter(Boolean)
-    await fetchTransactions()
-    emitTransactionRelatedInvalidation()
+    if (createdIds.length !== rows.length) {
+      throw new Error(`Resposta incompleta ao criar lançamentos em lote (esperados ${rows.length} ids).`)
+    }
+    if (!skipRefetch) await fetchTransactions()
+    if (!skipInvalidate) emitTransactionRelatedInvalidation()
     return {
-      succeeded: body.succeeded,
-      failed: body.failed,
+      succeeded,
+      failed,
       results: body.results,
       createdIds,
     }
+  }
+
+  /**
+   * POST /transactions/batch-update — mesmo corpo REST que PUT parcial (`TransactionUpdate`) aplicado a N ids.
+   * @param {string[]} transactionIds — UUID strings, dedupe no hook
+   * @param {object} data — shape igual a `updateTransaction` (camelCase); vira patch via ``buildTransactionPayload(..., isUpdate)``
+   * @param {{ atomic?: boolean, skipRefetch?: boolean, skipInvalidate?: boolean }} [opts] — atomic default true
+   */
+  const updateTransactionsBatch = async (transactionIds, data, opts = {}) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    const ids = [...new Set((transactionIds || []).filter(Boolean))]
+    if (ids.length === 0) return { updated_count: 0, failed_count: 0 }
+
+    const skipRefetch = opts.skipRefetch === true
+    const skipInvalidate = opts.skipInvalidate === true
+    const atomic = opts.atomic !== false
+    const { apiClient } = await import('../services/apiClient')
+    const {
+      batchUpdateTransactions,
+      TRANSACTION_BATCH_UPDATE_MAX_IDS,
+    } = await import('../services/transactionService')
+    const patch = await buildTransactionPayload(data, apiClient, { isUpdate: true })
+    let updated = 0
+    for (let i = 0; i < ids.length; i += TRANSACTION_BATCH_UPDATE_MAX_IDS) {
+      const slice = ids.slice(i, i + TRANSACTION_BATCH_UPDATE_MAX_IDS)
+      const body = await batchUpdateTransactions({
+        transaction_ids: slice,
+        patch,
+        atomic,
+      })
+      updated += Number(body.updated_count ?? 0)
+    }
+    if (!skipRefetch) await fetchTransactions()
+    if (!skipInvalidate) emitTransactionRelatedInvalidation()
+    return { updated_count: updated, failed_count: 0 }
   }
 
   /**
@@ -389,6 +442,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     error,
     addTransaction,
     createTransactionsBatch,
+    updateTransactionsBatch,
     updateTransaction,
     deleteTransaction,
     /** Re-fetch lista atual; retorna transações mapeadas (útil após criar template de recorrência). */
@@ -800,7 +854,7 @@ async function normalizeRecurrenceBulkFields(fields, apiClient, { scope } = {}) 
   if (!fields || typeof fields !== 'object') return {}
   const out = {}
   if (fields.description !== undefined) out.description = fields.description
-  if (fields.amount !== undefined) out.amount = fields.amount
+  if (fields.amount !== undefined) out.amount = roundMoney2(fields.amount)
   if (fields.type !== undefined) out.type = fields.type
   const cat = fields.category_id ?? fields.categoryId
   if (cat !== undefined && cat !== null && cat !== '') out.category_id = cat
@@ -852,7 +906,7 @@ function buildRecurrencePayload(data) {
 
   const payload = {}
   if (data.description !== undefined) payload.description = data.description
-  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.amount !== undefined) payload.amount = roundMoney2(data.amount)
   if (data.type !== undefined) payload.type = data.type
   if (data.accountId !== undefined) payload.account_id = data.accountId
   if (data.categoryId !== undefined) payload.category_id = data.categoryId
@@ -1034,7 +1088,7 @@ async function buildCardExpenseAsTransactionPayload(data, apiClient) {
   if (data.category !== undefined) payload.category_id = data.category || null
   if (data.categoryId !== undefined) payload.category_id = data.categoryId || null
   if (data.description !== undefined) payload.description = data.description
-  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.amount !== undefined) payload.amount = roundMoney2(data.amount)
   if (data.type !== undefined) payload.type = data.type
   if (data.date !== undefined) {
     payload.date = data.date instanceof Date
@@ -1661,7 +1715,7 @@ export function useTransfers(month, year) {
     const payload = {
       from_account_id: data.fromAccountId,
       to_account_id: data.toAccountId,
-      amount: data.amount,
+      amount: roundMoney2(data.amount),
       // date pode chegar como Date ou string 'YYYY-MM-DD'
       date: data.date instanceof Date
         ? data.date.toISOString().slice(0, 10)
@@ -1712,7 +1766,7 @@ function mapBudget(b) {
 function buildBudgetPayload(data) {
   const payload = {}
   if (data.categoryId !== undefined) payload.category_id = data.categoryId
-  if (data.amount !== undefined) payload.amount = data.amount
+  if (data.amount !== undefined) payload.amount = roundMoney2(data.amount)
   if (data.month !== undefined && data.month !== null) payload.month = data.month + 1
   if (data.year !== undefined) payload.year = data.year
   return payload
@@ -1957,7 +2011,7 @@ export function useBillPayments(month, year) {
 
     const result = await payInvoice(data.paidCreditCardInvoiceId, {
       accountId: data.accountId,
-      amount: data.amount,
+      amount: roundMoney2(data.amount),
       date: paidAt,
       categoryId: data.categoryId,
       description: data.description,

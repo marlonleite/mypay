@@ -1,5 +1,5 @@
 import { auth } from '../firebase/config'
-import { parseLocalDate } from '../utils/helpers'
+import { parseLocalDate, roundMoney2 } from '../utils/helpers'
 import { apiClient } from './apiClient'
 import { findBestCategory } from '../utils/categoryMapping'
 
@@ -641,7 +641,7 @@ export function buildInvoiceCardExpenseApiItem(expense, options) {
 
   const item = {
     description: expense.description,
-    amount: expense.amount,
+    amount: roundMoney2(expense.amount),
     type: txType,
     date: dateIso,
     credit_card_id: expense.cardId,
@@ -680,7 +680,7 @@ export async function buildCardExpenseBatchItem(data) {
 
   const item = {
     description: data.description,
-    amount: data.amount,
+    amount: roundMoney2(data.amount),
     type: data.type || 'expense',
     date: dateIso,
     credit_card_id: data.cardId,

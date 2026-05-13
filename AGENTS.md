@@ -82,5 +82,7 @@ Em qualquer fluxo “dentro de uma fatura” (Cartões com fatura aberta, import
 ## Exclusão em lote de transações
 
 - **`POST /api/v1/transactions/batch-delete`**: modos exclusivos no JSON — `{ "transaction_ids": [...] }` (1–200 ids, sem duplicatas) **ou** `{ "credit_card_invoice_id": "..." }` (soft delete das compras da fatura, não remove pagamento). Resposta 200 com `results`, `deleted_count`, `failed_count` (modo fatura pode vir `results` vazio).
-- Front: `src/services/transactionService.js` + `deleteCardExpensesBatch` em `useCardExpenses`; Cartões usa batch por ids no fluxo “Selecionar vários”. Sem `Idempotency-Key` nessa rota.
+- Front **batch-delete**: `src/services/transactionService.js` + `deleteCardExpensesBatch` em `useCardExpenses`; Cartões usa batch por ids no fluxo “Selecionar vários”. Sem `Idempotency-Key` nessa rota.
+- **`POST /api/v1/transactions/batch-update`**: até 200 `transaction_ids` únicos + `patch` (schema `TransactionUpdate`, ≥1 campo) + `atomic`. Com `atomic: true`, erro em uma linha desfaz o lote inteiro no servidor.
+- Front **batch-update (parcelas)**: `transactionService.batchUpdateTransactions` · `useTransactions().updateTransactionsBatch` (`useFirestore.js`, `Transactions.jsx`).
 

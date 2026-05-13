@@ -64,11 +64,12 @@ import {
 import { describeApiError, isInvoiceNotPaidForReopenError } from '../utils/apiErrors'
 import { useToast } from '../contexts/ToastContext'
 import { emitTransactionRelatedInvalidation } from '../services/eventStream'
-import { batchDeleteTransactions, TRANSACTION_BATCH_DELETE_MAX_IDS } from '../services/transactionService'
+import {
+  batchDeleteTransactions,
+  listTransactionRowsForInstallmentGroup,
+  TRANSACTION_BATCH_DELETE_MAX_IDS,
+} from '../services/transactionService'
 import { setPaidOverride, removePaidOverride } from '../utils/recurrencePaidDisplay'
-
-/** PUTs paralelos ao editar todas as parcelas — limita rajadas contra API/cliente. */
-const INSTALLMENT_GROUP_UPDATE_CONCURRENCY = 12
 
 const TX_FILTER_TYPES = new Set([
   'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
@@ -96,6 +97,15 @@ function transactionDayStamp(d) {
   return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
 }
 
+/** Compara cortes por dia civil usando data API `YYYY-MM-DD` quando possível. */
+function apiCalendarDayStamp(dateStr) {
+  const parsed =
+    typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+      ? new Date(`${dateStr}T12:00:00`)
+      : new Date(dateStr)
+  return transactionDayStamp(parsed)
+}
+
 export default function Transactions({
   month, year, onMonthChange, showAddModal, onCloseAddModal,
   filters, onFiltersChange, searchTerm, onSearchTermChange,
@@ -120,6 +130,7 @@ export default function Transactions({
     loading,
     addTransaction,
     createTransactionsBatch,
+    updateTransactionsBatch,
     updateTransaction,
     deleteTransaction,
     refreshTransactions,
@@ -901,7 +912,10 @@ export default function Transactions({
           const { applied } = await updateRecurrence(editingTransaction.recurrenceId, payload)
           await refreshTransactions()
           notifyRecurrenceApplied(applied)
-        } else if (editMode === 'all' && editingTransaction.installmentGroupId) {
+        } else if (
+          editingTransaction.installmentGroupId &&
+          (editMode === 'all' || editMode === 'from_forward')
+        ) {
           const commonUpdates = {
             description: data.description,
             amount: data.amount,
@@ -910,20 +924,18 @@ export default function Transactions({
             notes: data.notes,
             tags: data.tags
           }
-          const groupTransactions = transactions.filter(
-            t => t.installmentGroupId === editingTransaction.installmentGroupId
-          )
-          for (let i = 0; i < groupTransactions.length; i += INSTALLMENT_GROUP_UPDATE_CONCURRENCY) {
-            const slice = groupTransactions.slice(i, i + INSTALLMENT_GROUP_UPDATE_CONCURRENCY)
-            await Promise.all(
-              slice.map(txn =>
-                updateTransaction(txn.id, commonUpdates, {
-                  skipRefetch: true,
-                  skipInvalidate: true
-                })
-              )
-            )
-          }
+          const groupRows = await listTransactionRowsForInstallmentGroup(editingTransaction.installmentGroupId)
+          const anchor = transactionDayStamp(editingTransaction.date)
+          const targetRows =
+            editMode === 'from_forward'
+              ? groupRows.filter(r => apiCalendarDayStamp(r.date) >= anchor)
+              : groupRows
+          const ids = targetRows.map(row => row.id).filter(Boolean)
+          await updateTransactionsBatch(ids, commonUpdates, {
+            atomic: true,
+            skipRefetch: true,
+            skipInvalidate: true,
+          })
           await refreshTransactions()
           emitTransactionRelatedInvalidation()
         } else {
@@ -1061,7 +1073,13 @@ export default function Transactions({
               totalInstallments: numInstallments,
             })
           }
-          const { createdIds } = await createTransactionsBatch(rows, { atomic: true })
+          const { createdIds } = await createTransactionsBatch(rows, {
+            atomic: true,
+            skipRefetch: true,
+            skipInvalidate: true,
+          })
+          await refreshTransactions()
+          emitTransactionRelatedInvalidation()
           await uploadPendingAttachmentsTo(createdIds[0])
         } else {
           const result = await addTransaction(data)
@@ -1076,6 +1094,7 @@ export default function Transactions({
       setModalOpen(false)
     } catch (error) {
       console.error('Error saving transaction:', error)
+      toast.error(describeApiError(error, 'Não foi possível salvar o lançamento.'))
     } finally {
       setSaving(false)
     }
@@ -1127,10 +1146,8 @@ export default function Transactions({
         // Sem `from_date` no body: backend usa txn.date no Postgres (evita mismatch TZ/format).
         await deleteTransaction(transactionToDelete.id, { scope: 'from_date' })
       } else if (deleteMode === 'all' && transactionToDelete?.installmentGroupId) {
-        const groupTransactions = transactions.filter(
-          t => t.installmentGroupId === transactionToDelete.installmentGroupId
-        )
-        const uniqIds = [...new Set(groupTransactions.map(t => t.id).filter(Boolean))]
+        const groupRows = await listTransactionRowsForInstallmentGroup(transactionToDelete.installmentGroupId)
+        const uniqIds = [...new Set(groupRows.map(r => r.id).filter(Boolean))]
         const chunkTotal = Math.ceil(uniqIds.length / TRANSACTION_BATCH_DELETE_MAX_IDS)
         for (let c = 0; c < chunkTotal; c++) {
           const slice = uniqIds.slice(
@@ -1143,12 +1160,9 @@ export default function Transactions({
         emitTransactionRelatedInvalidation()
       } else if (deleteMode === 'from_forward' && transactionToDelete?.installmentGroupId) {
         const anchor = transactionDayStamp(transactionToDelete.date)
-        const forwardTransactions = transactions.filter(
-          t =>
-            t.installmentGroupId === transactionToDelete.installmentGroupId &&
-            transactionDayStamp(t.date) >= anchor
-        )
-        const uniqForward = [...new Set(forwardTransactions.map(t => t.id).filter(Boolean))]
+        const groupRows = await listTransactionRowsForInstallmentGroup(transactionToDelete.installmentGroupId)
+        const forwardRows = groupRows.filter(r => apiCalendarDayStamp(r.date) >= anchor)
+        const uniqForward = [...new Set(forwardRows.map(r => r.id).filter(Boolean))]
         const fwdChunks = Math.ceil(uniqForward.length / TRANSACTION_BATCH_DELETE_MAX_IDS)
         for (let c = 0; c < fwdChunks; c++) {
           const slice = uniqForward.slice(
@@ -2396,13 +2410,15 @@ export default function Transactions({
               Editar apenas este lançamento
             </Button>
 
-            {editingTransaction?.recurrenceId && (
+            {(editingTransaction?.recurrenceId || editingTransaction?.installmentGroupId) && (
               <Button
                 onClick={() => proceedToEdit(editingTransaction, 'from_forward')}
                 variant="secondary"
                 fullWidth
               >
-                Desta data em diante (template + lançamentos com data ≥ esta)
+                {editingTransaction?.recurrenceId
+                  ? 'Desta data em diante (template + lançamentos com data ≥ esta)'
+                  : 'Desta parcela em diante (parcelas iguais ou posteriores a esta no grupo)'}
               </Button>
             )}
 
@@ -2411,10 +2427,14 @@ export default function Transactions({
               variant="primary"
               fullWidth
             >
-              Editar todos do grupo ({transactions.filter(t =>
-                (editingTransaction?.installmentGroupId && t.installmentGroupId === editingTransaction.installmentGroupId) ||
-                (editingTransaction?.recurrenceId && t.recurrenceId === editingTransaction.recurrenceId)
-              ).length} lançamentos visíveis)
+              {editingTransaction?.recurrenceId ? (
+                'Editar todas as ocorrências da recorrência'
+              ) : (
+                `Editar todas as parcelas do grupo${editingTransaction?.totalInstallments > 1
+                  ? ` (${editingTransaction.totalInstallments})`
+                  : ''
+                }`
+              )}
             </Button>
 
             <Button
@@ -2429,7 +2449,8 @@ export default function Transactions({
           <p className="text-xs text-dark-500">
             Recorrência: alterações em série usam{' '}
             <code className="text-dark-400">PUT /recurrences</code> com escopo (todos ou desta data em diante).
-            Parcelas: continua atualização por lançamento no período visível.
+            Parcelas: “todas” ou “desta em diante” buscam na API todas as parcelas do grupo e filtram pela data quando couber,
+            fazendo PUT em cada lançamento.
           </p>
         </div>
       </Modal>
@@ -2470,13 +2491,7 @@ export default function Transactions({
               >
                 {transactionToDelete?.recurrenceId
                   ? 'Excluir desta data em diante (na base)'
-                  : `Excluir desta data em diante (${transactions.filter(t => {
-                    const sameGroup =
-                      transactionToDelete?.installmentGroupId &&
-                      t.installmentGroupId === transactionToDelete.installmentGroupId
-                    if (!sameGroup) return false
-                    return transactionDayStamp(t.date) >= transactionDayStamp(transactionToDelete.date)
-                  }).length} no período visível)`}
+                  : 'Excluir desta data em diante (parcelas iguais ou posteriores a esta no grupo)'}
               </Button>
             )}
 
@@ -2488,10 +2503,10 @@ export default function Transactions({
             >
               {transactionToDelete?.recurrenceId
                 ? 'Excluir toda a série de recorrência'
-                : `Excluir todos do grupo (${transactions.filter(t =>
-                  transactionToDelete?.installmentGroupId &&
-                  t.installmentGroupId === transactionToDelete.installmentGroupId
-                ).length} lançamentos visíveis)`}
+                : `Excluir todas as parcelas do grupo${transactionToDelete?.totalInstallments > 1
+                  ? ` (${transactionToDelete.totalInstallments})`
+                  : ''
+                }`}
             </Button>
 
             <Button
@@ -2509,7 +2524,7 @@ export default function Transactions({
           <p className="text-xs text-dark-500">
             {transactionToDelete?.recurrenceId
               ? 'Recorrência: exclusão em série usa DELETE no servidor e afeta todas as ocorrências correspondentes na base.'
-              : 'Parcelas: exclusão em série remove apenas lançamentos já carregados neste período.'}
+              : 'Parcelas: exclusão em série busca todas as parcelas deste grupo na API; “desta data em diante” usa a data de cada parcela comparada à desta compra.'}
           </p>
         </div>
       </Modal>

@@ -61,8 +61,36 @@ async function requestJson(method, path, body, extraHeaders = {}) {
   return { status: res.status, body: parsed }
 }
 
+/**
+ * GET que não lança em HTTP de erro — para paginação/cursor ou tentativa com query opcional.
+ * @returns {Promise<{ ok: boolean, status: number, body: object|null, headers: Headers }>}
+ */
+async function requestGetAllowError(path) {
+  const authHeader = await getAuthHeader()
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'GET',
+    headers: { ...authHeader },
+    cache: 'no-store',
+  })
+  const text = await res.text().catch(() => '')
+  let parsed = null
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch {
+    parsed = null
+  }
+  return {
+    ok: res.ok,
+    status: res.status,
+    body: parsed,
+    headers: res.headers,
+  }
+}
+
 export const apiClient = {
   get: (path) => requestJson('GET', path, undefined).then((r) => r.body),
+  /** GET com status/Headers sem throw (ex.: listagem com cursor, query opcional na API). */
+  getAllowError: (path) => requestGetAllowError(path),
   /**
    * @param {string} path
    * @param {object} [body]

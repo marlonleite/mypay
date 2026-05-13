@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { listImports, deleteImport as deleteImportService } from '../services/documentService'
-import { parseLocalDate } from '../utils/helpers'
+import { parseLocalDate, roundMoney2 } from '../utils/helpers'
 import { apiClient } from '../services/apiClient'
 
 /**
@@ -81,7 +81,7 @@ export function useImportHistory() {
 
     const payload = {
       description: data.description,
-      amount: data.amount,
+      amount: roundMoney2(data.amount),
       type: data.type || 'expense',
       date: dateIso,
       credit_card_id: data.cardId,
