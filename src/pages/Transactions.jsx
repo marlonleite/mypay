@@ -119,6 +119,7 @@ export default function Transactions({
     transactions,
     loading,
     addTransaction,
+    createTransactionsBatch,
     updateTransaction,
     deleteTransaction,
     refreshTransactions,
@@ -1038,23 +1039,19 @@ export default function Transactions({
 
           await uploadPendingAttachmentsTo(firstOccurrence?.id)
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
-          // Parcelado com período selecionado
-          const numInstallments = parseInt(formData.installments) || 1
+          // Parcelado: POST /transactions/batch atomic (one round-trip vs N POSTs).
+          const numInstallments = parseInt(formData.installments, 10) || 1
           const total = formData.amount || 0
           const baseInstallmentAmount = Math.floor((total / numInstallments) * 100) / 100
-          const remainder = Math.round((total - (baseInstallmentAmount * numInstallments)) * 100) / 100
+          const remainder = Math.round((total - baseInstallmentAmount * numInstallments) * 100) / 100
           const baseDate = new Date(formData.date)
           const installmentGroupId = crypto.randomUUID()
-          let firstResult = null
-
+          const rows = []
           for (let i = 0; i < numInstallments; i++) {
             const transactionDate = addDateInterval(baseDate, formData.installmentPeriod, i)
-            // Primeira parcela recebe a sobra da divisão
             const installmentAmount = i === 0 ? baseInstallmentAmount + remainder : baseInstallmentAmount
-            // Lançamentos futuros ficam como pendente
             const isPaid = !isFutureDate(transactionDate) && formData.paid
-
-            const result = await addTransaction({
+            rows.push({
               ...data,
               amount: installmentAmount,
               date: formatDateForInput(transactionDate),
@@ -1063,10 +1060,9 @@ export default function Transactions({
               installment: i + 1,
               totalInstallments: numInstallments,
             })
-            if (i === 0) firstResult = result
           }
-
-          await uploadPendingAttachmentsTo(firstResult?.id)
+          const { createdIds } = await createTransactionsBatch(rows, { atomic: true })
+          await uploadPendingAttachmentsTo(createdIds[0])
         } else {
           const result = await addTransaction(data)
           // Registrar atividade

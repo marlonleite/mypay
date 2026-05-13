@@ -12,7 +12,8 @@ export const TRANSACTION_BATCH_DELETE_MAX_IDS = 200
  * @returns {Promise<{ results: Array<{ id: string, deleted: boolean, error?: { type?: string, message?: string } }>, deleted_count: number, failed_count: number }>}
  */
 export async function batchDeleteTransactions(payload) {
-  const { status, body } = await apiClient.post('/api/v1/transactions/batch-delete', payload)
+  // post() só devolve o body; aqui precisamos do HTTP status (como batch create / Documents).
+  const { status, body } = await apiClient.postWithStatus('/api/v1/transactions/batch-delete', payload)
   if (status !== 200 || !body) {
     throw new Error('Resposta inesperada da API ao excluir em lote')
   }

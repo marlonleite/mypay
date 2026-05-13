@@ -292,6 +292,51 @@ export function useTransactions(month, year, dateRangeMaybe) {
   }
 
   /**
+   * POST /transactions/batch — multiple creates in one request (e.g. installments).
+   * @param {object[]} rows — shapes accepted by buildTransactionPayload (create mode).
+   * @param {{ atomic?: boolean }} [opts] — default atomic true (single DB transaction on backend).
+   */
+  const createTransactionsBatch = async (rows, opts = {}) => {
+    if (!user) throw new Error('Usuário não autenticado')
+    if (!rows?.length) {
+      return { succeeded: 0, failed: 0, results: [], createdIds: [] }
+    }
+    const { apiClient } = await import('../services/apiClient')
+    const atomic = opts.atomic !== false
+    const items = []
+    for (const row of rows) {
+      items.push(await buildTransactionPayload(row, apiClient))
+    }
+    const { status, body } = await apiClient.postWithStatus('/api/v1/transactions/batch', {
+      items,
+      atomic,
+    })
+    if (!body) {
+      throw new Error(`Resposta inesperada ao criar lançamentos em lote (HTTP ${status})`)
+    }
+    if ((body.failed ?? 0) > 0 || (body.succeeded ?? 0) !== rows.length) {
+      const first = body.results?.find(r => r?.error != null)
+      const apiMsg =
+        typeof first?.error?.message === 'string'
+          ? first.error.message
+          : 'Um ou mais lançamentos do lote falharam'
+      throw new Error(apiMsg)
+    }
+    if (status !== 201) {
+      throw new Error(`Resposta inesperada ao criar lançamentos em lote (HTTP ${status})`)
+    }
+    const createdIds = (body.results || []).map(r => r?.id).filter(Boolean)
+    await fetchTransactions()
+    emitTransactionRelatedInvalidation()
+    return {
+      succeeded: body.succeeded,
+      failed: body.failed,
+      results: body.results,
+      createdIds,
+    }
+  }
+
+  /**
    * @param {string} id
    * @param {object} data
    * @param {{ skipRefetch?: boolean, skipInvalidate?: boolean }} [options]
@@ -343,6 +388,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
     loading,
     error,
     addTransaction,
+    createTransactionsBatch,
     updateTransaction,
     deleteTransaction,
     /** Re-fetch lista atual; retorna transações mapeadas (útil após criar template de recorrência). */
