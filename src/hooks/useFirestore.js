@@ -291,13 +291,22 @@ export function useTransactions(month, year, dateRangeMaybe) {
     return mapTransaction(created) // consumidores usam result.id
   }
 
-  const updateTransaction = async (id, data) => {
+  /**
+   * @param {string} id
+   * @param {object} data
+   * @param {{ skipRefetch?: boolean, skipInvalidate?: boolean }} [options]
+   *   skipRefetch: não dispara nova listagem após o PUT (ex.: atualização em lote com um só refresh ao fim).
+   *   skipInvalidate: não emitir evento SSE local (idem; um emit ao final do lote costuma bastar).
+   */
+  const updateTransaction = async (id, data, options = {}) => {
+    const skipRefetch = options.skipRefetch === true
+    const skipInvalidate = options.skipInvalidate === true
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
     const payload = await buildTransactionPayload(data, apiClient, { isUpdate: true })
     const updated = await apiClient.put(`/api/v1/transactions/${id}`, payload)
-    await fetchTransactions()
-    emitTransactionRelatedInvalidation()
+    if (!skipRefetch) await fetchTransactions()
+    if (!skipInvalidate) emitTransactionRelatedInvalidation()
     return mapTransaction(updated)
   }
 

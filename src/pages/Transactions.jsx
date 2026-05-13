@@ -63,7 +63,12 @@ import {
 } from '../utils/transactionSemantics'
 import { describeApiError, isInvoiceNotPaidForReopenError } from '../utils/apiErrors'
 import { useToast } from '../contexts/ToastContext'
+import { emitTransactionRelatedInvalidation } from '../services/eventStream'
+import { batchDeleteTransactions, TRANSACTION_BATCH_DELETE_MAX_IDS } from '../services/transactionService'
 import { setPaidOverride, removePaidOverride } from '../utils/recurrencePaidDisplay'
+
+/** PUTs paralelos ao editar todas as parcelas — limita rajadas contra API/cliente. */
+const INSTALLMENT_GROUP_UPDATE_CONCURRENCY = 12
 
 const TX_FILTER_TYPES = new Set([
   'all', 'income', 'income_paid', 'income_pending', 'expense', 'expense_paid', 'expense_pending', 'fixed', 'installment',
@@ -898,6 +903,7 @@ export default function Transactions({
         } else if (editMode === 'all' && editingTransaction.installmentGroupId) {
           const commonUpdates = {
             description: data.description,
+            amount: data.amount,
             category: data.category,
             accountId: data.accountId,
             notes: data.notes,
@@ -906,9 +912,19 @@ export default function Transactions({
           const groupTransactions = transactions.filter(
             t => t.installmentGroupId === editingTransaction.installmentGroupId
           )
-          for (const txn of groupTransactions) {
-            await updateTransaction(txn.id, commonUpdates)
+          for (let i = 0; i < groupTransactions.length; i += INSTALLMENT_GROUP_UPDATE_CONCURRENCY) {
+            const slice = groupTransactions.slice(i, i + INSTALLMENT_GROUP_UPDATE_CONCURRENCY)
+            await Promise.all(
+              slice.map(txn =>
+                updateTransaction(txn.id, commonUpdates, {
+                  skipRefetch: true,
+                  skipInvalidate: true
+                })
+              )
+            )
           }
+          await refreshTransactions()
+          emitTransactionRelatedInvalidation()
         } else {
           // Editar apenas este (ou parcela única sem modo em massa)
           await updateTransaction(editingTransaction.id, data)
@@ -1118,9 +1134,17 @@ export default function Transactions({
         const groupTransactions = transactions.filter(
           t => t.installmentGroupId === transactionToDelete.installmentGroupId
         )
-        for (const txn of groupTransactions) {
-          await deleteTransaction(txn.id)
+        const uniqIds = [...new Set(groupTransactions.map(t => t.id).filter(Boolean))]
+        const chunkTotal = Math.ceil(uniqIds.length / TRANSACTION_BATCH_DELETE_MAX_IDS)
+        for (let c = 0; c < chunkTotal; c++) {
+          const slice = uniqIds.slice(
+            c * TRANSACTION_BATCH_DELETE_MAX_IDS,
+            (c + 1) * TRANSACTION_BATCH_DELETE_MAX_IDS
+          )
+          await batchDeleteTransactions({ transaction_ids: slice })
         }
+        await refreshTransactions()
+        emitTransactionRelatedInvalidation()
       } else if (deleteMode === 'from_forward' && transactionToDelete?.installmentGroupId) {
         const anchor = transactionDayStamp(transactionToDelete.date)
         const forwardTransactions = transactions.filter(
@@ -1128,9 +1152,17 @@ export default function Transactions({
             t.installmentGroupId === transactionToDelete.installmentGroupId &&
             transactionDayStamp(t.date) >= anchor
         )
-        for (const txn of forwardTransactions) {
-          await deleteTransaction(txn.id)
+        const uniqForward = [...new Set(forwardTransactions.map(t => t.id).filter(Boolean))]
+        const fwdChunks = Math.ceil(uniqForward.length / TRANSACTION_BATCH_DELETE_MAX_IDS)
+        for (let c = 0; c < fwdChunks; c++) {
+          const slice = uniqForward.slice(
+            c * TRANSACTION_BATCH_DELETE_MAX_IDS,
+            (c + 1) * TRANSACTION_BATCH_DELETE_MAX_IDS
+          )
+          await batchDeleteTransactions({ transaction_ids: slice })
         }
+        await refreshTransactions()
+        emitTransactionRelatedInvalidation()
       } else {
         const tx = transactionToLog
         const isBillPayment =
