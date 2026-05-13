@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Run after Git resolves the push; stdin lists refs updated (see git help hooks).
-# Set SKIP_NATIVE_INSTALL_ON_PUSH=1 or use git push --no-verify to skip Android install.
-
+# Runs after refs are negotiated; stdin lists pushed refs (see git help hooks).
+# SKIP_NATIVE_INSTALL_ON_PUSH=1 or git push --no-verify skips install.
 set -euo pipefail
-
-REMOTE_NAME="${1:?}"
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -30,16 +27,24 @@ if [[ "${SKIP_NATIVE_INSTALL_ON_PUSH:-}" == 1 ]]; then
   exit 0
 fi
 
+hook_log() {
+  echo "[pre-push] $*" >&2
+}
+
+hook_log 'push updates origin/main → checking Android installer'
+
 if ! command -v adb >/dev/null 2>&1; then
-  echo "[pre-push] adb not in PATH — skipping Android install (push continues)." >&2
+  hook_log 'adb not in PATH — skipping native:install'
   exit 0
 fi
+
+adb devices >&2 || true
 
 device_count="$(adb devices 2>/dev/null | awk '/\tdevice$/ { c++ } END { print c + 0 }')"
 if [[ "$device_count" -lt 1 ]]; then
-  echo "[pre-push] No USB device in 'device' state — skipping Android install (push continues)." >&2
+  hook_log 'no device in adb (need status device) — skipping native:install'
   exit 0
 fi
 
-echo "[pre-push] Push to main + Android device detected — running npm run native:install" >&2
+hook_log "detected adb device count=${device_count} — running npm run native:install"
 npm run native:install

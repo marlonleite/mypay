@@ -17,6 +17,7 @@
     "icons:android": "node -e \"require('node:fs').copyFileSync('public/logo-mypay.svg','assets/logo.svg')\" && npx @capacitor/assets generate --android --iconBackgroundColor '#0D1B5A' --iconBackgroundColorDark '#0D1B5A' --splashBackgroundColor '#0D1B5A' --splashBackgroundColorDark '#0D1B5A' --assetPath assets",
     "icons:generate": "npm run icons:android",
     "native:install": "bash scripts/install-native-all.sh",
+    "prepare": "bash scripts/setup-githooks.sh",
     "hooks:setup": "bash scripts/setup-githooks.sh",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
