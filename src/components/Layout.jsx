@@ -210,9 +210,9 @@ export default function Layout({ children, activeTab, onTabChange, onAddNew }) {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 min-w-0 max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 w-full lg:w-auto px-4 lg:px-8 py-4 pb-28 lg:pb-4">
-        {children}
+      {/* Main: flex-1 fills height; w-full avoids width collapse — min-w-0 on main harmed WebView */}
+      <main className="flex-1 w-full max-w-lg lg:max-w-none lg:ml-64 mx-auto lg:mx-0 lg:w-auto px-4 lg:px-8 py-4 pb-28 lg:pb-4">
+        <div className="w-full min-w-0">{children}</div>
       </main>
 
       {/* Bottom Navigation with FAB — mobile only */}

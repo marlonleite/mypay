@@ -37,7 +37,8 @@ export default function CategoryPieChart({ data, formatCurrency }) {
     : data.map((d) => ({ ...d, percent: 0 }))
 
   return (
-    <div className="w-full min-w-0 flex flex-col gap-0 md:flex-row md:flex-wrap md:gap-8 md:items-start">
+    // Mobile: avoid min-w-0 + flex-1 on the legend column — WebKit/Capacitor can shrink it to ~0 width.
+    <div className="w-full flex flex-col gap-6 md:flex-row md:flex-wrap md:gap-8 md:items-start md:min-w-0">
       {/* Clip SVG overflow (labels used to bleed into the card above on WebKit / Capacitor). */}
       <div
         className="w-full shrink-0 relative overflow-hidden flex justify-center h-[176px] md:h-[220px] md:w-auto md:flex-1 md:min-w-[160px] md:max-w-[280px]"
@@ -65,11 +66,11 @@ export default function CategoryPieChart({ data, formatCurrency }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="w-full min-w-0 flex-1 border-t border-dark-700/80 pt-4 mt-4 md:border-t-0 md:pt-0 md:mt-0">
+      <div className="w-full max-w-full shrink-0 border-t border-dark-700/80 pt-4 md:flex-1 md:min-w-0 md:border-t-0 md:pt-0 md:max-w-none">
         <p className="text-xs font-medium text-dark-500 uppercase tracking-wide mb-3">
           Valores por categoria
         </p>
-        <div className="rounded-xl bg-dark-800/60 border border-dark-700/60 p-3 min-h-0 max-h-[55vh] sm:max-h-[360px] overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
+        <div className="w-full max-w-full rounded-xl bg-dark-800/60 border border-dark-700/60 p-3 min-h-0 max-h-[55vh] sm:max-h-[360px] overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] box-border">
           <ul className="flex flex-col divide-y divide-dark-700/50">
             {dataWithPercent.map((entry) => (
               <li
