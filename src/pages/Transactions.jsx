@@ -48,7 +48,7 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { useActivityLogger } from '../hooks/useActivities'
 import { usePrivacy } from '../contexts/PrivacyContext'
-import { formatDate, formatDateForInput, groupByDate } from '../utils/helpers'
+import { formatDate, formatDateForInput, groupByDate, parseLocalDate } from '../utils/helpers'
 import { coerceFormTagList, normalizeTagForForm } from '../utils/formTags'
 import { TRANSACTION_TYPES, CATEGORY_COLORS, FIXED_FREQUENCIES, INSTALLMENT_PERIODS } from '../utils/constants'
 import { listAttachments, uploadAttachment, deleteAttachment } from '../services/attachmentService'
@@ -912,6 +912,13 @@ export default function Transactions({
           const { applied } = await updateRecurrence(editingTransaction.recurrenceId, payload)
           await refreshTransactions()
           notifyRecurrenceApplied(applied)
+          toast.success(
+            scope === 'all'
+              ? 'Recorrência atualizada (série completa).'
+              : 'Recorrência atualizada a partir desta data.'
+          )
+          setDetailModalOpen(false)
+          setSelectedTransaction(null)
         } else if (
           editingTransaction.installmentGroupId &&
           (editMode === 'all' || editMode === 'from_forward')
@@ -938,6 +945,13 @@ export default function Transactions({
           })
           await refreshTransactions()
           emitTransactionRelatedInvalidation()
+          toast.success(
+            ids.length > 0
+              ? `${ids.length} parcela(s) atualizada(s).`
+              : 'Nenhuma parcela correspondente encontrada.'
+          )
+          setDetailModalOpen(false)
+          setSelectedTransaction(null)
         } else {
           // Editar apenas este (ou parcela única sem modo em massa)
           await updateTransaction(editingTransaction.id, data)
@@ -953,6 +967,27 @@ export default function Transactions({
               category: editingTransaction.category
             }
           )
+          toast.success('Lançamento atualizado.')
+          if (detailModalOpen && selectedTransaction?.id === editingTransaction.id) {
+            const nextDate = formData.date
+              ? parseLocalDate(formData.date)
+              : selectedTransaction.date
+            setSelectedTransaction(prev => {
+              if (!prev || prev.id !== editingTransaction.id) return prev
+              return {
+                ...prev,
+                description: formData.description,
+                amount: Number(formData.amount),
+                categoryId: formData.category || null,
+                accountId: formData.accountId || null,
+                notes: formData.notes || null,
+                paid: formData.paid,
+                tags: coerceFormTagList(formData.tags),
+                date: nextDate,
+                type: transactionType,
+              }
+            })
+          }
         }
         setEditMode('single') // Reset para próxima edição
       } else {
@@ -1050,6 +1085,7 @@ export default function Transactions({
           }
 
           await uploadPendingAttachmentsTo(firstOccurrence?.id)
+          toast.success('Recorrência criada.')
         } else if (formData.recurrenceType === 'installment' && formData.installments) {
           // Parcelado: POST /transactions/batch atomic (one round-trip vs N POSTs).
           const numInstallments = parseInt(formData.installments, 10) || 1
@@ -1081,6 +1117,11 @@ export default function Transactions({
           await refreshTransactions()
           emitTransactionRelatedInvalidation()
           await uploadPendingAttachmentsTo(createdIds[0])
+          toast.success(
+            numInstallments === 1
+              ? 'Parcela criada.'
+              : `Criadas ${numInstallments} parcelas.`
+          )
         } else {
           const result = await addTransaction(data)
           // Registrar atividade
@@ -1088,6 +1129,7 @@ export default function Transactions({
             logTransactionCreate({ id: result.id, ...data })
             await uploadPendingAttachmentsTo(result.id)
           }
+          toast.success('Lançamento criado.')
         }
       }
 
@@ -1119,6 +1161,18 @@ export default function Transactions({
     }
   }
 
+  const closeDeleteFlow = () => {
+    setDetailModalOpen(false)
+    setSelectedTransaction(null)
+    setDeleteModalOpen(false)
+    setTransactionToDelete(null)
+  }
+
+  const finishDeleteWithToast = (message) => {
+    toast.success(message)
+    closeDeleteFlow()
+  }
+
   const handleDelete = (transaction) => {
     // Se é parte de um grupo (parcelamento ou recorrência materializada), mostra modal
     // de confirmação. installment_group_id agrupa parcelas; recurrence_id agrupa
@@ -1142,9 +1196,11 @@ export default function Transactions({
 
       if (deleteMode === 'all' && transactionToDelete?.recurrenceId) {
         await deleteTransaction(transactionToDelete.id, { scope: 'all' })
+        finishDeleteWithToast('Toda a série de recorrência foi excluída.')
       } else if (deleteMode === 'from_forward' && transactionToDelete?.recurrenceId) {
         // Sem `from_date` no body: backend usa txn.date no Postgres (evita mismatch TZ/format).
         await deleteTransaction(transactionToDelete.id, { scope: 'from_date' })
+        finishDeleteWithToast('Recorrência excluída a partir desta data.')
       } else if (deleteMode === 'all' && transactionToDelete?.installmentGroupId) {
         const groupRows = await listTransactionRowsForInstallmentGroup(transactionToDelete.installmentGroupId)
         const uniqIds = [...new Set(groupRows.map(r => r.id).filter(Boolean))]
@@ -1158,6 +1214,11 @@ export default function Transactions({
         }
         await refreshTransactions()
         emitTransactionRelatedInvalidation()
+        finishDeleteWithToast(
+          uniqIds.length > 0
+            ? `Excluídas ${uniqIds.length} parcela(s).`
+            : 'Nenhuma parcela encontrada para excluir.'
+        )
       } else if (deleteMode === 'from_forward' && transactionToDelete?.installmentGroupId) {
         const anchor = transactionDayStamp(transactionToDelete.date)
         const groupRows = await listTransactionRowsForInstallmentGroup(transactionToDelete.installmentGroupId)
@@ -1173,6 +1234,11 @@ export default function Transactions({
         }
         await refreshTransactions()
         emitTransactionRelatedInvalidation()
+        finishDeleteWithToast(
+          uniqForward.length > 0
+            ? `Excluídas ${uniqForward.length} parcela(s) a partir desta data.`
+            : 'Nenhuma parcela a partir desta data para excluir.'
+        )
       } else {
         const tx = transactionToLog
         const isBillPayment =
@@ -1209,12 +1275,10 @@ export default function Transactions({
           if (transactionToLog) {
             logTransactionDelete(transactionToLog)
           }
+          toast.success('Lançamento excluído.')
         }
 
-        setDetailModalOpen(false)
-        setSelectedTransaction(null)
-        setDeleteModalOpen(false)
-        setTransactionToDelete(null)
+        closeDeleteFlow()
       }
     } catch (error) {
       console.error('Error deleting transaction:', error)
@@ -2449,8 +2513,9 @@ export default function Transactions({
           <p className="text-xs text-dark-500">
             Recorrência: alterações em série usam{' '}
             <code className="text-dark-400">PUT /recurrences</code> com escopo (todos ou desta data em diante).
-            Parcelas: “todas” ou “desta em diante” buscam na API todas as parcelas do grupo e filtram pela data quando couber,
-            fazendo PUT em cada lançamento.
+            Parcelas: “todas” ou “desta em diante” usam{' '}
+            <code className="text-dark-400">POST /transactions/batch-update</code> em lote quando aplicável,
+            aplicando o mesmo patch às parcelas selecionadas.
           </p>
         </div>
       </Modal>

@@ -12,12 +12,15 @@ export const STORAGE_KEY_CONTRAST_FOLLOW_SYSTEM = 'mypay_contrast_follow_system'
 
 export const PREFERS_CONTRAST_MORE_MEDIA = '(prefers-contrast: more)'
 
-/** @typedef {'violet' | 'nubank' | 'aqua'} AccentPresetId */
+/** @typedef {'violet' | 'nubank' | 'aqua' | 'calm' | 'neon' | 'bank'} AccentPresetId */
 
 export const ACCENT_PRESET_IDS = /** @type {const} */ ([
   'violet',
   'nubank',
   'aqua',
+  'calm',
+  'neon',
+  'bank',
 ])
 
 const VALID_ACCENTS = new Set(ACCENT_PRESET_IDS)
@@ -26,6 +29,9 @@ export const ACCENT_PRESETS = /** @type {const} */ ([
   { id: 'violet', label: 'Violeta', hint: 'Padrão atual' },
   { id: 'nubank', label: 'Roxo marca', hint: 'Tons próximos ao Nubank' },
   { id: 'aqua', label: 'Água-marinha', hint: 'Azul-esverdeado' },
+  { id: 'calm', label: 'Calma', hint: 'Neutros quentes + índigo' },
+  { id: 'neon', label: 'Neon', hint: 'Escuro profundo + teal' },
+  { id: 'bank', label: 'Clássico', hint: 'Azul petróleo + arco frio' },
 ])
 
 export const DEFAULT_ACCENT_PRESET = /** @type {AccentPresetId} */ ('violet')

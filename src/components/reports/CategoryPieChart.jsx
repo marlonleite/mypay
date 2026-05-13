@@ -6,7 +6,7 @@ const PIE_OUTER_RADIUS_PIXELS = 72
 export default function CategoryPieChart({ data, formatCurrency }) {
   const getCategoryColor = (colorId) => {
     const color = CATEGORY_COLORS.find(c => c.id === colorId)
-    return color?.hex || '#8b5cf6'
+    return color?.hex || 'var(--accent-primary)'
   }
 
   const CustomTooltip = ({ active, payload }) => {

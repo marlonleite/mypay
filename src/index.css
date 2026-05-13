@@ -132,6 +132,201 @@ html {
   --accent-overlay-20: rgb(34 211 238 / 0.28);
 }
 
+/* Preset Calma — neutros quentes + índigo */
+:root.light[data-accent='calm'] {
+  --bg-primary: #f4f4f5;
+  --bg-secondary: #ebebed;
+  --bg-card: #ffffff;
+  --bg-hover: #f4f4f5;
+  --bg-input: #ebebed;
+  --bg-elevated: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --border-color: #e4e4e7;
+  --border-light: #f4f4f5;
+  --accent-primary: #4f46e5;
+  --accent-secondary: #6366f1;
+  --accent-bg: rgb(79 70 229 / 0.1);
+  --accent-button: #e0e7ff;
+  --accent-button-text: #18181b;
+  --fab-bg: #18181b;
+  --fab-text: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --accent-overlay-10: rgb(79 70 229 / 0.1);
+  --accent-overlay-15: rgb(79 70 229 / 0.15);
+  --accent-overlay-20: rgb(79 70 229 / 0.22);
+  --semantic-success: #059669;
+  --semantic-error: #e11d48;
+  --semantic-warning: #ea580c;
+  --semantic-info: #4f46e5;
+}
+
+:root.dark[data-accent='calm'] {
+  --bg-primary: #0f0f12;
+  --bg-secondary: #141416;
+  --bg-card: #18181b;
+  --bg-hover: #27272a;
+  --bg-input: #18181b;
+  --bg-elevated: #27272a;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #3f3f46;
+  --border-light: #27272a;
+  --accent-primary: #6366f1;
+  --accent-secondary: #818cf8;
+  --accent-bg: rgb(99 102 241 / 0.15);
+  --accent-button: #3730a3;
+  --accent-button-text: #ffffff;
+  --fab-bg: #fafafa;
+  --fab-text: #18181b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --accent-overlay-10: rgb(129 140 248 / 0.12);
+  --accent-overlay-15: rgb(129 140 248 / 0.18);
+  --accent-overlay-20: rgb(129 140 248 / 0.26);
+  --semantic-success: #34d399;
+  --semantic-error: #fb7185;
+  --semantic-warning: #fb923c;
+  --semantic-info: #818cf8;
+}
+
+/* Preset Neon — fundo profundo + teal */
+:root.light[data-accent='neon'] {
+  --bg-primary: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-card: #ffffff;
+  --bg-hover: #fafafa;
+  --bg-input: #f4f4f5;
+  --bg-elevated: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --border-color: #e4e4e7;
+  --border-light: #fafafa;
+  --accent-primary: #0d9488;
+  --accent-secondary: #14b8a6;
+  --accent-bg: rgb(13 148 136 / 0.1);
+  --accent-button: #ccfbf1;
+  --accent-button-text: #134e4a;
+  --fab-bg: #134e4a;
+  --fab-text: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --accent-overlay-10: rgb(13 148 136 / 0.1);
+  --accent-overlay-15: rgb(13 148 136 / 0.16);
+  --accent-overlay-20: rgb(13 148 136 / 0.22);
+  --semantic-success: #16a34a;
+  --semantic-error: #dc2626;
+  --semantic-warning: #ea580c;
+  --semantic-info: #0d9488;
+}
+
+:root.dark[data-accent='neon'] {
+  --bg-primary: #09090b;
+  --bg-secondary: #0f0f11;
+  --bg-card: #18181b;
+  --bg-hover: #27272a;
+  --bg-input: #18181b;
+  --bg-elevated: #27272a;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #3f3f46;
+  --border-light: #27272a;
+  --accent-primary: #2dd4bf;
+  --accent-secondary: #5eead4;
+  --accent-bg: rgb(45 212 191 / 0.13);
+  --accent-button: #134e4a;
+  --accent-button-text: #ecfeff;
+  --fab-bg: #2dd4bf;
+  --fab-text: #09090b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --accent-overlay-10: rgb(94 234 212 / 0.12);
+  --accent-overlay-15: rgb(94 234 212 / 0.2);
+  --accent-overlay-20: rgb(94 234 212 / 0.28);
+  --semantic-success: #4ade80;
+  --semantic-error: #f87171;
+  --semantic-warning: #fb923c;
+  --semantic-info: #5eead4;
+}
+
+/* Preset Clássico (bank) — azul petróleo + slate */
+:root.light[data-accent='bank'] {
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #e2e8f0;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-input: #e2e8f0;
+  --bg-elevated: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-color: #cbd5e1;
+  --border-light: #f1f5f9;
+  --accent-primary: #0284c7;
+  --accent-secondary: #0369a1;
+  --accent-bg: rgb(2 132 199 / 0.1);
+  --accent-button: #e0f2fe;
+  --accent-button-text: #0c4a6e;
+  --fab-bg: #0c4a6e;
+  --fab-text: #f8fafc;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  --accent-overlay-10: rgb(2 132 199 / 0.1);
+  --accent-overlay-15: rgb(2 132 199 / 0.15);
+  --accent-overlay-20: rgb(2 132 199 / 0.22);
+  --semantic-success: #15803d;
+  --semantic-error: #b91c1c;
+  --semantic-warning: #c2410c;
+  --semantic-info: #0284c7;
+}
+
+:root.dark[data-accent='bank'] {
+  --bg-primary: #0c1117;
+  --bg-secondary: #111820;
+  --bg-card: #151b24;
+  --bg-hover: #1e293b;
+  --bg-input: #151b24;
+  --bg-elevated: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --border-light: #1e293b;
+  --accent-primary: #38bdf8;
+  --accent-secondary: #7dd3fc;
+  --accent-bg: rgb(56 189 248 / 0.12);
+  --accent-button: #0c4a6e;
+  --accent-button-text: #f0f9ff;
+  --fab-bg: #38bdf8;
+  --fab-text: #0c1117;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.42);
+  --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  --accent-overlay-10: rgb(125 211 252 / 0.12);
+  --accent-overlay-15: rgb(125 211 252 / 0.18);
+  --accent-overlay-20: rgb(125 211 252 / 0.26);
+  --semantic-success: #4ade80;
+  --semantic-error: #fca5a5;
+  --semantic-warning: #fdba74;
+  --semantic-info: #7dd3fc;
+}
+
 /* Stronger hierarchy for borders and secondary text */
 html.light.high-contrast {
   --text-secondary: #334155;
@@ -353,31 +548,41 @@ body {
    STATUS COLORS
    ======================================== */
 
-/* Emerald/Success */
-.light .bg-emerald-500\/10 { background-color: rgba(16, 185, 129, 0.1); }
-.light .bg-emerald-500\/15 { background-color: rgba(16, 185, 129, 0.12); }
-.light .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.15); }
-.light .text-emerald-500 { color: #10b981; }
-.light .text-emerald-400 { color: #10b981; }
+/* Emerald/Success — follow semantic tokens per preset */
+.light .bg-emerald-500\/10 { background-color: color-mix(in srgb, var(--semantic-success) 12%, transparent); }
+.light .bg-emerald-500\/15 { background-color: color-mix(in srgb, var(--semantic-success) 16%, transparent); }
+.light .bg-emerald-500\/20 { background-color: color-mix(in srgb, var(--semantic-success) 20%, transparent); }
+.light .text-emerald-500 { color: var(--semantic-success); }
+.light .text-emerald-400 { color: var(--semantic-success); }
 
-.dark .bg-emerald-500\/10 { background-color: rgba(16, 185, 129, 0.12); }
-.dark .bg-emerald-500\/15 { background-color: rgba(16, 185, 129, 0.15); }
-.dark .bg-emerald-500\/20 { background-color: rgba(16, 185, 129, 0.2); }
-.dark .text-emerald-500 { color: #34d399; }
-.dark .text-emerald-400 { color: #34d399; }
+.dark .bg-emerald-500\/10 { background-color: color-mix(in srgb, var(--semantic-success) 14%, transparent); }
+.dark .bg-emerald-500\/15 { background-color: color-mix(in srgb, var(--semantic-success) 18%, transparent); }
+.dark .bg-emerald-500\/20 { background-color: color-mix(in srgb, var(--semantic-success) 22%, transparent); }
+.dark .text-emerald-500 { color: var(--semantic-success); }
+.dark .text-emerald-400 { color: var(--semantic-success); }
 
-/* Red/Danger */
-.light .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.1); }
-.light .bg-red-500\/15 { background-color: rgba(239, 68, 68, 0.12); }
-.light .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.15); }
-.light .text-red-500 { color: #ef4444; }
-.light .text-red-400 { color: #ef4444; }
+.light .bg-emerald-500,
+.dark .bg-emerald-500 {
+  background-color: var(--semantic-success);
+}
 
-.dark .bg-red-500\/10 { background-color: rgba(239, 68, 68, 0.12); }
-.dark .bg-red-500\/15 { background-color: rgba(239, 68, 68, 0.15); }
-.dark .bg-red-500\/20 { background-color: rgba(239, 68, 68, 0.2); }
-.dark .text-red-500 { color: #f87171; }
-.dark .text-red-400 { color: #f87171; }
+/* Red/Danger — follow semantic tokens per preset */
+.light .bg-red-500\/10 { background-color: color-mix(in srgb, var(--semantic-error) 12%, transparent); }
+.light .bg-red-500\/15 { background-color: color-mix(in srgb, var(--semantic-error) 14%, transparent); }
+.light .bg-red-500\/20 { background-color: color-mix(in srgb, var(--semantic-error) 17%, transparent); }
+.light .text-red-500 { color: var(--semantic-error); }
+.light .text-red-400 { color: var(--semantic-error); }
+
+.dark .bg-red-500\/10 { background-color: color-mix(in srgb, var(--semantic-error) 14%, transparent); }
+.dark .bg-red-500\/15 { background-color: color-mix(in srgb, var(--semantic-error) 17%, transparent); }
+.dark .bg-red-500\/20 { background-color: color-mix(in srgb, var(--semantic-error) 21%, transparent); }
+.dark .text-red-500 { color: var(--semantic-error); }
+.dark .text-red-400 { color: var(--semantic-error); }
+
+.light .bg-red-500,
+.dark .bg-red-500 {
+  background-color: var(--semantic-error);
+}
 
 /* Orange/Warning */
 .light .bg-orange-500\/10 { background-color: rgba(249, 115, 22, 0.1); }
@@ -401,6 +606,111 @@ body {
 .dark .bg-violet-500\/15 { background-color: var(--accent-overlay-15); }
 .dark .bg-violet-500\/20 { background-color: var(--accent-overlay-20); }
 
+/* Extra violet utilities → presets (accent variables) */
+.light .text-violet-100,
+.light .text-violet-200 {
+  color: color-mix(in srgb, var(--accent-primary) 18%, white);
+}
+.light .text-violet-300 { color: color-mix(in srgb, var(--accent-primary) 35%, black); }
+.light .text-violet-600 { color: color-mix(in srgb, var(--accent-primary) 58%, black); }
+.light .text-violet-700 { color: color-mix(in srgb, var(--accent-primary) 42%, black); }
+
+.dark .text-violet-100 { color: color-mix(in srgb, var(--accent-secondary) 45%, white); }
+.dark .text-violet-200 { color: color-mix(in srgb, var(--accent-secondary) 28%, white); }
+.dark .text-violet-300 { color: var(--accent-secondary); }
+.dark .text-violet-600 { color: var(--accent-primary); }
+.dark .text-violet-700 { color: color-mix(in srgb, var(--accent-secondary) 18%, black); }
+
+.dark .text-violet-300\/80,
+.light .text-violet-300\/80 {
+  color: color-mix(in srgb, var(--accent-secondary) 72%, transparent);
+}
+
+.light .hover\:text-violet-300:hover { color: color-mix(in srgb, var(--accent-primary) 35%, black); }
+.dark .hover\:text-violet-300:hover { color: color-mix(in srgb, var(--accent-secondary) 18%, white); }
+.light .hover\:text-violet-500:hover,
+.dark .hover\:text-violet-500:hover { color: var(--accent-primary); }
+.light .hover\:text-violet-200:hover,
+.dark .hover\:text-violet-200:hover { color: color-mix(in srgb, var(--accent-secondary) 24%, white); }
+.light .hover\:text-violet-700:hover { color: color-mix(in srgb, var(--accent-primary) 38%, black); }
+.dark .hover\:text-violet-700:hover { color: color-mix(in srgb, var(--accent-secondary) 12%, black); }
+
+.dark .dark\:hover\:text-violet-300:hover { color: color-mix(in srgb, var(--accent-secondary) 18%, white); }
+.dark .dark\:hover\:text-violet-700:hover { color: color-mix(in srgb, var(--accent-secondary) 12%, black); }
+
+.light .bg-violet-500\/30,
+.dark .bg-violet-500\/30 {
+  background-color: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+}
+.light .bg-violet-500\/5,
+.dark .bg-violet-500\/5 {
+  background-color: color-mix(in srgb, var(--accent-primary) 7%, transparent);
+}
+
+.dark .bg-violet-500 { background-color: var(--accent-primary); }
+.dark .hover\:bg-violet-500:hover {
+  background-color: color-mix(in srgb, var(--accent-primary) 90%, white);
+}
+
+.light .border-violet-500,
+.dark .border-violet-500 { border-color: var(--accent-primary); }
+.light .border-violet-500\/20,
+.dark .border-violet-500\/20 { border-color: color-mix(in srgb, var(--accent-primary) 22%, transparent); }
+.light .border-violet-500\/25,
+.dark .border-violet-500\/25 { border-color: color-mix(in srgb, var(--accent-primary) 26%, transparent); }
+.light .border-violet-500\/30,
+.dark .border-violet-500\/30 { border-color: color-mix(in srgb, var(--accent-primary) 32%, transparent); }
+.light .border-violet-500\/40,
+.dark .border-violet-500\/40 { border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent); }
+.light .border-violet-500\/50,
+.dark .border-violet-500\/50 { border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent); }
+
+.dark .focus\:border-violet-500:focus,
+.light .focus\:border-violet-500:focus { border-color: var(--accent-primary); }
+.dark .focus\:border-violet-500\/50:focus,
+.light .focus\:border-violet-500\/50:focus {
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent);
+}
+
+.dark .ring-violet-500 { --tw-ring-color: var(--accent-primary); }
+.light .ring-violet-500 { --tw-ring-color: var(--accent-primary); }
+.dark .ring-violet-500\/25,
+.light .ring-violet-500\/25 {
+  --tw-ring-color: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+}
+.dark .ring-violet-500\/35,
+.light .ring-violet-500\/35 {
+  --tw-ring-color: color-mix(in srgb, var(--accent-primary) 36%, transparent);
+}
+
+.dark .focus\:ring-violet-500:focus,
+.light .focus\:ring-violet-500:focus {
+  --tw-ring-color: var(--accent-primary);
+}
+.dark .focus\:ring-violet-500\/30:focus,
+.light .focus\:ring-violet-500\/30:focus {
+  --tw-ring-color: color-mix(in srgb, var(--accent-primary) 30%, transparent);
+}
+
+.light .accent-violet-500,
+.dark .accent-violet-500 { accent-color: var(--accent-primary); }
+
+.light .from-violet-500\/15,
+.dark .from-violet-500\/15 {
+  --tw-gradient-from: color-mix(in srgb, var(--accent-primary) 15%, transparent) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position);
+}
+
+.light .shadow-violet-500\/30,
+.dark .shadow-violet-500\/30 {
+  --tw-shadow-color: color-mix(in srgb, var(--accent-primary) 32%, transparent);
+}
+
+.light .hover\:bg-violet-500\/30:hover,
+.dark .hover\:bg-violet-500\/30:hover {
+  background-color: color-mix(in srgb, var(--accent-primary) 28%, transparent);
+}
+
 /* Amber/Alert */
 .light .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1); }
 .light .text-amber-400 { color: #d97706; }
@@ -422,18 +732,18 @@ select {
 
 /* Select options styling */
 .light select {
-  background-color: #f5f5f8;
-  color: #1a1a2e;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
 }
 
 .light select option {
-  background-color: #ffffff;
-  color: #1a1a2e;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .dark select option {
-  background-color: #1a1a2e;
-  color: #ffffff;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
 }
 
 /* Input autofill */
@@ -600,20 +910,20 @@ select {
 .light [class*="fixed"][class*="z-50"] input,
 .light [class*="fixed"][class*="z-50"] select,
 .light [class*="fixed"][class*="z-50"] textarea {
-  border: 1px solid #e5e7eb;
-  background-color: #fafafa;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-input);
 }
 
 .light [class*="fixed"][class*="z-50"] input:focus,
 .light [class*="fixed"][class*="z-50"] select:focus,
 .light [class*="fixed"][class*="z-50"] textarea:focus {
-  border-color: #8b5cf6;
+  border-color: var(--accent-primary);
   background-color: #ffffff;
 }
 
 /* Modal labels in light mode */
 .light [class*="fixed"][class*="z-50"] label {
-  color: #374151;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -681,7 +991,7 @@ select {
 /* ========================================
    TEXT COLORS - LIGHT MODE OVERRIDES
    ======================================== */
-.light .text-dark-500 { color: #9ca3af; }
+.light .text-dark-500 { color: var(--text-muted); }
 
 /* Gray backgrounds for items - light mode */
 .light [class*="bg-dark-800"][class*="rounded"] {
@@ -694,10 +1004,14 @@ select {
 /* Hover states - light mode */
 .light .hover\:text-white:hover { color: var(--text-primary); }
 
-/* Active filter button */
+/* Active filter button — fills with theme accent */
 .light .bg-violet-600.text-white {
-  background-color: #8b5cf6;
-  color: #ffffff;
+  background-color: var(--accent-primary);
+  color: #ffffff !important;
+}
+
+.light .bg-violet-600.text-white .text-dark-300 {
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 
 /* ========================================

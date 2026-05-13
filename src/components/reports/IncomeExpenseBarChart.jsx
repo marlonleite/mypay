@@ -2,8 +2,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 export default function IncomeExpenseBarChart({ income, expenses, formatCurrency }) {
   const data = [
-    { name: 'Receitas', value: income, color: '#10b981' },
-    { name: 'Despesas', value: expenses, color: '#ef4444' }
+    { name: 'Receitas', value: income, color: 'var(--semantic-success)' },
+    { name: 'Despesas', value: expenses, color: 'var(--semantic-error)' }
   ]
 
   const CustomTooltip = ({ active, payload }) => {
@@ -30,18 +30,18 @@ export default function IncomeExpenseBarChart({ income, expenses, formatCurrency
           margin={{ top: 12, right: 2, left: 0, bottom: 4 }}
           barCategoryGap="22%"
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} vertical={false} />
           <XAxis
             dataKey="name"
-            stroke="#9ca3af"
-            tick={{ fill: '#9ca3af', fontSize: 11 }}
+            stroke="var(--text-muted)"
+            tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
             tickMargin={8}
             axisLine={false}
           />
           <YAxis
             width={42}
-            stroke="#9ca3af"
-            tick={{ fill: '#9ca3af', fontSize: 10 }}
+            stroke="var(--text-muted)"
+            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
             domain={[0, yAxisMax || 1]}
             tickFormatter={(value) => {
               if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`

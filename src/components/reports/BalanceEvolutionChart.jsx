@@ -112,7 +112,7 @@ export default function BalanceEvolutionChart({ transactions, month, year, forma
             dataKey="day"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#6b7280', fontSize: 10 }}
+            tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
             interval="preserveStartEnd"
           />
           <YAxis
@@ -120,17 +120,17 @@ export default function BalanceEvolutionChart({ transactions, month, year, forma
             domain={[minBalance * 1.1, maxBalance * 1.1]}
           />
           <Tooltip content={<CustomTooltip />} />
-          <ReferenceLine y={0} stroke="#374151" strokeDasharray="3 3" />
+          <ReferenceLine y={0} stroke="var(--border-color)" strokeDasharray="3 3" opacity={0.7} />
           <Line
             type="monotone"
             dataKey="balance"
-            stroke="#8b5cf6"
+            stroke="var(--accent-primary)"
             strokeWidth={2}
             dot={false}
             activeDot={{
               r: 4,
-              fill: '#8b5cf6',
-              stroke: '#1f2937',
+              fill: 'var(--accent-primary)',
+              stroke: 'var(--border-color)',
               strokeWidth: 2
             }}
           />

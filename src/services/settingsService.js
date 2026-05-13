@@ -7,7 +7,7 @@ import { isAccentPresetId } from '../utils/appearance'
  *
  * Backend consolida em 1 row `user_settings` com UNIQUE (user_id).
  * Campos usados pelo front incluem tema, onboarding, categorias padrão, push, privacidade, e opcionalmente aparência:
- *   accent_preset (`violet` | `nubank` | `aqua`),
+ *   accent_preset (`violet` | `nubank` | `aqua` | `calm` | `neon` | `bank`),
  *   contrast_follow_system (boolean),
  *   high_contrast (boolean, manual).
  * Se a API não tiver essas colunas ainda, o PUT pode falhar: o cliente sincroniza com try/catch e mantém localStorage.

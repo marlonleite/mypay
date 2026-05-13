@@ -42,7 +42,7 @@ Referência canônica no backend: seção **Comunicação rápida com o front** 
 
 O front já envia/atualiza, quando faz sentido para o servidor, snake_case opcional sobre `user_settings`:
 
-- **`accent_preset`** — `violet` | `nubank` | `aqua`
+- **`accent_preset`** — `violet` | `nubank` | `aqua` | `calm` | `neon` | `bank`
 - **`contrast_follow_system`** — boolean: respeitar `prefers-contrast: more` do sistema
 - **`high_contrast`** — boolean: alto contraste ligado pelo usuário (checkbox manual)
 

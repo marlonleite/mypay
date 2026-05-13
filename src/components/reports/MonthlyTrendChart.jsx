@@ -118,11 +118,11 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
     <div className="w-full min-w-0 h-[280px] sm:h-[300px]">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={simplifiedData} margin={{ top: 8, right: 8, left: 0, bottom: 36 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.35} />
         <XAxis
           dataKey="name"
-          stroke="#9ca3af"
-          tick={{ fill: '#9ca3af', fontSize: 11 }}
+          stroke="var(--text-muted)"
+          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
           interval={0}
           angle={-25}
           textAnchor="end"
@@ -130,8 +130,8 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
         />
         <YAxis
           width={40}
-          stroke="#9ca3af"
-          tick={{ fill: '#9ca3af', fontSize: 10 }}
+          stroke="var(--text-muted)"
+          tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
           tickFormatter={(value) => {
             if (value >= 1000000) {
               return `${(value / 1000000).toFixed(1)}M`
@@ -150,34 +150,34 @@ export default function MonthlyTrendChart({ month, year, formatCurrency }) {
           wrapperStyle={{
             paddingTop: 10,
             fontSize: 11,
-            color: '#9ca3af'
+            color: 'var(--text-muted)'
           }}
         />
         <Line
           type="monotone"
           dataKey="receitas"
           name="Receitas"
-          stroke="#10b981"
+          stroke="var(--semantic-success)"
           strokeWidth={2}
-          dot={{ fill: '#10b981', r: 4 }}
+          dot={{ fill: 'var(--semantic-success)', r: 4 }}
           activeDot={{ r: 6 }}
         />
         <Line
           type="monotone"
           dataKey="despesas"
           name="Despesas"
-          stroke="#ef4444"
+          stroke="var(--semantic-error)"
           strokeWidth={2}
-          dot={{ fill: '#ef4444', r: 4 }}
+          dot={{ fill: 'var(--semantic-error)', r: 4 }}
           activeDot={{ r: 6 }}
         />
         <Line
           type="monotone"
           dataKey="saldo"
           name="Saldo"
-          stroke="#8b5cf6"
+          stroke="var(--accent-primary)"
           strokeWidth={2}
-          dot={{ fill: '#8b5cf6', r: 4 }}
+          dot={{ fill: 'var(--accent-primary)', r: 4 }}
           activeDot={{ r: 6 }}
         />
       </LineChart>

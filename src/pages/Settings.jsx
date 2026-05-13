@@ -35,6 +35,9 @@ const ACCENT_SWATCH = {
   violet: '#8b5cf6',
   nubank: '#820ad1',
   aqua: '#0891b2',
+  calm: '#6366f1',
+  neon: '#14b8a6',
+  bank: '#0284c7',
 }
 
 export default function Settings() {
@@ -173,7 +176,7 @@ export default function Settings() {
         </div>
 
         <p className="text-xs font-medium text-dark-500 uppercase tracking-wide mb-2">Cor de destaque</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
           {ACCENT_PRESETS.map((preset) => {
             const active = accentPreset === preset.id
             return (
