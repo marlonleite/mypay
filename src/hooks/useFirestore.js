@@ -141,11 +141,14 @@ export async function resolveTagIds(tagNames, apiClient) {
   return ids
 }
 
-// Converte payload frontend (camelCase) → API (snake_case).
-// Pós Fase B-Refactor (Organizze): aceita campos novos do modelo unificado.
-// Constraint do backend: credit_card_invoice_id requer credit_card_id;
-// paid_credit_card_id e paid_credit_card_invoice_id devem vir juntos.
-export async function buildTransactionPayload(data, apiClient) {
+/**
+ * @param {object} data
+ * @param {import('../services/apiClient').apiClient | any} apiClient
+ * @param {{ isUpdate?: boolean }} [opts] — se `isUpdate`, não envia defaults de parcelamento/recorrência quando
+ *   ausentes em `data`, evitando apagar `installment_group_id` / `recurrence_id` num PUT parcial.
+ */
+export async function buildTransactionPayload(data, apiClient, opts = {}) {
+  const isUpdate = opts.isUpdate === true
   const tag_ids = data.tags !== undefined
     ? await resolveTagIds(data.tags, apiClient)
     : undefined
@@ -171,12 +174,19 @@ export async function buildTransactionPayload(data, apiClient) {
     // 🆕 Onda 1+4 — pagamento de fatura
     paid_credit_card_id: data.paidCreditCardId ?? null,
     paid_credit_card_invoice_id: data.paidCreditCardInvoiceId ?? null,
-    // 🆕 Onda 1 — parcelamento (backend gera N rows quando total_installments > 1)
-    installment: data.installment ?? 1,
-    total_installments: data.totalInstallments ?? data.installments ?? 1,
-    installment_group_id: data.installmentGroupId ?? null,
-    // 🆕 Onda 3 — vínculo a template de recorrência (substitui recurrence_group string)
-    recurrence_id: data.recurrenceId ?? null,
+  }
+
+  if (!isUpdate) {
+    payload.installment = data.installment ?? 1
+    payload.total_installments = data.totalInstallments ?? data.installments ?? 1
+    payload.installment_group_id = data.installmentGroupId ?? null
+    payload.recurrence_id = data.recurrenceId ?? null
+  } else {
+    if (data.installment !== undefined) payload.installment = data.installment
+    if (data.totalInstallments !== undefined) payload.total_installments = data.totalInstallments
+    else if (data.installments !== undefined) payload.total_installments = data.installments
+    if (data.installmentGroupId !== undefined) payload.installment_group_id = data.installmentGroupId
+    if (data.recurrenceId !== undefined) payload.recurrence_id = data.recurrenceId
   }
 
   if (tag_ids !== undefined) payload.tag_ids = tag_ids
@@ -284,7 +294,7 @@ export function useTransactions(month, year, dateRangeMaybe) {
   const updateTransaction = async (id, data) => {
     if (!user) throw new Error('Usuário não autenticado')
     const { apiClient } = await import('../services/apiClient')
-    const payload = await buildTransactionPayload(data, apiClient)
+    const payload = await buildTransactionPayload(data, apiClient, { isUpdate: true })
     const updated = await apiClient.put(`/api/v1/transactions/${id}`, payload)
     await fetchTransactions()
     emitTransactionRelatedInvalidation()
