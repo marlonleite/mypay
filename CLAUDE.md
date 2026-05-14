@@ -1,200 +1,78 @@
 # CLAUDE.md
 
-Este arquivo fornece orientações ao Claude Code quando trabalhando neste repositório.
+Orientações ao Claude Code para o repositório **myPay**.
 
----
+## Regras ativas (sempre carregadas)
 
-## Doutrina Operacional
+Em `.claude/rules/`:
+- **`01-core.md`** — Doutrina operacional (fluxo, ética, execução, commits)
+- **`05-comunicacao.md`** — Estilo de comunicação (PT-BR, modos ask/plan/agent)
+- **`07-desenvolvimento.md`** — Princípios de código
+- **`08-frontend.md`** — Stack e padrões React/Vite/Tailwind
+- **`09-migration-map.md`** — Migração Firebase → API Postgres
 
-**TODAS as regras definidas em `.claude/rules/` devem ser rigorosamente seguidas.**
+Espelhadas para Cursor em `.cursor/rules/*.mdc` (idênticas em conteúdo).
 
-### Cursor (`~/.cursor/rules/` + este repositório)
+## Comandos sob demanda
 
-A doutrina **agnóstica de stack** (fluxo, comunicação, RCA, retrospectiva) já está em **`~/.cursor/rules/`**: por exemplo `doutrina-operacional.mdc`, `comunicacao.mdc`, `protocolo-debug-raiz.mdc`, `protocolo-retro.mdc`. Elas **somam** automaticamente a qualquer workspace.
+Em `.claude/commands/`:
+- **`/refresh`** — Protocolo de debugging & RCA (use quando bug for crítico/recorrente)
+- **`/retro`** — Retrospectiva e evolução da doutrina
+- **`/review`** — Code review
+- **`/commit`** — Commit semântico
+- **`/test`** — Testes (quando configurados)
+- **`/map`** — Mapa de migração backend
 
-Neste repo, **`.cursor/rules/*.mdc`** cobre só o **específico do myPay** (vide lista abaixo com pares `.md` / `.mdc`). Não duplicar aqui o que o global já cobre.
+## Doutrina global (Cursor)
 
-### Regras Globais (Sempre Ativas)
+`~/.cursor/rules/` já carrega doutrina agnóstica de stack. Não duplicar.
 
-Leia PRIMEIRO os seguintes arquivos antes de qualquer ação:
-
-> **Cursor:** Para 01–05 não há `.mdc` neste repo — use `~/.cursor/rules/` (bloco acima). Para 06–08 e 10, o mesmo conteúdo aplicável no Cursor está em **`.cursor/rules/*.mdc`** com o mesmo número de arquivo.
-
-- **`.claude/rules/01-core.md`** - Doutrina operacional central (OBRIGATÓRIO)
-  - Reconhecimento antes de tocar (completo vs. focalizado)
-  - Fluxo mandatório: Reconhecimento → Planejamento → Execução → Verificação → Relato
-  - Ética operacional, zero suposições, ownership extremo
-  - Constraints de commits (somente sob solicitação explícita)
-
-- **`.claude/rules/05-comunicacao.md`** - Estilo de comunicação (OBRIGATÓRIO)
-  - Concisão profissional em português brasileiro
-  - Proibição de bajulação e validações vazias
-  - Modos: ask (conversa), plan (planejamento), agent (execução silenciosa)
-  - Legenda de status: ✅ sucesso, ⚠️ autocorrigido, 🚧 bloqueio
-
-- **`.claude/rules/06-testes.md`** — Guia de Testes React/Vitest (FUTURO); **Cursor:** `.cursor/rules/06-testes.mdc`
-  - ⚠️ **Testes não configurados neste projeto atualmente**
-  - Guia completo para quando Vitest for configurado
-  - Testing Library, mocking Firebase, padrões AAA
-
-- **`.claude/rules/07-desenvolvimento.md`** — Princípios de código (OBRIGATÓRIO); **Cursor:** `.cursor/rules/07-desenvolvimento.mdc`
-  - Modularização, responsabilidade única, nomeação clara
-  - Segurança, escalabilidade, testabilidade
-  - Tratamento robusto de erros, logs estruturados
-
-- **`.claude/settings.json`** — Convenções de estilo, Firebase, i18n e pastas; **Cursor:** `.cursor/rules/10-mypay-conventions.mdc` (espelho enxuto para `src/`)
-
-### Regras Contextuais (Ativadas Conforme Necessário)
-
-- **`.claude/rules/02-request.md`** - Protocolo de request padrão
-  - **Quando:** Durante toda tarefa de request normal
-  - **Conteúdo:** Profundidade de reconhecimento (completo vs. focalizado), digest estruturado
-
-- **`.claude/rules/03-refresh.md`** - Protocolo de Debugging & RCA
-  - **Quando:** Bugs recorrentes, críticos ou de causa raiz obscura
-  - **Conteúdo:** Análise de causa raiz, isolamento de anomalia, remediação sistêmica
-
-- **`.claude/rules/04-retro.md`** - Protocolo de Retrospectiva
-  - **Quando:** Comando `/retro` explícito ou solicitação de lições aprendidas
-  - **Conteúdo:** Reflexão, abstração de lições duráveis, evolução da doutrina
-
-- **`.claude/rules/08-frontend.md`** — Doutrina Frontend (ATIVO); **Cursor:** `.cursor/rules/08-frontend.mdc`
-  - **Quando:** Sempre (projeto React + Vite)
-  - **Conteúdo:** Stack, arquitetura, Context API, Tailwind CSS, padrões de código
-  - **Regra adaptada para este projeto específico**
-
-- **`.claude/rules/09-migration-map.md`** — Migração Firebase → API Postgres; **Cursor:** `.cursor/rules/09-migration-map.mdc`
-  - **Quando:** Hooks, services, contexts ou acesso a dados durante a migração
-  - **Conteúdo:** Entity maps em `mypay-api/.claude/map/`, transforms (meses, money, datas, IDs, snake_case), auth Bearer
-
----
-
-## Fluxo Operacional Mandatório
-
-Para **TODA** tarefa, siga estritamente:
+## Stack
 
 ```
-┌─────────────────┐
-│ Reconhecimento  │ → Leia antes de tocar (completo ou focalizado)
-└────────┬────────┘
-         ↓
-┌─────────────────┐
-│  Planejamento   │ → Digest + impacto sistêmico
-└────────┬────────┘
-         ↓
-┌─────────────────┐
-│   Execução      │ → Leia → Escreva → Releia (sempre)
-└────────┬────────┘
-         ↓
-┌─────────────────┐
-│  Verificação    │ → Testes + linters + autoauditoria
-└────────┬────────┘
-         ↓
-┌─────────────────┐
-│    Relato       │ → Relatório estruturado com evidências
-└─────────────────┘
+React 18 + Vite (JS, sem TS)  ·  Tailwind  ·  Context API
+Firebase (Auth/Firestore/Storage)  ·  lucide-react  ·  recharts
+react-router-dom v6  ·  npm  ·  Vercel
 ```
 
-### Checklist de Aderência
+Testes: não configurados.
 
-Antes de declarar qualquer tarefa como completa, verifique:
-
-- [ ] Reconhecimento realizado (completo ou focalizado)?
-- [ ] Digest de reconhecimento documentado (no chat)?
-- [ ] Arquivos relidos imediatamente após modificação?
-- [ ] Portões de qualidade executados (testes, linters)?
-- [ ] Autoauditoria de confiança zero concluída?
-- [ ] Relatório final estruturado fornecido?
-- [ ] Comunicação concisa sem bajulação?
-
----
-
-## Stack Específica
-
-```
-Framework: React 18 + Vite (JavaScript)
-Linguagem: JavaScript (sem TypeScript)
-Estilização: Tailwind CSS
-Backend/Auth: Firebase (Firestore, Auth, Storage)
-Ícones: lucide-react
-Roteamento: react-router-dom v6
-Gráficos: recharts
-Storage S3: @aws-sdk/client-s3
-Deploy: Vercel
-Linting: ESLint (React/Hooks)
-Package Manager: npm
-Testes: Não configurado (pendente)
-```
-
----
-
-## Comandos do Projeto
+## Comandos do projeto
 
 ```bash
-# Instalar dependências
 npm install
-
-# Rodar aplicação (desenvolvimento)
-npm run dev
-
-# Build para produção
-npm run build
-
-# Preview do build
+npm run dev           # desenvolvimento
+npm run dev:full      # dev com proxy /api/organizze-proxy
+npm run build         # produção
 npm run preview
-
-# Linting
 npm run lint
-
-# Dev com proxy (para APIs externas)
-npm run dev:full
 ```
 
----
-
-## Estrutura do Projeto
+## Estrutura
 
 ```
 src/
-├── components/    # Componentes reutilizáveis
-├── contexts/      # Context API (auth, theme, etc.)
-├── firebase/      # Configuração Firebase
-├── hooks/         # Custom hooks
-├── pages/         # Páginas/rotas da aplicação
-├── services/      # Serviços (API calls, Firebase)
-└── utils/         # Utilitários e helpers
+├── components/    # reutilizáveis por domínio
+├── contexts/      # Auth, Theme, Notification, Privacy
+├── firebase/      # config Firebase
+├── hooks/         # custom hooks (Firebase, derivados)
+├── pages/         # rotas
+├── services/      # Firestore, APIs externas
+└── utils/         # helpers puros
 ```
 
----
+## Gotchas
 
-## Notas do Projeto
+- Proxy em `vite.config.js` para `/api/organizze-proxy`.
+- `VITE_APP_VERSION` injetada no build.
+- Firebase env vars em `.env`.
 
-### Arquitetura
-- SPA com React Router para navegação
-- Firebase como backend completo (auth, db, storage)
-- Context API para estado global (sem Redux/Zustand)
+## Princípios mandatórios
 
-### Convenções
-- Arquivos `.jsx` para componentes React
-- Tailwind CSS para estilização (utility-first)
-- Firebase SDK v10 (modular imports)
+1. Reconhecimento antes de tocar (leia antes de escrever).
+2. Releia imediatamente após escrever.
+3. Nunca crie commits sem solicitação explícita.
+4. Sempre rode portões de qualidade (lint/build) antes de relatar conclusão.
+5. Comunicação concisa, sem bajulação.
 
-### Gotchas
-- Proxy configurado em `vite.config.js` para `/api/organizze-proxy`
-- Versão da app injetada via `VITE_APP_VERSION` no build
-- Variáveis de ambiente Firebase devem estar em `.env`
-
----
-
-## IMPORTANTE
-
-1. **NUNCA** execute código sem reconhecimento baseado em evidências
-2. **SEMPRE** leia arquivos antes de modificar
-3. **SEMPRE** releia imediatamente após modificação
-4. **NUNCA** crie commits sem solicitação explícita do usuário
-5. **SEMPRE** execute portões de qualidade antes de relatar conclusão
-6. **SEMPRE** mantenha comunicação concisa e profissional (sem bajulação)
-
----
-
-**Em caso de dúvida sobre regras operacionais:** `.claude/rules/01-core.md` (Claude Code) ou `~/.cursor/rules/doutrina-operacional.mdc` (Cursor).
+> Em dúvida sobre fluxo: `.claude/rules/01-core.md`. Para Cursor: `~/.cursor/rules/doutrina-operacional.mdc`.

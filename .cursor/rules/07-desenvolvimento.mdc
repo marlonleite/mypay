@@ -38,7 +38,7 @@ alwaysApply: true
 - Escreva código que seja naturalmente testável.
 - Sempre proponha a criação de testes automatizados para funções e fluxos importantes.
 - Priorize interfaces claras e isoladas para facilitar a verificação de comportamento.
-- **Aplicação:** Integre com as diretrizes de testes (`06-testes.mdc`) durante a fase de verificação.
+- **Aplicação:** Quando testes forem configurados, integre na fase de verificação.
 
 ## Documentação
 - Documente o propósito e o funcionamento das funções públicas.

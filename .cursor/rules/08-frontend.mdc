@@ -3,295 +3,88 @@ description: Doutrina frontend — React, Vite, Tailwind, Firebase (myPay)
 alwaysApply: true
 ---
 
-# Doutrina de Frontend: React + Vite (myPay)
+# Frontend (myPay)
 
-Esta doutrina governa o desenvolvimento frontend do projeto myPay.
-O foco é performance, manutenção escalável e **zero magic numbers**.
+## Stack
 
----
+- React 18 + Vite, JavaScript puro (sem TypeScript).
+- npm; Tailwind CSS (única forma de estilizar); Context API (sem Redux/Zustand).
+- Firebase (Auth/Firestore/Storage); lucide-react; recharts; react-router-dom v6.
 
-## Stack do Projeto
+## Arquitetura
 
-- **Framework:** React 18 + Vite
-- **Linguagem:** JavaScript (sem TypeScript)
-- **Gerenciador de pacotes:** npm
-- **Estilização:** Tailwind CSS
-- **Estado global:** Context API
-- **Backend:** Firebase (Firestore, Auth, Storage)
-- **Ícones:** lucide-react
-- **Gráficos:** recharts
-- **Roteamento:** react-router-dom v6
+| Pasta | Conteúdo | Export |
+|---|---|---|
+| `src/pages/` | rotas | `export default` |
+| `src/components/` | reutilizáveis por domínio | `export function` (named) |
+| `src/hooks/` | lógica reutilizável, integração Firebase | named |
+| `src/services/` | operações Firestore, APIs externas | named |
+| `src/contexts/` | estado global (Auth, Theme, Notification, Privacy) | named |
+| `src/utils/` | helpers puros | named |
 
----
+## Padrões obrigatórios
 
-## Arquitetura de Componentes
+### Imports React via namespace
 
-### Padrão de Separação
-
-- **Pages (`src/pages/`):**
-  - Componentes de rota
-  - Orquestram hooks e componentes
-  - `export default` para integração com router
-
-- **Components (`src/components/`):**
-  - Componentes reutilizáveis
-  - `export function` (named exports)
-  - Organizados por domínio em subpastas
-
-- **Hooks (`src/hooks/`):**
-  - Lógica reutilizável
-  - Integração com Firebase
-  - Estado derivado e efeitos
-
-- **Services (`src/services/`):**
-  - Operações Firestore
-  - Chamadas a APIs externas
-  - Lógica de negócio pura
-
-- **Contexts (`src/contexts/`):**
-  - Estado global (Auth, Theme, etc.)
-  - Providers no nível do App
-
-### Composição
-
-- Evite prop-drilling profundo (use Context quando necessário)
-- Use `children` para composição flexível
-- Prefira componentes pequenos e focados
-
-### Exportação
-
-```javascript
-// Componentes: named export
-export function Button({ children, onClick }) { ... }
-
-// Pages: default export
-export default function Dashboard() { ... }
-
-// Hooks: named export
-export function useTransactions() { ... }
+```js
+import * as React from 'react';
+// React.useState, React.useEffect, React.useCallback, React.useMemo, React.useRef
 ```
 
----
+### Zero magic numbers — constantes nomeadas fora do componente
 
-## Performance & Otimização
+```js
+const DEBOUNCE_DELAY_MS = 500;        // ✅
+setTimeout(fn, 500);                  // ❌
+```
 
 ### Memoização
 
-```javascript
-// Callbacks passados como props
-const handleClick = React.useCallback(() => {
-  doSomething(id);
-}, [id]);
+- `useCallback` para callbacks passados como prop.
+- `useMemo` para cálculos derivados pesados.
+- `useRef` para valores que não devem disparar render.
 
-// Cálculos pesados ou derivados
-const filteredItems = React.useMemo(() => {
-  return items.filter(item => item.active);
-}, [items]);
+### Performance
 
-// Valores que não precisam disparar render
-const timerRef = React.useRef(null);
-```
+- Debounce obrigatório em inputs de busca (use helper em `src/utils/`).
+- Listas grandes (100+): considere virtualização.
+- `key` única e estável (preferencialmente `id`).
 
-### Listas
+### Estilização
 
-- Para listas grandes (100+ itens), considere virtualização
-- Sempre use `key` única e estável (preferencialmente `id`)
-- Evite criar objetos/funções inline em loops
+- Tailwind apenas. Backgrounds: `dark-950/900/800/700`. Texto: `white`, `dark-300/400/500`. Accent: `primary-600/500`. Status: `green-500`, `red-500`, `yellow-500`.
+- Ícones via `lucide-react`.
+- Dark mode é o único tema.
 
-### Eventos de Alta Frequência
+### Firebase
 
-- **Debounce obrigatório** em inputs de busca
-- Use helpers centralizados em `src/utils/`
+- Sempre tratar `loading` e `error`.
+- Cleanup de subscriptions (`onSnapshot`).
+- Verificar `user` antes de queries.
 
-```javascript
-// src/utils/helpers.js
-export function debounce(fn, delay) {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-}
-```
+## Estrutura do componente
 
----
-
-## Estado & Data Fetching
-
-### Context API (Estado Global)
-
-Usado para:
-- Autenticação (`AuthContext`)
-- Tema (`ThemeContext`)
-- Notificações (`NotificationContext`)
-- Privacidade (`PrivacyContext`)
-
-```javascript
-// Consumo
-import { useAuth } from '../contexts/AuthContext';
-
-function Component() {
-  const { user, loading } = useAuth();
-  // ...
-}
-```
-
-### Firebase/Firestore (Server State)
-
-- Acesso via `src/services/` ou hooks em `src/hooks/`
-- Firebase já gerencia cache e sincronização
-- Sempre trate estados de loading e error
-
-```javascript
-// Padrão de hook com Firebase
-export function useTransactions() {
-  const { user } = useAuth();
-  const [transactions, setTransactions] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState(null);
-
-  React.useEffect(() => {
-    if (!user) return;
-
-    setLoading(true);
-    getTransactions(user.uid)
-      .then(setTransactions)
-      .catch(setError)
-      .finally(() => setLoading(false));
-  }, [user]);
-
-  return { transactions, loading, error };
-}
-```
-
----
-
-## UI & Estilização
-
-### Tailwind CSS
-
-- **Única fonte de estilização** (não usar CSS modules, styled-components, etc.)
-- Classes utilitárias diretamente no JSX
-- Dark mode: projeto usa apenas tema escuro (`dark-*` tokens)
-
-### Padrão de Cores
-
-```
-Backgrounds: dark-950, dark-900, dark-800, dark-700
-Text: white, dark-300, dark-400, dark-500
-Accent: primary-600, primary-500
-Status: green-500 (sucesso), red-500 (erro), yellow-500 (warning)
-```
-
-### Componentes de UI
-
-- **Não usar** bibliotecas de UI (MUI, Chakra, etc.)
-- Criar componentes customizados com Tailwind
-- Ícones via `lucide-react`
-
-```javascript
-import { Plus, Edit, Trash2 } from 'lucide-react';
-
-<button className="p-2 text-dark-400 hover:text-white">
-  <Plus size={20} />
-</button>
-```
-
----
-
-## Código & Padrões
-
-### Imports
-
-```javascript
-// React via namespace (padrão do projeto)
-import * as React from 'react';
-
-// Uso
-React.useState()
-React.useEffect()
-React.useCallback()
-```
-
-### Constantes
-
-- **PROIBIDO:** literais mágicos embutidos na lógica
-- **OBRIGATÓRIO:** constantes nomeadas fora do componente
-
-```javascript
-// ❌ Errado
-if (status === 2) { ... }
-setTimeout(fn, 500);
-
-// ✅ Correto
-const STATUS_ACTIVE = 2;
-const DEBOUNCE_DELAY_MS = 500;
-
-if (status === STATUS_ACTIVE) { ... }
-setTimeout(fn, DEBOUNCE_DELAY_MS);
-```
-
-### Estrutura de Componente
-
-```javascript
+```js
 import * as React from 'react';
 import { Icon } from 'lucide-react';
 
-// Constantes
 const ITEMS_PER_PAGE = 10;
 
-// Componente
-export function ComponentName({ prop1, prop2, onAction }) {
+export function Component({ prop1, onAction }) {
   // 1. Hooks (Context, State, Refs)
-  const { user } = useAuth();
-  const [items, setItems] = React.useState([]);
-  const inputRef = React.useRef(null);
-
-  // 2. Derived state (useMemo)
-  const filteredItems = React.useMemo(() =>
-    items.filter(i => i.active),
-    [items]
-  );
-
-  // 3. Callbacks (useCallback)
-  const handleClick = React.useCallback(() => {
-    onAction(prop1);
-  }, [prop1, onAction]);
-
-  // 4. Effects
-  React.useEffect(() => {
-    // side effects
-  }, [dependency]);
-
+  // 2. useMemo (derived state)
+  // 3. useCallback (handlers)
+  // 4. useEffect (side effects)
   // 5. Render
-  return (
-    <div className="tailwind-classes">
-      {/* content */}
-    </div>
-  );
 }
 ```
 
-### ESLint
+## Proibido
 
-- Respeitar regras do ESLint
-- `eslint-disable` apenas pontualmente e com justificativa
-- Corrigir warnings de hooks (`react-hooks/exhaustive-deps`)
+- TypeScript, pnpm, Redux/Zustand/MobX, TanStack Query
+- Bibliotecas de UI (MUI, Chakra, etc.)
+- CSS/SCSS separados (só Tailwind)
+- `eslint-disable` sem justificativa documentada
+- Snapshot/CSS modules
 
----
-
-## O Que NÃO Fazer
-
-- ❌ Adicionar TypeScript
-- ❌ Usar pnpm (projeto usa npm)
-- ❌ Instalar bibliotecas de UI (MUI, Chakra, etc.)
-- ❌ Adicionar Redux, Zustand, MobX (usar Context API)
-- ❌ Adicionar TanStack Query (usar Firebase direto)
-- ❌ Criar arquivos CSS/SCSS separados (usar Tailwind)
-- ❌ Usar `eslint-disable` sem justificativa
-
----
-
-> **DIRETIVA FINAL:**
-> Mantenha simplicidade e consistência. Siga os padrões existentes no código.
-> Em caso de dúvida, leia componentes similares antes de criar novos padrões.
+> Em dúvida: leia componentes similares antes de criar novo padrão.
