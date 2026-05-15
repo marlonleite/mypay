@@ -1,12 +1,12 @@
-@.rules/08-frontend.mdc
-@.rules/09-migration-map.mdc
-@.rules/10-mypay-conventions.mdc
+@.cursor/rules/08-frontend.mdc
+@.cursor/rules/09-migration-map.mdc
+@.cursor/rules/10-mypay-conventions.mdc
 
 # myPay (frontend)
 
 > Doutrina, comunicação e princípios genéricos são globais (`~/Code/cursor_rules/core/*.mdc`), auto-carregados via `~/.claude/CLAUDE.md`. Este projeto adiciona só os deltas acima.
 
-## Regras particulares deste repo (`.rules/`)
+## Regras particulares deste repo (`.cursor/rules/`)
 
 | Arquivo | Conteúdo |
 |---|---|
@@ -14,7 +14,7 @@
 | `09-migration-map.mdc` | Migração Firebase → API Postgres (frontend side) |
 | `10-mypay-conventions.mdc` | Estilo (aspas, sem semis), Firebase, i18n |
 
-Symlinks em `.cursor/rules/*.mdc` apontam pra `.rules/` — fonte única.
+Cursor lê direto de `.cursor/rules/`; Claude lê via `@.cursor/rules/...` no topo deste arquivo. Fonte única, sem symlinks.
 
 ## Comandos sob demanda (`.claude/commands/`)
 
