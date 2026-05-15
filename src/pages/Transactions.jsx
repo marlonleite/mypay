@@ -233,6 +233,23 @@ export default function Transactions({
   // Contas ativas
   const activeAccounts = useMemo(() => getActiveAccounts(), [accounts])
 
+  // Slow network / Android WebView: modal may open before accounts load, leaving accountId ''.
+  // Native <select> can show the first label while controlled value stays '' (no onChange).
+  useEffect(() => {
+    if (!modalOpen || editingTransaction) return
+    if (!activeAccounts.length) return
+    setFormData(prev => {
+      const trimmed = typeof prev.accountId === 'string' ? prev.accountId.trim() : ''
+      const hasValidAccount =
+        trimmed.length > 0 &&
+        activeAccounts.some(a => a.id === trimmed)
+      if (hasValidAccount) return prev
+      const fallbackId = activeAccounts[0]?.id
+      if (!fallbackId || prev.accountId === fallbackId) return prev
+      return { ...prev, accountId: fallbackId }
+    })
+  }, [modalOpen, editingTransaction, activeAccounts])
+
   const getCardName = (cardId) => {
     if (!cardId) return ''
     return cards.find(c => c.id === cardId)?.name || 'Cartão'
@@ -859,6 +876,10 @@ export default function Transactions({
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.description || !formData.amount || !formData.date) return
+    if (!String(formData.accountId || '').trim()) {
+      toast.error('Selecione uma conta.')
+      return
+    }
 
     try {
       setSaving(true)

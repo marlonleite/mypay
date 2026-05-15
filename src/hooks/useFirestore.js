@@ -168,7 +168,10 @@ export async function buildTransactionPayload(data, apiClient, opts = {}) {
     date: data.date instanceof Date
       ? data.date.toISOString().slice(0, 10)
       : data.date,
-    account_id: data.accountId ?? null,
+    // Avoid sending "" — Pydantic expects UUID or null; empty string yields 422 (uuid_parsing).
+    account_id: (data.accountId != null && String(data.accountId).trim() !== '')
+      ? String(data.accountId).trim()
+      : null,
     // Form de Transactions.jsx usa `category` (legacy Firestore name); aceita ambos.
     category_id: data.categoryId ?? data.category ?? null,
     notes: data.notes ?? null,
