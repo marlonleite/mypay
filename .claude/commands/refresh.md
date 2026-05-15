@@ -1,6 +1,6 @@
 # Refresh — Debugging & RCA
 
-Protocolo para bugs recorrentes, críticos ou de causa raiz obscura. Estende `01-core.md`.
+Protocolo para bugs recorrentes, críticos ou de causa raiz obscura. Estende `~/Code/cursor_rules/core/01-doutrina.mdc`.
 
 **Quando ativar:** tentativas simples já falharam, bug recorrente, ou causa raiz obscura.
 
@@ -32,7 +32,7 @@ Se refutada, formule nova hipótese baseada nas evidências novas; repita.
 
 ## Fase 3 — Remediação
 
-Correção mínima e precisa contra a causa raiz confirmada. Padrões herdados de `01-core.md`:
+Correção mínima e precisa contra a causa raiz confirmada. Padrões herdados da doutrina global:
 - Leia antes de escrever; releia depois.
 - Ownership sistêmico: se a causa está em componente compartilhado, corrija (ou aponte) todos os consumidores afetados.
 

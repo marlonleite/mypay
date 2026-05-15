@@ -1,31 +1,29 @@
-# CLAUDE.md
+@.rules/08-frontend.mdc
+@.rules/09-migration-map.mdc
+@.rules/10-mypay-conventions.mdc
 
-Orientações ao Claude Code para o repositório **myPay**.
+# myPay (frontend)
 
-## Regras ativas (sempre carregadas)
+> Doutrina, comunicação e princípios genéricos são globais (`~/Code/cursor_rules/core/*.mdc`), auto-carregados via `~/.claude/CLAUDE.md`. Este projeto adiciona só os deltas acima.
 
-Em `.claude/rules/`:
-- **`01-core.md`** — Doutrina operacional (fluxo, ética, execução, commits)
-- **`05-comunicacao.md`** — Estilo de comunicação (PT-BR, modos ask/plan/agent)
-- **`07-desenvolvimento.md`** — Princípios de código
-- **`08-frontend.md`** — Stack e padrões React/Vite/Tailwind
-- **`09-migration-map.md`** — Migração Firebase → API Postgres
+## Regras particulares deste repo (`.rules/`)
 
-Espelhadas para Cursor em `.cursor/rules/*.mdc` (idênticas em conteúdo).
+| Arquivo | Conteúdo |
+|---|---|
+| `08-frontend.mdc` | Stack e padrões React/Vite/Tailwind |
+| `09-migration-map.mdc` | Migração Firebase → API Postgres (frontend side) |
+| `10-mypay-conventions.mdc` | Estilo (aspas, sem semis), Firebase, i18n |
 
-## Comandos sob demanda
+Symlinks em `.cursor/rules/*.mdc` apontam pra `.rules/` — fonte única.
 
-Em `.claude/commands/`:
-- **`/refresh`** — Protocolo de debugging & RCA (use quando bug for crítico/recorrente)
+## Comandos sob demanda (`.claude/commands/`)
+
+- **`/refresh`** — Debugging & RCA
 - **`/retro`** — Retrospectiva e evolução da doutrina
 - **`/review`** — Code review
 - **`/commit`** — Commit semântico
 - **`/test`** — Testes (quando configurados)
 - **`/map`** — Mapa de migração backend
-
-## Doutrina global (Cursor)
-
-`~/.cursor/rules/` já carrega doutrina agnóstica de stack. Não duplicar.
 
 ## Stack
 
@@ -67,12 +65,11 @@ src/
 - `VITE_APP_VERSION` injetada no build.
 - Firebase env vars em `.env`.
 
-## Princípios mandatórios
+## Portões de qualidade
 
-1. Reconhecimento antes de tocar (leia antes de escrever).
-2. Releia imediatamente após escrever.
-3. Nunca crie commits sem solicitação explícita.
-4. Sempre rode portões de qualidade (lint/build) antes de relatar conclusão.
-5. Comunicação concisa, sem bajulação.
+Antes de relatar conclusão:
 
-> Em dúvida sobre fluxo: `.claude/rules/01-core.md`. Para Cursor: `~/.cursor/rules/doutrina-operacional.mdc`.
+```bash
+npm run lint
+npm run build    # quando alteração afetar bundle/imports
+```

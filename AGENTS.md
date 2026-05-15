@@ -1,19 +1,22 @@
 # AGENTS.md
 
-Instruções de agentes para o **myPay**. Doutrina modular espelhada entre `.claude/rules/` (Claude Code) e `.cursor/rules/` (Cursor).
+Instruções de agentes para o **myPay**.
 
-## Regras (par `.md` / `.mdc`)
+## Regras globais (auto-carregadas)
 
-| Área | Arquivo |
-|------|---------|
-| Doutrina central (fluxo, ética, commits) | `01-core` |
-| Comunicação (PT-BR, modos) | `05-comunicacao` |
-| Princípios de código | `07-desenvolvimento` |
-| Frontend React | `08-frontend` |
-| Migração API Postgres | `09-migration-map` |
-| Convenções (`settings.json`) Cursor | `10-mypay-conventions` (só `.mdc`) |
+Doutrina, comunicação e princípios genéricos vêm de `~/Code/cursor_rules/core/*.mdc`, carregados automaticamente via `~/.claude/CLAUDE.md` (Claude) e `~/.cursor/rules/` (Cursor).
 
-## Outros artefatos (Claude Code)
+Playbooks globais sob demanda: `/debug-raiz`, `/retro`.
+
+## Regras locais deste projeto (`.rules/`)
+
+| Arquivo | Conteúdo |
+|---|---|
+| `08-frontend.mdc` | Frontend React (delta específico do myPay) |
+| `09-migration-map.mdc` | Migração Firebase → API Postgres |
+| `10-mypay-conventions.mdc` | Convenções de `settings.json` do Cursor |
+
+## Comandos locais (Claude Code)
 
 - **Slash commands** (`.claude/commands/`): `/refresh` (RCA), `/retro`, `/review`, `/commit`, `/test`, `/map`.
 - **Skills** (`.claude/skills/`): referência de prompts/checklists.
