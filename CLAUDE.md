@@ -18,12 +18,10 @@ Symlinks em `.cursor/rules/*.mdc` apontam pra `.rules/` — fonte única.
 
 ## Comandos sob demanda (`.claude/commands/`)
 
-- **`/refresh`** — Debugging & RCA
-- **`/retro`** — Retrospectiva e evolução da doutrina
-- **`/review`** — Code review
-- **`/commit`** — Commit semântico
-- **`/test`** — Testes (quando configurados)
-- **`/map`** — Mapa de migração backend
+- **`/test`** — Testes (quando configurados; específico do projeto)
+- **`/map`** — Mapa de migração backend (específico do projeto)
+
+> Globais disponíveis: `/debug-raiz`, `/retro`, `/review`, `/commit` — vêm de `~/Code/cursor_rules/playbooks/`.
 
 ## Stack
 

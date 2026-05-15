@@ -6,7 +6,7 @@ Instruções de agentes para o **myPay**.
 
 Doutrina, comunicação e princípios genéricos vêm de `~/Code/cursor_rules/core/*.mdc`, carregados automaticamente via `~/.claude/CLAUDE.md` (Claude) e `~/.cursor/rules/` (Cursor).
 
-Playbooks globais sob demanda: `/debug-raiz`, `/retro`.
+Playbooks globais sob demanda: `/debug-raiz`, `/retro`, `/review`, `/commit`.
 
 ## Regras locais deste projeto (`.rules/`)
 
@@ -18,7 +18,7 @@ Playbooks globais sob demanda: `/debug-raiz`, `/retro`.
 
 ## Comandos locais (Claude Code)
 
-- **Slash commands** (`.claude/commands/`): `/refresh` (RCA), `/retro`, `/review`, `/commit`, `/test`, `/map`.
+- **Slash commands locais** (`.claude/commands/`): `/test`, `/map`. Globais (`/debug-raiz`, `/retro`, `/review`, `/commit`) vêm de `~/Code/cursor_rules/playbooks/`.
 - **Skills** (`.claude/skills/`): referência de prompts/checklists.
 - **Visão geral**: `CLAUDE.md`.
 
